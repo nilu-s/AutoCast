@@ -17,18 +17,22 @@
 
 (function () {
     // =====================
+    // Initialize Bridge
+    // =====================
+    AutoCastBridge.init();
+
+    // =====================
     // State
     // =====================
     var state = {
         tracks: [],
         analysisResult: null,
         isAnalyzing: false,
-        undoStack: [],      // v2.0: stores previous results for undo
+        undoStack: [],
         maxUndoLevels: 5,
-        perTrackSensitivity: {} // v2.0: trackIndex -> thresholdDb
+        perTrackSensitivity: {}
     };
 
-    // Track colors for waveform and markers
     var TRACK_COLORS = [
         '#4ea1f3', '#4caf50', '#ff9800', '#e91e63',
         '#9c27b0', '#00bcd4', '#ffeb3b', '#795548'
@@ -51,36 +55,26 @@
         progressText: $('progressText'),
         waveformSection: $('waveformSection'),
         waveformContainer: $('waveformContainer'),
-
-        // Buttons
         btnLoadTracks: $('btnLoadTracks'),
         btnAnalyze: $('btnAnalyze'),
         btnPreviewMarkers: $('btnPreviewMarkers'),
         btnApply: $('btnApply'),
         btnReset: $('btnReset'),
-        btnSaveAnalysis: $('btnSaveAnalysis'),
-        btnLoadAnalysis: $('btnLoadAnalysis'),
 
-        // Params
         paramThreshold: $('paramThreshold'),
         paramHold: $('paramHold'),
         paramMinSeg: $('paramMinSeg'),
         paramDucking: $('paramDucking'),
         paramCrossfade: $('paramCrossfade'),
         paramOverlap: $('paramOverlap'),
-
-        // Values
         valThreshold: $('valThreshold'),
         valHold: $('valHold'),
         valMinSeg: $('valMinSeg'),
         valDucking: $('valDucking'),
         valCrossfade: $('valCrossfade'),
-
-        // v2.0 toggles
         toggleAutoGain: $('toggleAutoGain'),
         toggleSpectralVAD: $('toggleSpectralVAD'),
         toggleAdaptiveCrossfade: $('toggleAdaptiveCrossfade'),
-
         modeIndicator: $('modeIndicator')
     };
 
@@ -101,7 +95,7 @@
     bindSlider(els.paramCrossfade, els.valCrossfade, 'ms');
 
     function getParams() {
-        var params = {
+        return {
             thresholdAboveFloorDb: parseInt(els.paramThreshold.value),
             holdFrames: Math.round(parseInt(els.paramHold.value) / 10),
             minSegmentMs: parseInt(els.paramMinSeg.value),
@@ -110,25 +104,22 @@
             overlapPolicy: els.paramOverlap.value,
             autoGain: els.toggleAutoGain ? els.toggleAutoGain.checked : true,
             useSpectralVAD: els.toggleSpectralVAD ? els.toggleSpectralVAD.checked : true,
-            adaptiveCrossfade: els.toggleAdaptiveCrossfade ? els.toggleAdaptiveCrossfade.checked : true
+            adaptiveCrossfade: els.toggleAdaptiveCrossfade ? els.toggleAdaptiveCrossfade.checked : true,
+            perTrackThresholdDb: getPerTrackSensitivity()
         };
+    }
 
-        // Per-track sensitivity (v2.0)
-        var perTrack = {};
+    function getPerTrackSensitivity() {
         var hasPerTrack = false;
-        for (var key in state.perTrackSensitivity) {
-            perTrack[key] = state.perTrackSensitivity[key];
-            hasPerTrack = true;
-        }
-        if (hasPerTrack) {
-            var arr = [];
-            for (var i = 0; i < state.tracks.length; i++) {
-                arr.push(perTrack[i] !== undefined ? perTrack[i] : params.thresholdAboveFloorDb);
-            }
-            params.perTrackThresholdDb = arr;
-        }
+        for (var key in state.perTrackSensitivity) { hasPerTrack = true; break; }
+        if (!hasPerTrack) return null;
 
-        return params;
+        var arr = [];
+        var globalThreshold = parseInt(els.paramThreshold.value);
+        for (var i = 0; i < state.tracks.length; i++) {
+            arr.push(state.perTrackSensitivity[i] !== undefined ? state.perTrackSensitivity[i] : globalThreshold);
+        }
+        return arr;
     }
 
     // =====================
@@ -156,13 +147,13 @@
     els.btnLoadTracks.addEventListener('click', function () {
         setStatus('analyzing', 'Loading tracks...');
 
-        window.csiBridge.callScript('getTrackInfo', {}, function (err, trackData) {
-            if (err) {
-                setStatus('error', 'Failed to load tracks: ' + err);
+        AutoCastBridge.getTrackInfo(function (trackData) {
+            if (!trackData || !trackData.tracks) {
+                setStatus('error', 'Failed to load tracks');
                 return;
             }
 
-            state.tracks = trackData.tracks || [];
+            state.tracks = trackData.tracks;
             renderTrackList();
             setStatus('idle', state.tracks.length + ' tracks loaded');
         });
@@ -173,6 +164,7 @@
         for (var i = 0; i < state.tracks.length; i++) {
             var track = state.tracks[i];
             var color = TRACK_COLORS[i % TRACK_COLORS.length];
+            var clipCount = track.clips ? track.clips.length : 1;
 
             html += '<div class="track-item">';
             html += '<input type="checkbox" checked data-track="' + i + '">';
@@ -184,7 +176,7 @@
             html += '<span class="track-sensitivity-value" id="trackSens' + i + '">12</span>';
             html += '</div>';
 
-            html += '<span class="track-clips">' + (track.clipCount || 1) + ' clip' + ((track.clipCount || 1) > 1 ? 's' : '') + '</span>';
+            html += '<span class="track-clips">' + clipCount + ' clip' + (clipCount > 1 ? 's' : '') + '</span>';
             html += '</div>';
         }
         els.trackList.innerHTML = html;
@@ -215,7 +207,7 @@
     }
 
     // =====================
-    // Analysis
+    // Analysis (Mock in browser, real in Premiere)
     // =====================
     els.btnAnalyze.addEventListener('click', runAnalysis);
 
@@ -230,46 +222,113 @@
             return;
         }
 
-        var params = getParams();
         setStatus('analyzing', 'Analyzing...');
         setProgress(0, 'Starting analysis...');
 
-        var analysisData = {
-            trackIndices: selectedIndices,
-            params: params
-        };
+        if (AutoCastBridge.isInMockMode()) {
+            runMockAnalysis(selectedIndices);
+        } else {
+            runPremierAnalysis(selectedIndices);
+        }
+    }
 
-        window.csiBridge.callScript('runAnalysis', analysisData, function (err, result) {
-            state.isAnalyzing = false;
-            hideProgress();
+    function runPremierAnalysis(selectedIndices) {
+        var params = getParams();
 
-            if (err) {
-                setStatus('error', 'Analysis failed: ' + err);
+        AutoCastBridge.getTrackInfo(function (trackData) {
+            if (!trackData || !trackData.tracks) {
+                state.isAnalyzing = false;
+                hideProgress();
+                setStatus('error', 'Could not read track info');
                 return;
             }
 
-            state.analysisResult = result;
-
-            // v2.0: push to undo stack
-            if (state.undoStack.length >= state.maxUndoLevels) {
-                state.undoStack.shift();
+            // Collect selected track media paths
+            var trackPaths = [];
+            for (var i = 0; i < selectedIndices.length; i++) {
+                var idx = selectedIndices[i];
+                var track = trackData.tracks[idx];
+                if (track && track.clips && track.clips[0] && track.clips[0].mediaPath) {
+                    trackPaths.push(track.clips[0].mediaPath);
+                }
             }
-            state.undoStack.push(JSON.parse(JSON.stringify(result)));
 
-            renderResults(result);
-            renderWaveform(result);
-
-            var totalSegs = 0;
-            for (var i = 0; i < result.tracks.length; i++) {
-                totalSegs += result.tracks[i].segmentCount;
+            if (trackPaths.length === 0) {
+                state.isAnalyzing = false;
+                hideProgress();
+                setStatus('error', 'No media files found on selected tracks');
+                return;
             }
-            setStatus('success', 'Analysis complete – ' + result.tracks.length + ' tracks, ' + totalSegs + ' segments');
 
-            els.btnPreviewMarkers.disabled = false;
-            els.btnApply.disabled = false;
-            els.btnReset.disabled = false;
-            els.btnSaveAnalysis.disabled = false;
+            // Resolve analyzer path relative to extension root (CEP uses __dirname)
+            var analyzerPath;
+            try {
+                var extensionPath = AutoCastBridge.getExtensionPath();
+                analyzerPath = extensionPath + '/node/analyzer';
+            } catch (e) {
+                analyzerPath = './node/analyzer';
+            }
+
+            // Run analysis asynchronously so progress bar can update in CEP
+            setTimeout(function () {
+                try {
+                    var analyzer = require(analyzerPath);
+                    var result = analyzer.analyze(trackPaths, params, function (pct, msg) {
+                        setProgress(pct, msg);
+                    });
+                    onAnalysisComplete(result);
+                } catch (e) {
+                    state.isAnalyzing = false;
+                    hideProgress();
+                    setStatus('error', 'Analysis failed: ' + e.message);
+                    console.error('[AutoCast] Analysis error:', e.stack || e);
+                }
+            }, 50);
         });
+    }
+
+    function runMockAnalysis(selectedIndices) {
+        var step = 0;
+        var interval = setInterval(function () {
+            step += 5;
+            var messages = ['Reading audio files...', 'Calculating energy...', 'Matching track volumes...',
+                'Running spectral analysis...', 'Detecting voice activity...', 'Resolving overlaps...',
+                'Building waveform...', 'Generating ducking map...', 'Finalizing...'];
+            var msgIdx = Math.min(Math.floor(step / 12), messages.length - 1);
+            setProgress(step, messages[msgIdx]);
+
+            if (step >= 100) {
+                clearInterval(interval);
+                var result = generateMockResult();
+                onAnalysisComplete(result);
+            }
+        }, 100);
+    }
+
+    function onAnalysisComplete(result) {
+        state.isAnalyzing = false;
+        hideProgress();
+        state.analysisResult = result;
+
+        // v2.0: push to undo stack
+        if (state.undoStack.length >= state.maxUndoLevels) {
+            state.undoStack.shift();
+        }
+        state.undoStack.push(JSON.parse(JSON.stringify(result)));
+
+        renderResults(result);
+        renderWaveform(result);
+
+        var totalSegs = 0;
+        for (var i = 0; i < result.tracks.length; i++) {
+            totalSegs += result.tracks[i].segmentCount;
+        }
+        setStatus('success', 'Analysis complete – ' + result.tracks.length + ' tracks, ' + totalSegs + ' segments');
+
+        els.btnPreviewMarkers.disabled = false;
+        els.btnApply.disabled = false;
+        els.btnReset.disabled = false;
+
     }
 
     // =====================
@@ -281,9 +340,8 @@
             var track = result.tracks[i];
             var color = TRACK_COLORS[i % TRACK_COLORS.length];
 
-            // v2.0: gain adjustment badge
             var gainBadge = '';
-            if (track.gainAdjustDb !== undefined && track.gainAdjustDb !== 0) {
+            if (track.gainAdjustDb !== undefined && Math.abs(track.gainAdjustDb) > 0.1) {
                 var gainClass = track.gainAdjustDb > 0 ? 'gain-boost' : 'gain-cut';
                 var gainSign = track.gainAdjustDb > 0 ? '+' : '';
                 gainBadge = '<span class="result-gain-badge ' + gainClass + '">' + gainSign + track.gainAdjustDb + ' dB</span>';
@@ -322,22 +380,24 @@
             var color = TRACK_COLORS[t % TRACK_COLORS.length];
             html += '<div class="waveform-track">';
             html += '<div class="waveform-track-label">' + trackName + '</div>';
-            html += '<canvas class="waveform-canvas" id="waveCanvas' + t + '" data-track="' + t + '" data-color="' + color + '"></canvas>';
+            html += '<canvas class="waveform-canvas" id="waveCanvas' + t + '"></canvas>';
             html += '</div>';
         }
         els.waveformContainer.innerHTML = html;
         els.waveformSection.style.display = 'block';
 
-        // Draw waveforms
-        for (var t = 0; t < result.waveform.pointsPerTrack.length; t++) {
-            drawWaveform(
-                document.getElementById('waveCanvas' + t),
-                result.waveform.pointsPerTrack[t],
-                result.segments[t] || [],
-                TRACK_COLORS[t % TRACK_COLORS.length],
-                result.waveform.timeStep
-            );
-        }
+        // Draw with a small delay so DOM is ready
+        setTimeout(function () {
+            for (var t = 0; t < result.waveform.pointsPerTrack.length; t++) {
+                drawWaveform(
+                    document.getElementById('waveCanvas' + t),
+                    result.waveform.pointsPerTrack[t],
+                    result.segments[t] || [],
+                    TRACK_COLORS[t % TRACK_COLORS.length],
+                    result.waveform.timeStep
+                );
+            }
+        }, 50);
     }
 
     function drawWaveform(canvas, points, segments, color, timeStep) {
@@ -345,9 +405,28 @@
 
         var ctx = canvas.getContext('2d');
         var w = canvas.parentElement.clientWidth - 12;
-        var h = 32;
+        var h = 48;
         canvas.width = w;
         canvas.height = h;
+
+        // Parse hex color to RGB
+        var r = parseInt(color.slice(1, 3), 16);
+        var g = parseInt(color.slice(3, 5), 16);
+        var b = parseInt(color.slice(5, 7), 16);
+
+        var totalTime = timeStep * points.length;
+
+        // Build a lookup: for each point index, is it in an active segment?
+        var activeMap = new Uint8Array(points.length);
+        for (var s = 0; s < segments.length; s++) {
+            if (segments[s].state === 'active') {
+                var i1 = Math.floor((segments[s].start / totalTime) * points.length);
+                var i2 = Math.ceil((segments[s].end / totalTime) * points.length);
+                for (var idx = Math.max(0, i1); idx < Math.min(points.length, i2); idx++) {
+                    activeMap[idx] = 1;
+                }
+            }
+        }
 
         // Find max for normalization
         var maxVal = 0;
@@ -356,31 +435,37 @@
         }
         if (maxVal === 0) maxVal = 1;
 
-        // Draw active segment backgrounds
-        ctx.fillStyle = color.replace(')', ', 0.1)').replace('rgb', 'rgba').replace('#', '');
-        // Convert hex to rgba
-        var r = parseInt(color.slice(1, 3), 16);
-        var g = parseInt(color.slice(3, 5), 16);
-        var b = parseInt(color.slice(5, 7), 16);
-
+        // 1. Draw a dim background for inactive areas and bright bg for active
         for (var s = 0; s < segments.length; s++) {
             if (segments[s].state === 'active') {
-                var x1 = (segments[s].start / (timeStep * points.length)) * w;
-                var x2 = (segments[s].end / (timeStep * points.length)) * w;
-                ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.15)';
-                ctx.fillRect(x1, 0, x2 - x1, h);
+                var x1 = (segments[s].start / totalTime) * w;
+                var x2 = (segments[s].end / totalTime) * w;
+                // Bright background for active segments
+                ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.12)';
+                ctx.fillRect(x1, 0, x2 - x1, h - 4);
+                // Colored indicator bar at bottom
+                ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.9)';
+                ctx.fillRect(x1, h - 3, x2 - x1, 3);
             }
         }
 
-        // Draw waveform bars
+        // 2. Draw waveform bars with clear active/inactive distinction
         var barWidth = Math.max(1, w / points.length);
+        var waveH = h - 5; // Leave room for indicator bar
+
         for (var i = 0; i < points.length; i++) {
             var normalized = points[i] / maxVal;
-            var barHeight = Math.max(1, normalized * (h - 2));
+            var barHeight = Math.max(1, normalized * (waveH - 2));
             var x = (i / points.length) * w;
-            var y = (h - barHeight) / 2;
+            var y = (waveH - barHeight) / 2;
 
-            ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',' + (0.3 + normalized * 0.7) + ')';
+            if (activeMap[i]) {
+                // Active: bright, saturated color
+                ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',' + (0.5 + normalized * 0.5) + ')';
+            } else {
+                // Inactive: very dim gray
+                ctx.fillStyle = 'rgba(100,100,100,' + (0.1 + normalized * 0.2) + ')';
+            }
             ctx.fillRect(x, y, Math.max(1, barWidth - 0.5), barHeight);
         }
     }
@@ -392,14 +477,14 @@
         if (!state.analysisResult) return;
         setStatus('analyzing', 'Setting markers...');
 
-        window.csiBridge.callScript('applyMarkers', {
+        AutoCastBridge.addMarkers({
             segments: state.analysisResult.segments,
             tracks: state.analysisResult.tracks
-        }, function (err) {
-            if (err) {
-                setStatus('error', 'Marker error: ' + err);
+        }, function (result) {
+            if (result && result.success) {
+                setStatus('success', 'Preview markers set (' + (result.markersAdded || 0) + ' markers)');
             } else {
-                setStatus('success', 'Preview markers set');
+                setStatus('error', 'Marker error');
             }
         });
     });
@@ -408,14 +493,13 @@
         if (!state.analysisResult) return;
         setStatus('analyzing', 'Applying keyframes...');
 
-        window.csiBridge.callScript('applyKeyframes', {
+        AutoCastBridge.applyKeyframes({
             keyframes: state.analysisResult.keyframes
-        }, function (err) {
-            if (err) {
-                setStatus('error', 'Apply error: ' + err);
+        }, function (result) {
+            if (result && result.success) {
+                setStatus('success', 'Keyframes applied (' + (result.totalKeyframesSet || 0) + ' keyframes)');
             } else {
-                setStatus('success', 'Keyframes applied – ' +
-                    state.analysisResult.keyframes.reduce(function (s, k) { return s + k.length; }, 0) + ' keyframes');
+                setStatus('error', 'Apply error');
             }
         });
     });
@@ -423,15 +507,12 @@
     els.btnReset.addEventListener('click', function () {
         setStatus('analyzing', 'Removing keyframes...');
 
-        window.csiBridge.callScript('resetKeyframes', {}, function (err) {
-            if (err) {
-                setStatus('error', 'Reset error: ' + err);
-            } else {
+        AutoCastBridge.removeKeyframes([], function (result) {
+            if (result && result.success) {
                 setStatus('idle', 'Keyframes removed');
-
-                // v2.0: Restore previous state from undo stack
+                // v2.0: pop undo stack
                 if (state.undoStack.length > 1) {
-                    state.undoStack.pop(); // Remove current
+                    state.undoStack.pop();
                     state.analysisResult = state.undoStack[state.undoStack.length - 1];
                 } else {
                     state.analysisResult = null;
@@ -439,177 +520,64 @@
                     els.waveformSection.style.display = 'none';
                     els.btnPreviewMarkers.disabled = true;
                     els.btnApply.disabled = true;
-                    els.btnSaveAnalysis.disabled = true;
+
                 }
+            } else {
+                setStatus('error', 'Reset error');
             }
         });
     });
 
-    // =====================
-    // v2.0: Save/Load Analysis
-    // =====================
-    if (els.btnSaveAnalysis) {
-        els.btnSaveAnalysis.addEventListener('click', function () {
-            if (!state.analysisResult) return;
-            var json = JSON.stringify(state.analysisResult, null, 2);
-
-            // Try native file save if available, otherwise use download
-            if (window.csiBridge && window.csiBridge.isInPremiere) {
-                window.csiBridge.callScript('saveFile', {
-                    content: json,
-                    filename: 'autocast_analysis.json'
-                }, function (err) {
-                    if (err) setStatus('error', 'Save failed');
-                    else setStatus('success', 'Analysis saved');
-                });
-            } else {
-                // Browser fallback: download
-                var blob = new Blob([json], { type: 'application/json' });
-                var a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = 'autocast_analysis.json';
-                a.click();
-                setStatus('success', 'Analysis downloaded');
-            }
-        });
-    }
-
-    if (els.btnLoadAnalysis) {
-        els.btnLoadAnalysis.addEventListener('click', function () {
-            var input = document.createElement('input');
-            input.type = 'file';
-            input.accept = '.json';
-            input.onchange = function (e) {
-                var file = e.target.files[0];
-                if (!file) return;
-
-                var reader = new FileReader();
-                reader.onload = function (e) {
-                    try {
-                        var result = JSON.parse(e.target.result);
-                        state.analysisResult = result;
-                        renderResults(result);
-                        renderWaveform(result);
-                        setStatus('success', 'Analysis loaded from file');
-                        els.btnPreviewMarkers.disabled = false;
-                        els.btnApply.disabled = false;
-                        els.btnReset.disabled = false;
-                        els.btnSaveAnalysis.disabled = false;
-                    } catch (err) {
-                        setStatus('error', 'Invalid analysis file');
-                    }
-                };
-                reader.readAsText(file);
-            };
-            input.click();
-        });
-    }
 
     // =====================
     // v2.0: Keyboard Shortcuts
     // =====================
     document.addEventListener('keydown', function (e) {
-        // Ctrl+Enter: Analyze
         if (e.ctrlKey && e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             if (!state.isAnalyzing) runAnalysis();
         }
-        // Ctrl+Shift+Enter: Apply
         if (e.ctrlKey && e.shiftKey && e.key === 'Enter') {
             e.preventDefault();
-            if (state.analysisResult && !els.btnApply.disabled) {
-                els.btnApply.click();
-            }
+            if (state.analysisResult && !els.btnApply.disabled) els.btnApply.click();
         }
-        // Ctrl+S: Save analysis
-        if (e.ctrlKey && e.key === 's') {
-            e.preventDefault();
-            if (state.analysisResult && els.btnSaveAnalysis) {
-                els.btnSaveAnalysis.click();
-            }
-        }
-        // Ctrl+Z: Undo (reset)
+
         if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
             e.preventDefault();
-            if (!els.btnReset.disabled) {
-                els.btnReset.click();
-            }
+            if (!els.btnReset.disabled) els.btnReset.click();
         }
     });
 
     // =====================
-    // Mode Detection
+    // Mode Indicator
     // =====================
     if (els.modeIndicator) {
-        if (typeof CSInterface !== 'undefined' && !(window.CSInterface && window.CSInterface._isMock)) {
-            els.modeIndicator.textContent = 'Premiere Pro';
-        } else {
-            els.modeIndicator.textContent = '🌐 Browser Mode';
-        }
+        els.modeIndicator.textContent = AutoCastBridge.isInMockMode() ? '🌐 Browser Mode' : 'Premiere Pro';
     }
 
     // =====================
-    // Mock Analysis (for browser testing)
+    // Mock Analysis Generator
     // =====================
-    if (window.csiBridge && window.csiBridge._isMock) {
-        // Override analysis to use mock data
-        window.csiBridge.callScript = function (method, params, callback) {
-            console.log('[Mock] callScript:', method, params);
-
-            if (method === 'getTrackInfo') {
-                setTimeout(function () {
-                    callback(null, {
-                        tracks: [
-                            { name: 'Host', clipCount: 1, mediaPath: 'host.wav' },
-                            { name: 'Guest 1', clipCount: 1, mediaPath: 'guest1.wav' },
-                            { name: 'Guest 2', clipCount: 1, mediaPath: 'guest2.wav' }
-                        ]
-                    });
-                }, 300);
-            } else if (method === 'runAnalysis') {
-                // Simulate progress
-                var step = 0;
-                var interval = setInterval(function () {
-                    step += 10;
-                    setProgress(step, 'Analyzing... ' + step + '%');
-                    if (step >= 100) {
-                        clearInterval(interval);
-                        callback(null, generateMockResult());
-                    }
-                }, 200);
-            } else {
-                setTimeout(function () { callback(null, { ok: true }); }, 200);
-            }
-        };
-    }
-
     function generateMockResult() {
         var trackCount = state.tracks.length || 3;
-        var duration = 900; // 15 min
+        var duration = 900;
+        var wavePoints = 500;
+        var timeStep = duration / wavePoints;
         var tracks = [];
         var segments = [];
         var keyframes = [];
         var waveformPoints = [];
 
         for (var t = 0; t < trackCount; t++) {
-            var segCount = 40 + Math.floor(Math.random() * 80);
-            var active = 20 + Math.floor(Math.random() * 40);
+            var segCount = 20 + Math.floor(Math.random() * 40);
             var gainAdj = Math.round((Math.random() * 8 - 4) * 10) / 10;
 
-            tracks.push({
-                name: state.tracks[t] ? state.tracks[t].name : 'Track ' + (t + 1),
-                segmentCount: segCount,
-                activePercent: active,
-                noiseFloorDb: -50 - Math.round(Math.random() * 10),
-                gainAdjustDb: gainAdj
-            });
-
-            // Generate mock segments
+            // Generate segments first
             var trackSegs = [];
-            var time = 0;
+            var time = Math.random() * 10;
             for (var s = 0; s < segCount; s++) {
-                var gap = 1 + Math.random() * 15;
-                var len = 0.5 + Math.random() * 8;
+                var gap = 3 + Math.random() * 20;
+                var len = 2 + Math.random() * 12;
                 var start = time + gap;
                 var end = start + len;
                 if (end > duration) break;
@@ -617,14 +585,41 @@
                 time = end;
             }
             segments.push(trackSegs);
-            keyframes.push([{ time: 0, gainDb: -24 }, { time: duration, gainDb: -24 }]);
 
-            // Generate mock waveform
+            // Generate waveform data aligned with segments
+            // Active regions: loud (0.3-0.8), inactive: near-silence (0.01-0.08)
             var points = [];
-            for (var p = 0; p < 500; p++) {
-                points.push(Math.random() * 0.5 + 0.05);
+            for (var p = 0; p < wavePoints; p++) {
+                var pointTime = p * timeStep;
+                var isActive = false;
+                for (var ss = 0; ss < trackSegs.length; ss++) {
+                    if (pointTime >= trackSegs[ss].start && pointTime <= trackSegs[ss].end) {
+                        isActive = true;
+                        break;
+                    }
+                }
+                if (isActive) {
+                    points.push(0.3 + Math.random() * 0.5);
+                } else {
+                    points.push(0.01 + Math.random() * 0.07);
+                }
             }
             waveformPoints.push(points);
+
+            var activeTime = 0;
+            for (var ss = 0; ss < trackSegs.length; ss++) {
+                activeTime += trackSegs[ss].end - trackSegs[ss].start;
+            }
+
+            tracks.push({
+                name: state.tracks[t] ? state.tracks[t].name : 'Track ' + (t + 1),
+                segmentCount: trackSegs.length,
+                activePercent: Math.round((activeTime / duration) * 100),
+                noiseFloorDb: -50 - Math.round(Math.random() * 10),
+                gainAdjustDb: gainAdj
+            });
+
+            keyframes.push([{ time: 0, gainDb: -24 }, { time: duration, gainDb: -24 }]);
         }
 
         return {
@@ -635,14 +630,13 @@
             keyframes: keyframes,
             waveform: {
                 pointsPerTrack: waveformPoints,
-                timeStep: duration / 500,
+                timeStep: timeStep,
                 totalDurationSec: duration
             },
             alignment: { aligned: true, maxDriftSec: 0.01, warning: null },
-            gainMatching: { gains: tracks.map(function () { return 1; }), gainsDb: tracks.map(function (t) { return t.gainAdjustDb; }) }
+            gainMatching: null
         };
     }
 
-    console.log('AutoCast v2.0 initialized');
-
+    console.log('AutoCast v2.0 initialized' + (AutoCastBridge.isInMockMode() ? ' (browser mode)' : ''));
 })();

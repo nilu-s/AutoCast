@@ -16,7 +16,7 @@
  * Heartbeat – verify ExtendScript is running.
  */
 function autocast_ping() {
-    return JSON.stringify({ status: 'ok', version: '1.0.0', host: 'Premiere Pro' });
+    return JSON.stringify({ status: 'ok', version: '2.0.0', host: 'Premiere Pro' });
 }
 
 /**
