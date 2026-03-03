@@ -338,7 +338,8 @@
         var html = '';
         for (var i = 0; i < result.tracks.length; i++) {
             var track = result.tracks[i];
-            var color = TRACK_COLORS[i % TRACK_COLORS.length];
+            var colorIdx = track.colorIndex !== undefined ? track.colorIndex : i;
+            var color = TRACK_COLORS[colorIdx % TRACK_COLORS.length];
 
             var gainBadge = '';
             if (track.gainAdjustDb !== undefined && Math.abs(track.gainAdjustDb) > 0.1) {
@@ -377,10 +378,11 @@
         var html = '';
         for (var t = 0; t < result.waveform.pointsPerTrack.length; t++) {
             var trackName = (result.tracks[t] ? result.tracks[t].name : 'Track ' + (t + 1));
-            var color = TRACK_COLORS[t % TRACK_COLORS.length];
+            var colorIdx = (result.tracks[t] && result.tracks[t].colorIndex !== undefined) ? result.tracks[t].colorIndex : t;
+            var color = TRACK_COLORS[colorIdx % TRACK_COLORS.length];
             html += '<div class="waveform-track">';
             html += '<div class="waveform-track-label">' + trackName + '</div>';
-            html += '<canvas class="waveform-canvas" id="waveCanvas' + t + '"></canvas>';
+            html += '<canvas class="waveform-canvas" id="waveCanvas' + t + '" data-color="' + color + '"></canvas>';
             html += '</div>';
         }
         els.waveformContainer.innerHTML = html;
@@ -389,11 +391,12 @@
         // Draw with a small delay so DOM is ready
         setTimeout(function () {
             for (var t = 0; t < result.waveform.pointsPerTrack.length; t++) {
+                var cIdx = (result.tracks[t] && result.tracks[t].colorIndex !== undefined) ? result.tracks[t].colorIndex : t;
                 drawWaveform(
                     document.getElementById('waveCanvas' + t),
                     result.waveform.pointsPerTrack[t],
                     result.segments[t] || [],
-                    TRACK_COLORS[t % TRACK_COLORS.length],
+                    TRACK_COLORS[cIdx % TRACK_COLORS.length],
                     result.waveform.timeStep
                 );
             }
@@ -563,7 +566,9 @@
         if (selectedIndices && selectedIndices.length > 0) {
             for (var i = 0; i < selectedIndices.length; i++) {
                 var idx = selectedIndices[i];
-                selectedTracks.push(state.tracks[idx] || { name: 'Track ' + (idx + 1) });
+                var tr = state.tracks[idx] || { name: 'Track ' + (idx + 1) };
+                tr._originalIndex = idx;
+                selectedTracks.push(tr);
             }
         } else {
             selectedTracks = state.tracks.length > 0 ? state.tracks : [{ name: 'Track 1' }, { name: 'Track 2' }, { name: 'Track 3' }];
@@ -620,8 +625,10 @@
                 activeTime += trackSegs[ss].end - trackSegs[ss].start;
             }
 
+            var origIdx = selectedTracks[t] && selectedTracks[t]._originalIndex !== undefined ? selectedTracks[t]._originalIndex : t;
             tracks.push({
                 name: selectedTracks[t] ? selectedTracks[t].name : 'Track ' + (t + 1),
+                colorIndex: origIdx,
                 segmentCount: trackSegs.length,
                 activePercent: Math.round((activeTime / duration) * 100),
                 noiseFloorDb: -50 - Math.round(Math.random() * 10),
