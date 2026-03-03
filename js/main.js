@@ -299,7 +299,7 @@
 
             if (step >= 100) {
                 clearInterval(interval);
-                var result = generateMockResult();
+                var result = generateMockResult(selectedIndices);
                 onAnalysisComplete(result);
             }
         }, 100);
@@ -558,8 +558,17 @@
     // =====================
     // Mock Analysis Generator
     // =====================
-    function generateMockResult() {
-        var trackCount = state.tracks.length || 3;
+    function generateMockResult(selectedIndices) {
+        var selectedTracks = [];
+        if (selectedIndices && selectedIndices.length > 0) {
+            for (var i = 0; i < selectedIndices.length; i++) {
+                var idx = selectedIndices[i];
+                selectedTracks.push(state.tracks[idx] || { name: 'Track ' + (idx + 1) });
+            }
+        } else {
+            selectedTracks = state.tracks.length > 0 ? state.tracks : [{ name: 'Track 1' }, { name: 'Track 2' }, { name: 'Track 3' }];
+        }
+        var trackCount = selectedTracks.length;
         var duration = 900;
         var wavePoints = 500;
         var timeStep = duration / wavePoints;
@@ -612,7 +621,7 @@
             }
 
             tracks.push({
-                name: state.tracks[t] ? state.tracks[t].name : 'Track ' + (t + 1),
+                name: selectedTracks[t] ? selectedTracks[t].name : 'Track ' + (t + 1),
                 segmentCount: trackSegs.length,
                 activePercent: Math.round((activeTime / duration) * 100),
                 noiseFloorDb: -50 - Math.round(Math.random() * 10),
