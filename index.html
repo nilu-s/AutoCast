@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoCast</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+
+<body>
+    <div class="panel">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo-row">
+                <svg class="logo-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                    <path d="M2 17l10 5 10-5" />
+                    <path d="M2 12l10 5 10-5" />
+                </svg>
+                <h1 class="logo-text">AutoCast</h1>
+                <span class="version">v1.0</span>
+            </div>
+            <p class="subtitle">Podcast Multi-Track Auto Ducking</p>
+        </header>
+
+        <!-- Status Bar -->
+        <div id="statusBar" class="status-bar status-idle">
+            <span id="statusIcon" class="status-icon">●</span>
+            <span id="statusText">Ready</span>
+        </div>
+
+        <!-- Track Selection -->
+        <section class="section">
+            <h2 class="section-title">Audio Tracks</h2>
+            <div id="trackList" class="track-list">
+                <p class="placeholder-text">Click "Load Tracks" to read from active sequence</p>
+            </div>
+            <button id="btnLoadTracks" class="btn btn-secondary btn-small">Load Tracks</button>
+        </section>
+
+        <!-- Parameters -->
+        <section class="section">
+            <h2 class="section-title">Parameters</h2>
+
+            <div class="param-group">
+                <label class="param-label">
+                    <span>Sensitivity <span class="tooltip"
+                            data-tip="Wie empfindlich die Spracherkennung ist. Niedriger = empfindlicher (erkennt auch leises Sprechen), höher = strenger (nur lautes Sprechen wird erkannt). Bei starkem Übersprechen/Bleed den Wert erhöhen.">?</span></span>
+                    <span class="param-value" id="valThreshold">12 dB</span>
+                </label>
+                <input type="range" id="paramThreshold" class="slider" min="3" max="30" value="12" step="1">
+                <div class="slider-labels"><span>More</span><span>Less</span></div>
+            </div>
+
+            <div class="param-group">
+                <label class="param-label">
+                    <span>Hold Time <span class="tooltip"
+                            data-tip="Wie lange eine Spur nach dem Sprechen noch aktiv bleibt. Verhindert nervöses An/Aus bei kurzen Pausen oder Atemholen. Höherer Wert = weniger Flackern.">?</span></span>
+                    <span class="param-value" id="valHold">500 ms</span>
+                </label>
+                <input type="range" id="paramHold" class="slider" min="100" max="2000" value="500" step="50">
+            </div>
+
+            <div class="param-group">
+                <label class="param-label">
+                    <span>Min Segment <span class="tooltip"
+                            data-tip="Kürzeste Sprechdauer, die erkannt wird. Segmente kürzer als dieser Wert werden ignoriert. Filtert kurze Geräusche wie Tastaturklappern oder einzelne Laute.">?</span></span>
+                    <span class="param-value" id="valMinSeg">300 ms</span>
+                </label>
+                <input type="range" id="paramMinSeg" class="slider" min="50" max="2000" value="300" step="50">
+            </div>
+
+            <div class="param-group">
+                <label class="param-label">
+                    <span>Ducking Level <span class="tooltip"
+                            data-tip="Lautstärke der inaktiven Spuren. -24 dB = leise im Hintergrund (natürlich). -60 dB = fast stumm. -6 dB = kaum abgesenkt. Der Raumton bleibt bei höheren Werten besser erhalten.">?</span></span>
+                    <span class="param-value" id="valDucking">-24 dB</span>
+                </label>
+                <input type="range" id="paramDucking" class="slider" min="-60" max="-6" value="-24" step="1">
+            </div>
+
+            <div class="param-group">
+                <label class="param-label">
+                    <span>Crossfade <span class="tooltip"
+                            data-tip="Übergangszeit beim Hoch-/Runterfahren der Lautstärke. Kurz (5 ms) = schneller Schnitt. Lang (100+ ms) = weicher Übergang. 30 ms ist ein guter Kompromiss.">?</span></span>
+                    <span class="param-value" id="valCrossfade">30 ms</span>
+                </label>
+                <input type="range" id="paramCrossfade" class="slider" min="5" max="500" value="30" step="5">
+            </div>
+
+            <div class="param-group">
+                <label class="param-label">Overlap Policy <span class="tooltip tooltip-right"
+                        data-tip="Was passiert wenn zwei Personen gleichzeitig reden? 'Dominant Track Wins' = nur der Lauteste bleibt oben. 'All Active' = beide bleiben auf voller Lautstärke.">?</span></label>
+                <select id="paramOverlap" class="select">
+                    <option value="dominant_wins">Dominant Track Wins</option>
+                    <option value="all_active">All Active</option>
+                </select>
+            </div>
+        </section>
+
+        <!-- Progress Bar -->
+        <div id="progressContainer" class="progress-container" style="display: none;">
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill" style="width: 0%"></div>
+            </div>
+            <span id="progressText" class="progress-text">0%</span>
+        </div>
+
+        <!-- Action Buttons -->
+        <section class="section actions">
+            <button id="btnAnalyze" class="btn btn-primary">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="m21 21-4.35-4.35" />
+                </svg>
+                Analyze
+            </button>
+            <button id="btnPreviewMarkers" class="btn btn-secondary" disabled>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
+                    <line x1="7" y1="7" x2="7.01" y2="7" />
+                </svg>
+                Preview Markers
+            </button>
+            <button id="btnApply" class="btn btn-accent" disabled>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="20 6 9 17 4 12" />
+                </svg>
+                Apply Edits
+            </button>
+            <button id="btnReset" class="btn btn-danger" disabled>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8" />
+                    <path d="M3 3v5h5" />
+                </svg>
+                Reset
+            </button>
+        </section>
+
+        <!-- Results Summary -->
+        <section id="resultsSection" class="section results" style="display: none;">
+            <h2 class="section-title">Analysis Results</h2>
+            <div id="resultsContent" class="results-content"></div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <span>AutoCast © 2026</span>
+            <span id="modeIndicator" class="mode-indicator"></span>
+        </footer>
+    </div>
+
+    <!-- Scripts: order matters -->
+    <script src="js/mock_csi.js"></script>
+    <script src="js/csi_bridge.js"></script>
+    <script src="js/main.js"></script>
+</body>
+
+</html>
