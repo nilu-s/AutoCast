@@ -30,7 +30,8 @@
         isAnalyzing: false,
         undoStack: [],
         maxUndoLevels: 5,
-        perTrackSensitivity: {}
+        perTrackSensitivity: {},
+        mockSamples: null  // Generated once on Load Tracks, reused on Analyze
     };
 
     var TRACK_COLORS = [
@@ -154,6 +155,12 @@
             }
 
             state.tracks = trackData.tracks;
+
+            // In browser mode: generate stable mock audio samples once
+            if (AutoCastBridge.isInMockMode()) {
+                state.mockSamples = generateMockSamples(trackData.tracks);
+            }
+
             renderTrackList();
             setStatus('idle', state.tracks.length + ' tracks loaded');
         });
@@ -559,80 +566,131 @@
     }
 
     // =====================
-    // Mock Analysis Generator
+    // Mock Sample Generator (called once on Load Tracks)
     // =====================
-    function generateMockResult(selectedIndices) {
-        var selectedTracks = [];
-        if (selectedIndices && selectedIndices.length > 0) {
-            for (var i = 0; i < selectedIndices.length; i++) {
-                var idx = selectedIndices[i];
-                var tr = state.tracks[idx] || { name: 'Track ' + (idx + 1) };
-                tr._originalIndex = idx;
-                selectedTracks.push(tr);
-            }
-        } else {
-            selectedTracks = state.tracks.length > 0 ? state.tracks : [{ name: 'Track 1' }, { name: 'Track 2' }, { name: 'Track 3' }];
-        }
-        var trackCount = selectedTracks.length;
-        var duration = 900;
+    function seededRandom(seed) {
+        // Simple seeded PRNG for deterministic mock data
+        var s = seed;
+        return function () {
+            s = (s * 16807 + 0) % 2147483647;
+            return (s - 1) / 2147483646;
+        };
+    }
+
+    function generateMockSamples(tracks) {
+        var duration = 900; // 15 min
         var wavePoints = 500;
         var timeStep = duration / wavePoints;
-        var tracks = [];
-        var segments = [];
-        var keyframes = [];
-        var waveformPoints = [];
+        var samples = {};
 
-        for (var t = 0; t < trackCount; t++) {
-            var segCount = 20 + Math.floor(Math.random() * 40);
-            var gainAdj = Math.round((Math.random() * 8 - 4) * 10) / 10;
+        for (var t = 0; t < tracks.length; t++) {
+            // Each track gets a unique seed based on its index and name
+            var seed = 12345 + t * 7919 + (tracks[t].name || '').length * 131;
+            var rng = seededRandom(seed);
 
-            // Generate segments first
-            var trackSegs = [];
-            var time = Math.random() * 10;
+            // Generate speech segments for this track
+            var segments = [];
+            var time = rng() * 10;
+            var segCount = 15 + Math.floor(rng() * 35);
             for (var s = 0; s < segCount; s++) {
-                var gap = 3 + Math.random() * 20;
-                var len = 2 + Math.random() * 12;
+                var gap = 3 + rng() * 20;
+                var len = 2 + rng() * 12;
                 var start = time + gap;
                 var end = start + len;
                 if (end > duration) break;
-                trackSegs.push({ start: start, end: end, trackIndex: t, state: 'active' });
+                segments.push({ start: start, end: end });
                 time = end;
             }
-            segments.push(trackSegs);
 
-            // Generate waveform data aligned with segments
-            // Active regions: loud (0.3-0.8), inactive: near-silence (0.01-0.08)
+            // Generate waveform points aligned with segments
             var points = [];
             for (var p = 0; p < wavePoints; p++) {
                 var pointTime = p * timeStep;
                 var isActive = false;
-                for (var ss = 0; ss < trackSegs.length; ss++) {
-                    if (pointTime >= trackSegs[ss].start && pointTime <= trackSegs[ss].end) {
+                for (var ss = 0; ss < segments.length; ss++) {
+                    if (pointTime >= segments[ss].start && pointTime <= segments[ss].end) {
                         isActive = true;
                         break;
                     }
                 }
                 if (isActive) {
-                    points.push(0.3 + Math.random() * 0.5);
+                    points.push(0.3 + rng() * 0.5);
                 } else {
-                    points.push(0.01 + Math.random() * 0.07);
+                    points.push(0.01 + rng() * 0.07);
                 }
             }
-            waveformPoints.push(points);
+
+            samples[t] = {
+                segments: segments,
+                waveform: points,
+                gainAdjustDb: Math.round((rng() * 8 - 4) * 10) / 10,
+                noiseFloorDb: -50 - Math.round(rng() * 10)
+            };
+        }
+
+        samples._duration = duration;
+        samples._wavePoints = wavePoints;
+        samples._timeStep = timeStep;
+        return samples;
+    }
+
+    // =====================
+    // Mock Analysis (uses pre-generated samples)
+    // =====================
+    function generateMockResult(selectedIndices) {
+        var mockData = state.mockSamples;
+        var duration = mockData._duration;
+        var timeStep = mockData._timeStep;
+
+        var tracks = [];
+        var segments = [];
+        var keyframes = [];
+        var waveformPoints = [];
+
+        // Get current threshold to adjust segments (simulates parameter sensitivity)
+        var threshold = parseInt(els.paramThreshold.value);
+        var minSegMs = parseInt(els.paramMinSeg.value);
+
+        for (var i = 0; i < selectedIndices.length; i++) {
+            var origIdx = selectedIndices[i];
+            var sample = mockData[origIdx];
+            if (!sample) continue;
+
+            var trackName = state.tracks[origIdx] ? state.tracks[origIdx].name : 'Track ' + (origIdx + 1);
+
+            // Apply threshold/minSeg to filter segments (simulate parameter effect)
+            var filteredSegs = [];
+            for (var s = 0; s < sample.segments.length; s++) {
+                var seg = sample.segments[s];
+                var segDurMs = (seg.end - seg.start) * 1000;
+                // Higher threshold = fewer segments kept
+                var keepChance = 1.0 - (threshold - 12) * 0.04;
+                if (segDurMs >= minSegMs && (keepChance >= 1.0 || segDurMs > minSegMs * 1.5)) {
+                    filteredSegs.push({
+                        start: seg.start,
+                        end: seg.end,
+                        trackIndex: i,
+                        state: 'active'
+                    });
+                }
+            }
+            segments.push(filteredSegs);
+
+            // Reuse stored waveform
+            waveformPoints.push(sample.waveform);
 
             var activeTime = 0;
-            for (var ss = 0; ss < trackSegs.length; ss++) {
-                activeTime += trackSegs[ss].end - trackSegs[ss].start;
+            for (var s = 0; s < filteredSegs.length; s++) {
+                activeTime += filteredSegs[s].end - filteredSegs[s].start;
             }
 
-            var origIdx = selectedTracks[t] && selectedTracks[t]._originalIndex !== undefined ? selectedTracks[t]._originalIndex : t;
             tracks.push({
-                name: selectedTracks[t] ? selectedTracks[t].name : 'Track ' + (t + 1),
+                name: trackName,
                 colorIndex: origIdx,
-                segmentCount: trackSegs.length,
+                segmentCount: filteredSegs.length,
                 activePercent: Math.round((activeTime / duration) * 100),
-                noiseFloorDb: -50 - Math.round(Math.random() * 10),
-                gainAdjustDb: gainAdj
+                noiseFloorDb: sample.noiseFloorDb,
+                gainAdjustDb: sample.gainAdjustDb
             });
 
             keyframes.push([{ time: 0, gainDb: -24 }, { time: duration, gainDb: -24 }]);
