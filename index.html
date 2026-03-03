@@ -20,7 +20,7 @@
                     <path d="M2 12l10 5 10-5" />
                 </svg>
                 <h1 class="logo-text">AutoCast</h1>
-                <span class="version">v1.0</span>
+                <span class="version">v2.0</span>
             </div>
             <p class="subtitle">Podcast Multi-Track Auto Ducking</p>
         </header>
@@ -84,7 +84,7 @@
             <div class="param-group">
                 <label class="param-label">
                     <span>Crossfade <span class="tooltip"
-                            data-tip="Übergangszeit beim Hoch-/Runterfahren der Lautstärke. Kurz (5 ms) = schneller Schnitt. Lang (100+ ms) = weicher Übergang. 30 ms ist ein guter Kompromiss.">?</span></span>
+                            data-tip="Übergangszeit beim Hoch-/Runterfahren der Lautstärke. Kurz (5 ms) = schneller Schnitt. Lang (100+ ms) = weicher Übergang. 30 ms ist ein guter Kompromiss. Adaptive Crossfades passen die Länge automatisch an.">?</span></span>
                     <span class="param-value" id="valCrossfade">30 ms</span>
                 </label>
                 <input type="range" id="paramCrossfade" class="slider" min="5" max="500" value="30" step="5">
@@ -92,11 +92,30 @@
 
             <div class="param-group">
                 <label class="param-label">Overlap Policy <span class="tooltip tooltip-right"
-                        data-tip="Was passiert wenn zwei Personen gleichzeitig reden? 'Dominant Track Wins' = nur der Lauteste bleibt oben. 'All Active' = beide bleiben auf voller Lautstärke.">?</span></label>
+                        data-tip="Was passiert wenn zwei Personen gleichzeitig reden? 'All Active' = beide bleiben auf voller Lautstärke. 'Dominant Track Wins' = nur der Lauteste bleibt oben.">?</span></label>
                 <select id="paramOverlap" class="select">
+                    <option value="all_active" selected>All Active</option>
                     <option value="dominant_wins">Dominant Track Wins</option>
-                    <option value="all_active">All Active</option>
                 </select>
+            </div>
+
+            <!-- v2.0: Feature toggles -->
+            <div class="param-group param-toggles">
+                <label class="toggle-label">
+                    <input type="checkbox" id="toggleAutoGain" checked>
+                    <span>Auto-Gain <span class="tooltip"
+                            data-tip="Gleicht unterschiedliche Lautstärken der Spuren automatisch an, damit leise Sprecher nicht benachteiligt werden.">?</span></span>
+                </label>
+                <label class="toggle-label">
+                    <input type="checkbox" id="toggleSpectralVAD" checked>
+                    <span>Spectral VAD <span class="tooltip"
+                            data-tip="Nutzt Frequenzanalyse (FFT) um Sprache besser von Geräuschen (Tastatur, Klicks, Rauschen) zu unterscheiden. Etwas langsamer aber genauer.">?</span></span>
+                </label>
+                <label class="toggle-label">
+                    <input type="checkbox" id="toggleAdaptiveCrossfade" checked>
+                    <span>Adaptive Crossfade <span class="tooltip tooltip-right"
+                            data-tip="Passt die Übergangszeit automatisch an: längere Fades bei natürlichen Pausen, kürzere bei Unterbrechungen.">?</span></span>
+                </label>
             </div>
         </section>
 
@@ -110,7 +129,7 @@
 
         <!-- Action Buttons -->
         <section class="section actions">
-            <button id="btnAnalyze" class="btn btn-primary">
+            <button id="btnAnalyze" class="btn btn-primary" title="Ctrl+Enter">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="11" cy="11" r="8" />
                     <path d="m21 21-4.35-4.35" />
@@ -124,7 +143,7 @@
                 </svg>
                 Preview Markers
             </button>
-            <button id="btnApply" class="btn btn-accent" disabled>
+            <button id="btnApply" class="btn btn-accent" disabled title="Ctrl+Shift+Enter">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polyline points="20 6 9 17 4 12" />
                 </svg>
@@ -139,6 +158,18 @@
             </button>
         </section>
 
+        <!-- v2.0: Save/Load -->
+        <section class="section actions-secondary">
+            <button id="btnSaveAnalysis" class="btn btn-secondary btn-small" disabled>Save Analysis</button>
+            <button id="btnLoadAnalysis" class="btn btn-secondary btn-small">Load Analysis</button>
+        </section>
+
+        <!-- v2.0: Waveform Preview -->
+        <section id="waveformSection" class="section waveform-section" style="display: none;">
+            <h2 class="section-title">Waveform Preview</h2>
+            <div id="waveformContainer" class="waveform-container"></div>
+        </section>
+
         <!-- Results Summary -->
         <section id="resultsSection" class="section results" style="display: none;">
             <h2 class="section-title">Analysis Results</h2>
@@ -147,7 +178,7 @@
 
         <!-- Footer -->
         <footer class="footer">
-            <span>AutoCast © 2026</span>
+            <span>AutoCast v2.0 © 2026</span>
             <span id="modeIndicator" class="mode-indicator"></span>
         </footer>
     </div>

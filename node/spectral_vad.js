@@ -1,0 +1,229 @@
+/**
+ * AutoCast – Spectral VAD (FFT-based Voice Activity Detection)
+ * 
+ * Enhances the basic RMS-based VAD with frequency analysis.
+ * Uses a simple FFT to compute spectral features that distinguish
+ * speech (300-3000 Hz energy concentration) from noise
+ * (broadband, clicks, keyboard, etc.)
+ * 
+ * Zero dependencies – uses a radix-2 DIT FFT implementation.
+ */
+
+'use strict';
+
+/**
+ * Compute spectral speech confidence for each frame.
+ * Returns a per-frame confidence score [0, 1] where 1 = likely speech.
+ * 
+ * @param {Float32Array} samples - Audio samples
+ * @param {number} sampleRate
+ * @param {number} frameDurationMs
+ * @returns {{ confidence: Float64Array, spectralFlux: Float64Array, frameCount: number }}
+ */
+function computeSpectralVAD(samples, sampleRate, frameDurationMs) {
+    frameDurationMs = frameDurationMs || 10;
+
+    var frameSize = Math.round((frameDurationMs / 1000) * sampleRate);
+    // Round up to nearest power of 2 for FFT
+    var fftSize = nextPowerOf2(frameSize);
+    var frameCount = Math.floor(samples.length / frameSize);
+
+    var confidence = new Float64Array(frameCount);
+    var spectralFlux = new Float64Array(frameCount);
+
+    // Frequency band definitions (Hz)
+    var speechLow = 300;
+    var speechHigh = 3000;
+    var speechLowBin = Math.round(speechLow * fftSize / sampleRate);
+    var speechHighBin = Math.round(speechHigh * fftSize / sampleRate);
+
+    // Hann window
+    var window = createHannWindow(fftSize);
+
+    var prevMagnitudes = null;
+
+    for (var f = 0; f < frameCount; f++) {
+        var offset = f * frameSize;
+
+        // Fill FFT input (zero-padded if frameSize < fftSize)
+        var real = new Float64Array(fftSize);
+        var imag = new Float64Array(fftSize);
+
+        for (var i = 0; i < frameSize && (offset + i) < samples.length; i++) {
+            real[i] = samples[offset + i] * window[i];
+        }
+
+        // Run FFT
+        fft(real, imag);
+
+        // Compute magnitude spectrum (only positive frequencies)
+        var halfN = fftSize / 2;
+        var magnitudes = new Float64Array(halfN);
+        var totalEnergy = 0;
+        var speechEnergy = 0;
+
+        for (var i = 0; i < halfN; i++) {
+            magnitudes[i] = Math.sqrt(real[i] * real[i] + imag[i] * imag[i]);
+            totalEnergy += magnitudes[i];
+
+            if (i >= speechLowBin && i <= speechHighBin) {
+                speechEnergy += magnitudes[i];
+            }
+        }
+
+        // Spectral ratio: speech band energy / total energy
+        var speechRatio = (totalEnergy > 0) ? (speechEnergy / totalEnergy) : 0;
+
+        // Spectral flatness (Wiener entropy): geometric mean / arithmetic mean
+        // Low flatness = tonal (speech), high = noise-like
+        var flatness = computeSpectralFlatness(magnitudes, speechLowBin, speechHighBin);
+
+        // Spectral flux: change from previous frame
+        if (prevMagnitudes) {
+            var flux = 0;
+            for (var i = 0; i < halfN; i++) {
+                var diff = magnitudes[i] - prevMagnitudes[i];
+                if (diff > 0) flux += diff;
+            }
+            spectralFlux[f] = (totalEnergy > 0) ? (flux / totalEnergy) : 0;
+        }
+        prevMagnitudes = magnitudes;
+
+        // Combine features into confidence score:
+        // - High speech ratio → likely speech
+        // - Low spectral flatness → tonal content (speech)
+        // - Moderate flux → speech has moderate variation
+        var ratioScore = Math.min(1.0, speechRatio * 2.5); // Scale: typical speech ~0.4-0.6
+        var flatnessScore = 1.0 - Math.min(1.0, flatness * 2.0); // Invert: low flatness = speech
+
+        confidence[f] = (ratioScore * 0.6 + flatnessScore * 0.4);
+    }
+
+    return {
+        confidence: confidence,
+        spectralFlux: spectralFlux,
+        frameCount: frameCount
+    };
+}
+
+/**
+ * Combine RMS VAD and spectral VAD into a refined gate signal.
+ * 
+ * @param {Uint8Array} rmsGate - Binary gate from RMS VAD
+ * @param {Float64Array} spectralConf - Spectral confidence per frame
+ * @param {number} minConfidence - Only keep frames where spectral confidence > this
+ * @returns {Uint8Array} Refined gate
+ */
+function refineGateWithSpectral(rmsGate, spectralConf, minConfidence) {
+    minConfidence = minConfidence || 0.3;
+    var len = Math.min(rmsGate.length, spectralConf.length);
+    var refined = new Uint8Array(len);
+
+    for (var i = 0; i < len; i++) {
+        // Keep gate open only if BOTH RMS and spectral agree
+        refined[i] = (rmsGate[i] && spectralConf[i] >= minConfidence) ? 1 : 0;
+    }
+
+    return refined;
+}
+
+// ============================
+// FFT Implementation (Radix-2)
+// ============================
+
+/**
+ * In-place radix-2 Cooley-Tukey FFT.
+ * @param {Float64Array} real 
+ * @param {Float64Array} imag 
+ */
+function fft(real, imag) {
+    var n = real.length;
+
+    // Bit reversal
+    for (var i = 1, j = 0; i < n; i++) {
+        var bit = n >> 1;
+        while (j & bit) {
+            j ^= bit;
+            bit >>= 1;
+        }
+        j ^= bit;
+
+        if (i < j) {
+            var tmp = real[i]; real[i] = real[j]; real[j] = tmp;
+            tmp = imag[i]; imag[i] = imag[j]; imag[j] = tmp;
+        }
+    }
+
+    // FFT butterfly
+    for (var size = 2; size <= n; size *= 2) {
+        var halfSize = size / 2;
+        var angle = -2 * Math.PI / size;
+
+        var wReal = Math.cos(angle);
+        var wImag = Math.sin(angle);
+
+        for (var i = 0; i < n; i += size) {
+            var curReal = 1, curImag = 0;
+
+            for (var j = 0; j < halfSize; j++) {
+                var uReal = real[i + j];
+                var uImag = imag[i + j];
+                var vReal = real[i + j + halfSize] * curReal - imag[i + j + halfSize] * curImag;
+                var vImag = real[i + j + halfSize] * curImag + imag[i + j + halfSize] * curReal;
+
+                real[i + j] = uReal + vReal;
+                imag[i + j] = uImag + vImag;
+                real[i + j + halfSize] = uReal - vReal;
+                imag[i + j + halfSize] = uImag - vImag;
+
+                var newCurReal = curReal * wReal - curImag * wImag;
+                curImag = curReal * wImag + curImag * wReal;
+                curReal = newCurReal;
+            }
+        }
+    }
+}
+
+function nextPowerOf2(n) {
+    var p = 1;
+    while (p < n) p *= 2;
+    return p;
+}
+
+function createHannWindow(size) {
+    var window = new Float64Array(size);
+    for (var i = 0; i < size; i++) {
+        window[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (size - 1)));
+    }
+    return window;
+}
+
+function computeSpectralFlatness(magnitudes, startBin, endBin) {
+    var count = endBin - startBin + 1;
+    if (count <= 0) return 1.0;
+
+    var logSum = 0;
+    var sum = 0;
+    var validCount = 0;
+
+    for (var i = startBin; i <= endBin; i++) {
+        if (magnitudes[i] > 1e-10) {
+            logSum += Math.log(magnitudes[i]);
+            sum += magnitudes[i];
+            validCount++;
+        }
+    }
+
+    if (validCount === 0 || sum === 0) return 1.0;
+
+    var geoMean = Math.exp(logSum / validCount);
+    var ariMean = sum / validCount;
+
+    return geoMean / ariMean;
+}
+
+module.exports = {
+    computeSpectralVAD: computeSpectralVAD,
+    refineGateWithSpectral: refineGateWithSpectral,
+    fft: fft
+};
