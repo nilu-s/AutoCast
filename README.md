@@ -1,128 +1,132 @@
 # AutoCast
 
-**Automatic podcast multi-track ducking plugin for Adobe Premiere Pro.**
+**Automatisches Podcast-Mehrspur-Ducking-Plugin für Adobe Premiere Pro.**
 
-AutoCast analyzes your multi-track podcast recordings and automatically ducks inactive speakers, so only the person currently talking is at full volume – with smooth crossfades and room tone preservation.
+AutoCast analysiert deine Mehrspuraufnahmen und senkt automatisch inaktive Sprecher ab (Ducking), sodass immer nur die aktuell sprechende Person voll zu hören ist – mit sanften Crossfades und erhaltenem Raumton.
 
 ## Features
 
-- **Automatic Voice Activity Detection** – Per-track RMS/VAD analysis with adaptive noise floor
-- **Smart Ducking** – Volume-automation keyframes (not destructive cuts)
-- **Bleed Rejection** – Handles same-room recordings with microphone crosstalk
-- **Overlap Handling** – Configurable policy: dominant speaker wins or all stay active
-- **Crossfades** – Smooth ramps (5–200ms) to avoid hard cuts
-- **Room Tone Preservation** – Inactive tracks at -24dB (not muted) for natural sound
-- **Preview Markers** – See detected speaker changes on the timeline before committing
-- **Full Reset** – Remove all AutoCast keyframes with one click
-- **Zero Dependencies** – Single `.zxp` file, nothing to install
+- **Automatische Spracherkennung** – RMS/VAD-Analyse pro Track mit adaptivem Noise Floor
+- **Smartes Ducking** – Volume-Automation-Keyframes (keine destruktiven Schnitte)
+- **Bleed-Unterdrückung** – Funktioniert bei Same-Room-Aufnahmen mit Mikrofon-Übersprechen
+- **Overlap-Handling** – Einstellbar: lautester Sprecher gewinnt oder alle bleiben aktiv
+- **Crossfades** – Weiche Übergänge (5–500 ms) statt harter Cuts
+- **Raumton-Erhaltung** – Inaktive Spuren auf -24 dB (nicht stumm) für natürlichen Sound
+- **Vorschau-Marker** – Sprecherwechsel als farbige Marker auf der Timeline prüfen
+- **Komplett rücksetzbar** – Alle Keyframes per Knopfdruck entfernen
+- **Keine Abhängigkeiten** – Alles in einer Datei, nichts zu installieren
 
-## Requirements
+## Voraussetzungen
 
-- Adobe Premiere Pro CC 2021 or later (v15.0+)
-- Windows 10/11 or macOS 10.14+
+- Adobe Premiere Pro CC 2021 oder neuer (v15.0+)
+- Windows 10/11 oder macOS 10.14+
 
 ## Installation
 
-### Development / Debug Mode
+### Schnellinstallation
 
-1. Enable unsigned extensions (one-time setup):
-   - **Windows:** Open Registry Editor, navigate to `HKEY_CURRENT_USER\SOFTWARE\Adobe\CSXS.11` and set `PlayerDebugMode` to `1`
-   - **macOS:** Run `defaults write com.adobe.CSXS.11 PlayerDebugMode 1`
+**Windows:** `Installieren.bat` doppelklicken  
+**macOS:** `Installieren.command` doppelklicken
 
-2. Symlink or copy the `AutoCast` folder to your extensions directory:
-   - **Windows:** `C:\Users\<user>\AppData\Roaming\Adobe\CEP\extensions\AutoCast`
+Danach: Premiere Pro starten → `Fenster > Erweiterungen > AutoCast`
+
+### Manuelle Installation
+
+1. Debug-Modus aktivieren (einmalig):
+   - **Windows:** Registry öffnen, zu `HKEY_CURRENT_USER\SOFTWARE\Adobe\CSXS.11` navigieren, `PlayerDebugMode` auf `1` setzen
+   - **macOS:** Terminal: `defaults write com.adobe.CSXS.11 PlayerDebugMode 1`
+
+2. Den `AutoCast`-Ordner kopieren nach:
+   - **Windows:** `%APPDATA%\Adobe\CEP\extensions\AutoCast`
    - **macOS:** `~/Library/Application Support/Adobe/CEP/extensions/AutoCast`
 
-3. Restart Premiere Pro
+3. Premiere Pro neustarten
 
-4. Open: `Window > Extensions > AutoCast`
+### Deinstallation
 
-### Production
+**Windows:** `Deinstallieren.bat` doppelklicken  
+**macOS:** `Deinstallieren.command` doppelklicken
 
-Install the `.zxp` file via [ZXP Installer](https://zxpinstaller.com/) or [Anastasiy's Extension Manager](https://install.anastasiy.com/).
+## Benutzung
 
-## Usage
+1. Podcast-Sequenz öffnen (eine Audiospur pro Sprecher)
+2. `Fenster > Erweiterungen > AutoCast` öffnen
+3. **Load Tracks** klicken – lädt die Audio-Tracks aus der Sequenz
+4. Parameter anpassen oder Defaults verwenden
+5. **Analyze** klicken – Sprachaktivität wird erkannt
+6. **Preview Markers** klicken – farbige Marker zur Kontrolle setzen (optional)
+7. **Apply Edits** klicken – Volume-Keyframes werden generiert
+8. Bei Bedarf manuell in Premiere nachbessern
 
-1. Open your podcast sequence with one audio track per speaker
-2. Open `Window > Extensions > AutoCast`
-3. Click **Load Tracks** to read from the active sequence
-4. Adjust parameters or use defaults
-5. Click **Analyze** to detect speaker activity
-6. Click **Preview Markers** to inspect the detected segments (optional)
-7. Click **Apply Edits** to generate volume keyframes
-8. Fine-tune manually as needed
+## Parameter
 
-## Parameters
+| Parameter | Default | Bereich | Beschreibung |
+|-----------|---------|---------|-------------|
+| Sensitivity | 12 dB | 3–30 | Schwellwert über Noise Floor. Höher = weniger empfindlich |
+| Hold Time | 500 ms | 100–2000 | Minimale Gate-Öffnungsdauer (verhindert Pumpen) |
+| Min Segment | 300 ms | 50–2000 | Segmente kürzer als dieser Wert werden ignoriert |
+| Ducking Level | -24 dB | -60 bis -6 | Lautstärke inaktiver Spuren (nicht stumm = Raumton) |
+| Crossfade | 30 ms | 5–500 | Übergangszeit beim Ducking |
+| Overlap Policy | Dominant Wins | – | Was passiert wenn zwei gleichzeitig reden |
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Sensitivity | 12 dB | Threshold above noise floor. Higher = more aggressive gating |
-| Hold Time | 500 ms | Minimum time gate stays open (prevents pumping) |
-| Min Segment | 300 ms | Segments shorter than this are filtered out |
-| Ducking Level | -24 dB | Volume of inactive tracks (not silent = room tone) |
-| Crossfade | 30 ms | Ramp time for ducking transitions |
-| Overlap Policy | Dominant Wins | How to handle two speakers at once |
+Jeder Parameter hat ein **?**-Icon mit Erklärung (deutsch) beim Hovern.
 
-## Development
+## Entwicklung
 
-### Project Structure
+### Projektstruktur
 
 ```
 AutoCast/
-├── CSXS/manifest.xml        # CEP configuration
+├── CSXS/manifest.xml        # CEP-Konfiguration
 ├── index.html                # Panel UI
-├── css/styles.css            # Dark-mode Adobe theme
+├── css/styles.css            # Dark-Mode Adobe-Theme
 ├── js/
-│   ├── main.js               # UI controller
-│   ├── csi_bridge.js         # ExtendScript bridge
-│   └── mock_csi.js           # Browser mock layer
+│   ├── main.js               # UI-Controller
+│   ├── csi_bridge.js         # ExtendScript-Bridge
+│   └── mock_csi.js           # Browser-Mock-Layer
 ├── jsx/
-│   ├── host.jsx              # ExtendScript dispatcher
-│   ├── get_track_info.jsx    # Read sequence info
-│   ├── apply_keyframes.jsx   # Volume automation
-│   └── apply_markers.jsx     # Timeline markers
+│   ├── host.jsx              # ExtendScript-Dispatcher
+│   ├── get_track_info.jsx    # Sequenz-Info lesen
+│   ├── apply_keyframes.jsx   # Volume-Automation
+│   └── apply_markers.jsx     # Timeline-Marker
 ├── node/
-│   ├── analyzer.js           # Analysis pipeline
-│   ├── wav_reader.js         # WAV file parser
-│   ├── rms_calculator.js     # RMS energy
-│   ├── vad_gate.js           # Voice activity detection
-│   ├── segment_builder.js    # Segment builder
-│   └── overlap_resolver.js   # Overlap resolution
-└── test/
-    ├── run_all_tests.js      # Test runner
-    ├── generate_test_wav.js   # Synthetic WAV generator
-    └── test_*.js             # Unit & E2E tests
+│   ├── analyzer.js           # Analyse-Pipeline
+│   ├── wav_reader.js         # WAV-Parser
+│   ├── rms_calculator.js     # RMS-Energie
+│   ├── vad_gate.js           # Sprachaktivitätserkennung
+│   ├── segment_builder.js    # Segment-Builder
+│   └── overlap_resolver.js   # Overlap-Auflösung
+└── test/                     # Unit- & E2E-Tests
 ```
 
-### Testing Without Premiere Pro
+### Testen ohne Premiere Pro
 
-**~80% of the plugin is testable without Premiere:**
+Ca. 80% des Plugins ist ohne Premiere testbar:
 
 ```bash
-# Run all tests (WAV, RMS, VAD, segmentation, overlap, E2E)
+# Alle Tests laufen lassen (31 Tests)
 node test/run_all_tests.js
 
-# Generate test WAV files
+# Test-WAVs generieren
 node test/generate_test_wav.js
 
-# CLI analysis
+# CLI-Analyse
 node node/analyzer.js --tracks test/test_data/track_a_host.wav test/test_data/track_b_guest1.wav --output result.json
 
-# UI in browser: just open index.html in Chrome (mock mode auto-activates)
+# UI im Browser testen → einfach index.html in Chrome öffnen (Mock-Modus aktiviert sich automatisch)
 ```
 
 ### Debugging
 
-- Chrome DevTools: navigate to `localhost:8088` while Premiere is running
-- Console logs from both Node.js and JSX are visible in DevTools
-- Set `PlayerDebugMode` to `1` in registry/defaults (see Installation)
+- Chrome DevTools: `localhost:8088` im Browser öffnen während Premiere läuft
+- `PlayerDebugMode` muss auf `1` gesetzt sein (s. Installation)
 
-## Known Limitations
+## Bekannte Einschränkungen
 
-- Clips should ideally be continuous per track (one clip per speaker per track)
-- Analysis reads the original media files directly (must be WAV format)
-- ExtendScript keyframe application is the performance bottleneck (~30-90s for 60min × 3 tracks)
+- Clips sollten idealerweise durchgehend pro Track sein (ein Clip pro Sprecher)
+- Audio-Quellen müssen im WAV-Format vorliegen
+- ExtendScript-Keyframes setzen ist der Performance-Flaschenhals (~30–90 Sek. für 60 Min × 3 Tracks)
 
-## License
+## Lizenz
 
 MIT
