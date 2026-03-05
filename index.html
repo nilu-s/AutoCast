@@ -99,6 +99,16 @@
                 </select>
             </div>
 
+            <div class="param-group">
+                <label class="param-label">Output Mode <span class="tooltip tooltip-right"
+                        data-tip="Wie die Stille in Premiere Pro verarbeitet wird. 'Volume Ducking' senkt die Lautstärke ab. 'Chop Clips' schneidet stumme Teile komplett weg. 'Mixed' zerschneidet sie und senkt nur die Lautstärke ab.">?</span></label>
+                <select id="paramOutputMode" class="select">
+                    <option value="ducking" selected>Volume Keyframes (Ducking)</option>
+                    <option value="chop">Chop Clips (Cut)</option>
+                    <option value="mixed">Mixed (Cut & Duck)</option>
+                </select>
+            </div>
+
             <!-- v2.0: Feature toggles -->
             <div class="param-group param-toggles">
                 <label class="toggle-label">
@@ -179,6 +189,7 @@
     </div>
 
     <!-- Scripts: order matters -->
+    <script src="js/CSInterface.js"></script>
     <script src="js/mock_csi.js"></script>
     <script src="js/csi_bridge.js"></script>
     <script src="js/main.js"></script>

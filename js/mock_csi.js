@@ -9,8 +9,8 @@
 'use strict';
 
 (function () {
-    // Only activate if real CSInterface is not available (i.e., running in browser)
-    if (typeof CSInterface !== 'undefined') {
+    // Only activate if real CEP environment is not available (i.e., running in browser)
+    if (typeof window.__adobe_cep__ !== 'undefined') {
         console.log('[AutoCast] Running inside CEP – mock disabled.');
         return;
     }
@@ -33,7 +33,7 @@
                         name: 'Host_Recording.wav',
                         startTicks: '0',
                         endTicks: '914457600000000',
-                        mediaPath: '/mock/path/Host_Recording.wav'
+                        mediaPath: 'test/test_data/track_a_host.wav'
                     }
                 ]
             },
@@ -46,7 +46,7 @@
                         name: 'Guest1_Recording.wav',
                         startTicks: '0',
                         endTicks: '914457600000000',
-                        mediaPath: '/mock/path/Guest1_Recording.wav'
+                        mediaPath: 'test/test_data/track_b_guest1.wav'
                     }
                 ]
             },
@@ -59,7 +59,7 @@
                         name: 'Guest2_Recording.wav',
                         startTicks: '0',
                         endTicks: '914457600000000',
-                        mediaPath: '/mock/path/Guest2_Recording.wav'
+                        mediaPath: 'test/test_data/track_c_guest2.wav'
                     }
                 ]
             }

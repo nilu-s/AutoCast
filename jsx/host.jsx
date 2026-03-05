@@ -11,6 +11,7 @@
 //@include "get_track_info.jsx"
 //@include "apply_keyframes.jsx"
 //@include "apply_markers.jsx"
+//@include "apply_cuts.jsx"
 
 /**
  * Heartbeat – verify ExtendScript is running.
@@ -67,6 +68,20 @@ function autocast_addMarkers(markerDataJson) {
     try {
         var data = JSON.parse(markerDataJson);
         var result = addSpeakerMarkers(data);
+        return JSON.stringify(result);
+    } catch (e) {
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+/**
+ * Cut sequence clips according to active segments.
+ * @param {string} segmentDataJson - JSON string
+ */
+function autocast_applyCuts(segmentDataJson) {
+    try {
+        var data = JSON.parse(segmentDataJson);
+        var result = applyCuts(data);
         return JSON.stringify(result);
     } catch (e) {
         return JSON.stringify({ error: e.toString() });

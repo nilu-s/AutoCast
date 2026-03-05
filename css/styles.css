@@ -229,6 +229,36 @@ body {
     padding: 12px 0;
 }
 
+/* --- Playback Button --- */
+.btn-play-track {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    margin-right: 4px;
+    transition: all var(--transition);
+}
+
+.btn-play-track svg {
+    width: 14px;
+    height: 14px;
+}
+
+.btn-play-track:hover {
+    color: var(--accent);
+    background: var(--bg-hover);
+}
+
+.btn-play-track.playing {
+    color: var(--success);
+}
+
 /* --- Parameters --- */
 .param-group {
     margin-bottom: 8px;

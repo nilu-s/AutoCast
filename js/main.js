@@ -31,7 +31,9 @@
         undoStack: [],
         maxUndoLevels: 5,
         perTrackSensitivity: {},
-        mockSamples: null  // Generated once on Load Tracks, reused on Analyze
+        mockSamples: null, // Generated once on Load Tracks, reused on Analyze
+        currentAudio: null, // HTML5 Audio instance for playback
+        currentPlayingTrack: -1 // Index of currently playing track
     };
 
     var TRACK_COLORS = [
@@ -68,6 +70,7 @@
         paramDucking: $('paramDucking'),
         paramCrossfade: $('paramCrossfade'),
         paramOverlap: $('paramOverlap'),
+        paramOutputMode: $('paramOutputMode'),
         valThreshold: $('valThreshold'),
         valHold: $('valHold'),
         valMinSeg: $('valMinSeg'),
@@ -177,6 +180,10 @@
             html += '<input type="checkbox" checked data-track="' + i + '">';
             html += '<span class="track-name" style="color: ' + color + '">' + (track.name || 'Audio ' + (i + 1)) + '</span>';
 
+            // Playback Button
+            var playIcon = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+            html += '<button class="btn-play-track" data-track-play="' + i + '" title="Play/Stop Track">' + playIcon + '</button>';
+
             // v2.0: per-track sensitivity slider
             html += '<div class="track-sensitivity" title="Per-Track Sensitivity">';
             html += '<input type="range" class="slider track-sensitivity-slider" min="3" max="30" value="12" step="1" data-track-sens="' + i + '">';
@@ -199,6 +206,84 @@
                     state.perTrackSensitivity[trackIdx] = val;
                 });
             })(sensSliders[i]);
+        }
+
+        // Bind Play/Pause Buttons
+        var playBtns = document.querySelectorAll('.btn-play-track');
+        for (var i = 0; i < playBtns.length; i++) {
+            playBtns[i].addEventListener('click', function (e) {
+                e.stopPropagation(); // Don't toggle the checkbox
+                var trackIdx = parseInt(this.getAttribute('data-track-play'));
+                toggleAudioPlay(trackIdx, this);
+            });
+        }
+    }
+
+    function toggleAudioPlay(trackIdx, buttonEl) {
+        var track = state.tracks[trackIdx];
+        if (!track || !track.clips || !track.clips[0] || !track.clips[0].mediaPath) {
+            setStatus('error', 'No media file found for this track');
+            return;
+        }
+
+        // If clicking the currently playing track, just stop it
+        if (state.currentPlayingTrack === trackIdx) {
+            stopAudio();
+            return;
+        }
+
+        // Stop any other currently playing track
+        stopAudio();
+
+        var mediaPath = track.clips[0].mediaPath;
+        var fileUrl = mediaPath.replace(/\\/g, '/');
+
+        // In Premiere Pro context, use a file:/// URL for local WAV files.
+        // In browser mock mode via HTTP server, use the relative path.
+        if (!AutoCastBridge.isInMockMode()) {
+            if (!fileUrl.startsWith('file:///')) {
+                fileUrl = 'file:///' + (fileUrl.startsWith('/') ? fileUrl.substring(1) : fileUrl);
+            }
+        }
+
+        try {
+            state.currentAudio = new Audio(fileUrl);
+            state.currentAudio.play();
+            state.currentPlayingTrack = trackIdx;
+
+            // Change icon to Stop
+            buttonEl.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>';
+            buttonEl.classList.add('playing');
+
+            state.currentAudio.onended = function () {
+                stopAudio();
+            };
+            state.currentAudio.onerror = function (e) {
+                console.error("Audio playback error", e);
+                setStatus('error', 'Could not play audio format');
+                stopAudio();
+            };
+        } catch (e) {
+            console.error("Audio playback error", e);
+            setStatus('error', 'Could not play audio');
+        }
+    }
+
+    function stopAudio() {
+        if (state.currentAudio) {
+            state.currentAudio.pause();
+            state.currentAudio.currentTime = 0;
+            state.currentAudio = null;
+        }
+
+        if (state.currentPlayingTrack !== -1) {
+            // Reset the button icon
+            var oldBtn = document.querySelector('.btn-play-track[data-track-play="' + state.currentPlayingTrack + '"]');
+            if (oldBtn) {
+                oldBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+                oldBtn.classList.remove('playing');
+            }
+            state.currentPlayingTrack = -1;
         }
     }
 
@@ -501,17 +586,39 @@
 
     els.btnApply.addEventListener('click', function () {
         if (!state.analysisResult) return;
-        setStatus('analyzing', 'Applying keyframes...');
 
-        AutoCastBridge.applyKeyframes({
-            keyframes: state.analysisResult.keyframes
-        }, function (result) {
-            if (result && result.success) {
-                setStatus('success', 'Keyframes applied (' + (result.totalKeyframesSet || 0) + ' keyframes)');
-            } else {
-                setStatus('error', 'Apply error');
-            }
-        });
+        var mode = els.paramOutputMode ? els.paramOutputMode.value : 'ducking';
+        var tIndices = getSelectedTrackIndices();
+
+        if (mode === 'chop' || mode === 'mixed') {
+            setStatus('analyzing', 'Cutting clips...');
+            AutoCastBridge.applyCuts({
+                segments: state.analysisResult.segments,
+                trackIndices: tIndices,
+                ticksPerSecond: 254016000000,
+                mode: mode,
+                duckingLevelDb: parseInt(els.paramDucking.value)
+            }, function (result) {
+                if (result && result.success) {
+                    setStatus('success', 'Clips cut successfully (' + (result.clipsCreated || 0) + ' clips)');
+                } else {
+                    setStatus('error', 'Cut error');
+                }
+            });
+        } else {
+            setStatus('analyzing', 'Applying keyframes...');
+            AutoCastBridge.applyKeyframes({
+                keyframes: state.analysisResult.keyframes,
+                trackIndices: tIndices,
+                ticksPerSecond: 254016000000
+            }, function (result) {
+                if (result && result.success) {
+                    setStatus('success', 'Keyframes applied (' + (result.totalKeyframesSet || 0) + ' keyframes)');
+                } else {
+                    setStatus('error', 'Apply error');
+                }
+            });
+        }
     });
 
     els.btnReset.addEventListener('click', function () {
