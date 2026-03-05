@@ -127,6 +127,17 @@ function analyze(trackPaths, userParams, progressCallback) {
 
     var totalDurationSec = Infinity;
     for (var i = 0; i < trackInfos.length; i++) {
+        // Update duration with offset if provided
+        var offsetSec = 0;
+        if (params.trackOffsets && params.trackOffsets[i] !== undefined) {
+            offsetSec = parseFloat(params.trackOffsets[i]);
+            if (!isNaN(offsetSec)) {
+                trackInfos[i].durationSec += offsetSec;
+                // Don't let duration drop below 0
+                if (trackInfos[i].durationSec < 0) trackInfos[i].durationSec = 0;
+            }
+        }
+
         if (trackInfos[i].durationSec < totalDurationSec) {
             totalDurationSec = trackInfos[i].durationSec;
         }
@@ -148,8 +159,32 @@ function analyze(trackPaths, userParams, progressCallback) {
             audioData[i].sampleRate,
             params.frameDurationMs
         );
-        rmsProfiles.push(rmsResult.rms);
-        rawRmsProfiles.push(rmsResult.rms); // Keep raw for waveform
+
+        var rmsArr = rmsResult.rms;
+
+        // Apply timeline offset padding
+        if (params.trackOffsets && params.trackOffsets[i] !== undefined) {
+            var offsetSec = parseFloat(params.trackOffsets[i]);
+            if (!isNaN(offsetSec) && offsetSec !== 0) {
+                var padFrames = Math.round(offsetSec / (params.frameDurationMs / 1000));
+
+                if (padFrames > 0) {
+                    var padded = new Float32Array(rmsArr.length + padFrames);
+                    padded.set(rmsArr, padFrames);
+                    rmsArr = padded;
+                } else if (padFrames < 0) {
+                    var trimFrames = Math.abs(padFrames);
+                    if (trimFrames < rmsArr.length) {
+                        rmsArr = rmsArr.slice(trimFrames);
+                    } else {
+                        rmsArr = new Float32Array(0);
+                    }
+                }
+            }
+        }
+
+        rmsProfiles.push(rmsArr);
+        rawRmsProfiles.push(rmsArr); // Keep raw for waveform
     }
 
     // =====================
@@ -179,6 +214,29 @@ function analyze(trackPaths, userParams, progressCallback) {
                 audioData[i].sampleRate,
                 params.frameDurationMs
             );
+
+            // Apply identical timeline offset padding
+            if (params.trackOffsets && params.trackOffsets[i] !== undefined) {
+                var offsetSec = parseFloat(params.trackOffsets[i]);
+                if (!isNaN(offsetSec) && offsetSec !== 0) {
+                    var padFrames = Math.round(offsetSec / (params.frameDurationMs / 1000));
+
+                    if (padFrames > 0) {
+                        var paddedConf = new Float32Array(spectral.confidence.length + padFrames);
+                        // Default confidence in padding is 0
+                        paddedConf.set(spectral.confidence, padFrames);
+                        spectral.confidence = paddedConf;
+                    } else if (padFrames < 0) {
+                        var trimFrames = Math.abs(padFrames);
+                        if (trimFrames < spectral.confidence.length) {
+                            spectral.confidence = spectral.confidence.slice(trimFrames);
+                        } else {
+                            spectral.confidence = new Float32Array(0);
+                        }
+                    }
+                }
+            }
+
             spectralResults.push(spectral);
         }
     }

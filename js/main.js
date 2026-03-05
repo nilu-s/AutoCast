@@ -335,13 +335,21 @@
                 return;
             }
 
-            // Collect selected track media paths
+            // Collect selected track media paths and calculated offsets
             var trackPaths = [];
+            var trackOffsets = [];
+            var ticksPerSecond = 254016000000;
+
             for (var i = 0; i < selectedIndices.length; i++) {
                 var idx = selectedIndices[i];
                 var track = trackData.tracks[idx];
-                if (track && track.clips && track.clips[0] && track.clips[0].mediaPath) {
+                if (track && track.clips && track.clips.length > 0 && track.clips[0].mediaPath) {
                     trackPaths.push(track.clips[0].mediaPath);
+
+                    var startTicks = parseFloat(track.clips[0].startTicks || 0);
+                    var inPointTicks = parseFloat(track.clips[0].inPointTicks || 0);
+                    var offsetSec = (startTicks - inPointTicks) / ticksPerSecond;
+                    trackOffsets.push(offsetSec);
                 }
             }
 
@@ -365,6 +373,8 @@
             setTimeout(function () {
                 try {
                     var analyzer = require(analyzerPath);
+                    // Pass trackOffsets to the analyzer parameters directly
+                    params.trackOffsets = trackOffsets;
                     var result = analyzer.analyze(trackPaths, params, function (pct, msg) {
                         setProgress(pct, msg);
                     });

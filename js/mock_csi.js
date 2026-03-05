@@ -33,6 +33,8 @@
                         name: 'Host_Recording.wav',
                         startTicks: '0',
                         endTicks: '914457600000000',
+                        inPointTicks: '0',
+                        outPointTicks: '914457600000000',
                         mediaPath: 'test/test_data/track_a_host.wav'
                     }
                 ]
@@ -46,6 +48,8 @@
                         name: 'Guest1_Recording.wav',
                         startTicks: '0',
                         endTicks: '914457600000000',
+                        inPointTicks: '0',
+                        outPointTicks: '914457600000000',
                         mediaPath: 'test/test_data/track_b_guest1.wav'
                     }
                 ]
@@ -59,6 +63,8 @@
                         name: 'Guest2_Recording.wav',
                         startTicks: '0',
                         endTicks: '914457600000000',
+                        inPointTicks: '0',
+                        outPointTicks: '914457600000000',
                         mediaPath: 'test/test_data/track_c_guest2.wav'
                     }
                 ]
