@@ -1,178 +1,337 @@
-/**
- * AutoCast – Apply Cuts (ExtendScript)
- * 
- * Replaces volume ducking by physically chopping the audio clips
- * on the timeline, removing silence.
- */
-
-function applyCuts(data) {
+function applyCuts(data, progressCallback) {
     var seq = app.project.activeSequence;
-    if (!seq) return { error: 'No active sequence.' };
+    if (!seq) {
+        return { error: 'No active sequence.' };
+    }
 
-    var segmentsPerTrack = data.segments;
-    var trackIndices = data.trackIndices;
+    var progress = progressCallback || function () { };
+
+    var segmentsPerTrack = data.segments || [];
+    var trackIndices = data.trackIndices || [];
     var ticksPerSecond = data.ticksPerSecond || 254016000000;
-    var mode = data.mode || 'chop'; // 'chop' or 'mixed'
-    var duckingLevelDb = data.duckingLevelDb !== undefined ? data.duckingLevelDb : -24;
+    var mode = data.mode || 'chop';
+    var duckingLevelDb = (data.duckingLevelDb !== undefined) ? data.duckingLevelDb : -24;
 
     var totalClipsCreated = 0;
+    var totalClipsTrimmed = 0;
+    var totalClipsRemoved = 0;
+    var errors = [];
 
-    app.enableQE(); // Enhance performance
+    function ticksToSec(timeObj) {
+        if (!timeObj || timeObj.ticks === undefined || timeObj.ticks === null) {
+            return 0;
+        }
+        return parseFloat(timeObj.ticks) / ticksPerSecond;
+    }
 
-    for (var t = 0; t < trackIndices.length; t++) {
-        var trackIdx = trackIndices[t];
-        var trackSegments = segmentsPerTrack[t];
-        var track = seq.audioTracks[trackIdx];
-        if (!track) continue;
+    function secToTicks(sec) {
+        return Math.round(sec * ticksPerSecond).toString();
+    }
 
-        // 1. Gather original clips data
-        var originalClips = [];
-        for (var c = 0; c < track.clips.numItems; c++) {
-            var clip = track.clips[c];
-            if (clip.projectItem) {
-                originalClips.push({
-                    projectItem: clip.projectItem,
-                    startSec: parseFloat(clip.start.ticks) / ticksPerSecond,
-                    endSec: parseFloat(clip.end.ticks) / ticksPerSecond,
-                    inPointSec: parseFloat(clip.inPoint.ticks) / ticksPerSecond
+    function cloneArrayOfTrackClips(track) {
+        var out = [];
+        for (var i = 0; i < track.clips.numItems; i++) {
+            out.push(track.clips[i]);
+        }
+        return out;
+    }
+
+    function sortByStart(a, b) {
+        return a.start - b.start;
+    }
+
+    function filterWantedSegments(segments, currentMode) {
+        var out = [];
+        for (var i = 0; i < segments.length; i++) {
+            var seg = segments[i];
+            if (!seg) continue;
+
+            if (currentMode === 'chop') {
+                if (seg.state === 'active') {
+                    out.push({
+                        start: seg.start,
+                        end: seg.end,
+                        state: seg.state || 'active'
+                    });
+                }
+            } else {
+                out.push({
+                    start: seg.start,
+                    end: seg.end,
+                    state: seg.state || 'active'
                 });
             }
         }
+        out.sort(sortByStart);
+        return out;
+    }
 
-        // 2. Remove all existing clips from track
-        // Iterating backwards is necessary when removing items
-        for (var c = track.clips.numItems - 1; c >= 0; c--) {
-            try {
-                // remove(0,0) removes the clip leaving a gap (no ripple delete)
-                track.clips[c].remove(0, 0);
-            } catch (e) {
-                // Ignore remove errors
+    function mergeTouchingSegments(segments, epsilonSec) {
+        if (!segments || segments.length === 0) return [];
+
+        var merged = [segments[0]];
+        for (var i = 1; i < segments.length; i++) {
+            var prev = merged[merged.length - 1];
+            var cur = segments[i];
+
+            if (cur.start <= prev.end + epsilonSec && cur.state === prev.state) {
+                if (cur.end > prev.end) {
+                    prev.end = cur.end;
+                }
+            } else {
+                merged.push({
+                    start: cur.start,
+                    end: cur.end,
+                    state: cur.state
+                });
             }
         }
+        return merged;
+    }
 
-        // Cache for Volume effect component indexes
-        var cachedVolumeCompIdx = -1;
-        var cachedLevelPropIdx = -1;
+    function getOverlaps(clipStart, clipEnd, wantedSegments) {
+        var overlaps = [];
+        for (var i = 0; i < wantedSegments.length; i++) {
+            var seg = wantedSegments[i];
+            var start = Math.max(clipStart, seg.start);
+            var end = Math.min(clipEnd, seg.end);
 
-        // 3. Rebuild track using active segments
-        for (var c = 0; c < originalClips.length; c++) {
-            var oClip = originalClips[c];
+            if (start < end) {
+                overlaps.push({
+                    start: start,
+                    end: end,
+                    state: seg.state
+                });
+            }
+        }
+        return overlaps;
+    }
 
-            for (var s = 0; s < trackSegments.length; s++) {
-                var seg = trackSegments[s];
+    function setClipTimes(clip, newTimelineStartSec, newTimelineEndSec, newSourceInSec) {
+        try {
+            clip.inPoint = secToTicks(newSourceInSec);
+            clip.start = secToTicks(newTimelineStartSec);
+            clip.end = secToTicks(newTimelineEndSec);
+            return null;
+        } catch (e) {
+            return 'Failed setting clip times: ' + e;
+        }
+    }
 
-                // For chop mode, we only care about active segments. For mixed, we insert all.
-                if (mode === 'chop' && seg.state !== 'active') continue;
+    function findVolumeComponent(clip) {
+        if (!clip || !clip.components) return null;
 
-                var intersectStart = Math.max(seg.start, oClip.startSec);
-                var intersectEnd = Math.min(seg.end, oClip.endSec);
+        for (var i = 0; i < clip.components.numItems; i++) {
+            var comp = clip.components[i];
+            if (!comp) continue;
 
-                // If the segment overlaps the clip's valid duration
-                if (intersectStart < intersectEnd) {
+            if (comp.matchName === 'ADBE Volume' || comp.displayName === 'Volume') {
+                return comp;
+            }
+        }
+        return null;
+    }
 
-                    var clipInPointSec = oClip.inPointSec + (intersectStart - oClip.startSec);
+    function setClipVolumeDb(clip, levelDb) {
+        var vol = findVolumeComponent(clip);
+        if (!vol || !vol.properties) return false;
 
-                    var newTime;
-                    if (typeof Time !== 'undefined') {
-                        newTime = new Time();
-                        newTime.seconds = intersectStart;
-                    } else {
-                        // Fallback if Time constructor fails
-                        newTime = Math.round(intersectStart * ticksPerSecond).toString();
-                    }
+        for (var i = 0; i < vol.properties.numItems; i++) {
+            var prop = vol.properties[i];
+            if (!prop) continue;
 
+            if (prop.matchName === 'ADBE Volume Level' || prop.displayName === 'Level') {
+                try { prop.setTimeVarying(false); } catch (e1) { }
+                try {
+                    prop.setValue(levelDb, true);
+                    return true;
+                } catch (e2) {
                     try {
-                        // The newly inserted clip gets appended at the end of the `track.clips` collection
-                        var numItemsBefore = track.clips.numItems;
-                        track.overwriteClip(oClip.projectItem, newTime);
-                        var numItemsAfter = track.clips.numItems;
-
-                        // Find the newly inserted clip (approximate start time)
-                        var newClip = null;
-
-                        // Optimized Lookup: O(1) or O(small constant)
-                        // It's highly likely the newly inserted clip is at the very end of the clips array
-                        // However, just to be safe, we check the last few items
-                        var searchStartIdx = Math.max(0, numItemsAfter - 5);
-                        for (var ic = numItemsAfter - 1; ic >= searchStartIdx; ic--) {
-                            var icStart = parseFloat(track.clips[ic].start.ticks) / ticksPerSecond;
-                            if (Math.abs(icStart - intersectStart) < 0.05) {
-                                newClip = track.clips[ic];
-                                break;
-                            }
-                        }
-
-                        if (newClip) {
-                            if (typeof Time !== 'undefined') {
-                                var tIn = new Time();
-                                tIn.seconds = clipInPointSec;
-                                newClip.inPoint = tIn;
-
-                                var tEnd = new Time();
-                                tEnd.seconds = intersectEnd;
-                                newClip.end = tEnd;
-                            } else {
-                                newClip.inPoint = Math.round(clipInPointSec * ticksPerSecond).toString();
-                                newClip.end = Math.round(intersectEnd * ticksPerSecond).toString();
-                            }
-
-                            // If mixed mode and segment is inactive, lower the volume
-                            if (mode === 'mixed' && seg.state !== 'active') {
-                                // Fast path component lookup
-                                var volCompIdxSearch = -1;
-                                var lvlPropIdxSearch = -1;
-
-                                if (cachedVolumeCompIdx !== -1 && newClip.components.numItems > cachedVolumeCompIdx) {
-                                    if (newClip.components[cachedVolumeCompIdx].displayName === 'Volume') {
-                                        volCompIdxSearch = cachedVolumeCompIdx;
-
-                                        if (cachedLevelPropIdx !== -1 && newClip.components[cachedVolumeCompIdx].properties.numItems > cachedLevelPropIdx) {
-                                            if (newClip.components[cachedVolumeCompIdx].properties[cachedLevelPropIdx].displayName === 'Level') {
-                                                lvlPropIdxSearch = cachedLevelPropIdx;
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Slow Path: If cache miss, fully iterate properties
-                                if (volCompIdxSearch === -1) {
-                                    for (var comp = 0; comp < newClip.components.numItems; comp++) {
-                                        if (newClip.components[comp].displayName === 'Volume') {
-                                            volCompIdxSearch = comp;
-                                            cachedVolumeCompIdx = comp; // update cache
-                                            break;
-                                        }
-                                    }
-                                }
-
-                                if (volCompIdxSearch !== -1 && lvlPropIdxSearch === -1) {
-                                    var volumeComponentX = newClip.components[volCompIdxSearch];
-                                    for (var prop = 0; prop < volumeComponentX.properties.numItems; prop++) {
-                                        if (volumeComponentX.properties[prop].displayName === 'Level') {
-                                            lvlPropIdxSearch = prop;
-                                            cachedLevelPropIdx = prop; // update cache
-                                            break;
-                                        }
-                                    }
-                                }
-
-                                if (volCompIdxSearch !== -1 && lvlPropIdxSearch !== -1) {
-                                    var levelProperty = newClip.components[volCompIdxSearch].properties[lvlPropIdxSearch];
-                                    levelProperty.setTimeVarying(false);
-                                    var gainLinear = duckingLevelDb <= -100 ? 0 : Math.pow(10, duckingLevelDb / 20);
-                                    levelProperty.setValue(gainLinear);
-                                }
-                            }
-
-                            totalClipsCreated++;
-                        }
-                    } catch (e) {
-                        // Ignore insertion errors to prevent sequence abort
+                        prop.setValue(levelDb);
+                        return true;
+                    } catch (e3) {
+                        return false;
                     }
                 }
             }
         }
+        return false;
     }
 
-    return { success: true, clipsCreated: totalClipsCreated };
+    function insertAdditionalClip(track, projectItem, timelineStartSec, sourceInSec, timelineEndSec, state) {
+        var beforeNum = track.clips.numItems;
+        var insertAtTicks = secToTicks(timelineStartSec);
+
+        try {
+            track.overwriteClip(projectItem, insertAtTicks);
+        } catch (e) {
+            return { error: 'overwriteClip failed: ' + e };
+        }
+
+        var afterNum = track.clips.numItems;
+        if (afterNum <= beforeNum) {
+            return { error: 'overwriteClip inserted no visible clip.' };
+        }
+
+        var newClip = track.clips[afterNum - 1];
+        if (!newClip) {
+            return { error: 'Inserted clip not accessible.' };
+        }
+
+        var setErr = setClipTimes(newClip, timelineStartSec, timelineEndSec, sourceInSec);
+        if (setErr) {
+            return { error: setErr };
+        }
+
+        if (mode === 'mixed' && state !== 'active') {
+            if (!setClipVolumeDb(newClip, duckingLevelDb)) {
+                return { error: 'Clip inserted, but volume could not be set.' };
+            }
+        }
+
+        return { clip: newClip };
+    }
+
+    // Gesamtzahl der zu bearbeitenden Originalclips zählen
+    var totalOriginalClips = 0;
+    for (var tt = 0; tt < trackIndices.length; tt++) {
+        var countTrack = seq.audioTracks[trackIndices[tt]];
+        if (countTrack) {
+            totalOriginalClips += countTrack.clips.numItems;
+        }
+    }
+
+    var doneOriginalClips = 0;
+    progress(0, 'Preparing cuts...');
+
+    for (var t = 0; t < trackIndices.length; t++) {
+        var trackIdx = trackIndices[t];
+        var track = seq.audioTracks[trackIdx];
+        var rawSegments = segmentsPerTrack[t] || [];
+
+        if (!track) {
+            errors.push('Audio track not found: ' + trackIdx);
+            continue;
+        }
+
+        progress(
+            totalOriginalClips > 0 ? Math.round((doneOriginalClips / totalOriginalClips) * 100) : 0,
+            'Processing track ' + (t + 1) + '/' + trackIndices.length + '...'
+        );
+
+        var wantedSegments = filterWantedSegments(rawSegments, mode);
+        wantedSegments = mergeTouchingSegments(wantedSegments, 0.0005);
+
+        var originalClips = cloneArrayOfTrackClips(track);
+
+        for (var c = originalClips.length - 1; c >= 0; c--) {
+            var clip = originalClips[c];
+
+            if (!clip || !clip.projectItem) {
+                doneOriginalClips++;
+                continue;
+            }
+
+            var clipStartSec = ticksToSec(clip.start);
+            var clipEndSec = ticksToSec(clip.end);
+            var clipInPointSec = ticksToSec(clip.inPoint);
+
+            var overlaps = getOverlaps(clipStartSec, clipEndSec, wantedSegments);
+
+            if (overlaps.length === 0) {
+                if (mode === 'chop') {
+                    try {
+                        clip.remove(0, 0);
+                        totalClipsRemoved++;
+                    } catch (eRemove) {
+                        errors.push(
+                            'Remove failed on track ' + trackIdx +
+                            ' at ' + clipStartSec.toFixed(3) + 's: ' + eRemove
+                        );
+                    }
+                } else {
+                    if (!setClipVolumeDb(clip, duckingLevelDb)) {
+                        errors.push(
+                            'Could not set whole-clip volume on track ' + trackIdx +
+                            ' at ' + clipStartSec.toFixed(3) + 's'
+                        );
+                    }
+                }
+
+                doneOriginalClips++;
+                progress(
+                    totalOriginalClips > 0 ? Math.round((doneOriginalClips / totalOriginalClips) * 100) : 100,
+                    'Cutting clip ' + doneOriginalClips + '/' + totalOriginalClips
+                );
+                continue;
+            }
+
+            var first = overlaps[0];
+            var firstSourceInSec = clipInPointSec + (first.start - clipStartSec);
+
+            var trimErr = setClipTimes(clip, first.start, first.end, firstSourceInSec);
+            if (trimErr) {
+                errors.push(
+                    'Trim failed on track ' + trackIdx +
+                    ' at ' + clipStartSec.toFixed(3) + 's: ' + trimErr
+                );
+                doneOriginalClips++;
+                progress(
+                    totalOriginalClips > 0 ? Math.round((doneOriginalClips / totalOriginalClips) * 100) : 100,
+                    'Cutting clip ' + doneOriginalClips + '/' + totalOriginalClips
+                );
+                continue;
+            }
+
+            if (mode === 'mixed' && first.state !== 'active') {
+                if (!setClipVolumeDb(clip, duckingLevelDb)) {
+                    errors.push(
+                        'Could not set volume on trimmed clip on track ' + trackIdx +
+                        ' at ' + first.start.toFixed(3) + 's'
+                    );
+                }
+            }
+
+            totalClipsTrimmed++;
+
+            for (var o = 1; o < overlaps.length; o++) {
+                var ov = overlaps[o];
+                var ovSourceInSec = clipInPointSec + (ov.start - clipStartSec);
+
+                var insertResult = insertAdditionalClip(
+                    track,
+                    clip.projectItem,
+                    ov.start,
+                    ovSourceInSec,
+                    ov.end,
+                    ov.state
+                );
+
+                if (insertResult.error) {
+                    errors.push(
+                        'Insert failed on track ' + trackIdx +
+                        ' at ' + ov.start.toFixed(3) + 's: ' + insertResult.error
+                    );
+                } else {
+                    totalClipsCreated++;
+                }
+            }
+
+            doneOriginalClips++;
+            progress(
+                totalOriginalClips > 0 ? Math.round((doneOriginalClips / totalOriginalClips) * 100) : 100,
+                'Cutting clip ' + doneOriginalClips + '/' + totalOriginalClips
+            );
+        }
+    }
+
+    progress(100, 'Cutting complete.');
+
+    return {
+        success: errors.length === 0,
+        clipsCreated: totalClipsCreated,
+        clipsTrimmed: totalClipsTrimmed,
+        clipsRemoved: totalClipsRemoved,
+        errors: errors
+    };
 }

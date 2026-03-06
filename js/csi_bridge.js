@@ -1,9 +1,5 @@
 /**
  * AutoCast – CSInterface Bridge
- * 
- * Wrapper around Adobe's CSInterface for communication between
- * the Panel (HTML/JS) and ExtendScript (JSX).
- * Falls back to mock if CSInterface is not available.
  */
 
 'use strict';
@@ -11,11 +7,8 @@
 var AutoCastBridge = (function () {
     var csInterface = null;
     var isMockMode = false;
+    var CUT_PROGRESS_EVENT = 'com.autocast.cutProgress';
 
-    /**
-     * Initialize the bridge.
-     * @returns {boolean} true if connected to Premiere, false if mock mode
-     */
     function init() {
         try {
             csInterface = new CSInterface();
@@ -34,16 +27,13 @@ var AutoCastBridge = (function () {
         return !isMockMode;
     }
 
-    /**
-     * Call an ExtendScript function.
-     * @param {string} fnName - Function name in host.jsx
-     * @param {*} [arg] - Argument (will be JSON.stringify'd)
-     * @param {function} callback - function(result) 
-     */
     function callExtendScript(fnName, arg, callback) {
         var script;
+
         if (arg !== undefined && arg !== null) {
-            var jsonArg = JSON.stringify(arg).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            var jsonArg = JSON.stringify(arg)
+                .replace(/\\/g, '\\\\')
+                .replace(/'/g, "\\'");
             script = fnName + "('" + jsonArg + "')";
         } else {
             script = fnName + '()';
@@ -60,55 +50,49 @@ var AutoCastBridge = (function () {
         });
     }
 
-    /**
-     * Ping ExtendScript to verify connection.
-     */
     function ping(callback) {
         callExtendScript('autocast_ping', null, callback);
     }
 
-    /**
-     * Get track info from active sequence.
-     */
     function getTrackInfo(callback) {
         callExtendScript('autocast_getTrackInfo', null, callback);
     }
 
-    /**
-     * Apply volume keyframes.
-     * @param {object} keyframeData - { keyframes, trackIndices, ticksPerSecond }
-     */
     function applyKeyframes(keyframeData, callback) {
         callExtendScript('autocast_applyKeyframes', keyframeData, callback);
     }
 
-    /**
-     * Remove keyframes (reset).
-     * @param {Array<number>} trackIndices
-     */
+    function applyCuts(cutData, callback) {
+        callExtendScript('autocast_applyCuts', cutData, callback);
+    }
+
     function removeKeyframes(trackIndices, callback) {
         callExtendScript('autocast_removeKeyframes', trackIndices, callback);
     }
 
-    /**
-     * Add speaker markers.
-     * @param {object} markerData - { segments, trackNames, ticksPerSecond }
-     */
     function addMarkers(markerData, callback) {
         callExtendScript('autocast_addMarkers', markerData, callback);
     }
 
-    /**
-     * Get extension folder path (for locating Node.js modules).
-     */
+    function addCutProgressListener(handler) {
+        if (!csInterface || isMockMode) return;
+        csInterface.addEventListener(CUT_PROGRESS_EVENT, handler);
+    }
+
+    function removeCutProgressListener(handler) {
+        if (!csInterface || isMockMode) return;
+        csInterface.removeEventListener(CUT_PROGRESS_EVENT, handler);
+    }
+
+    function getCutProgressEventName() {
+        return CUT_PROGRESS_EVENT;
+    }
+
     function getExtensionPath() {
         if (!csInterface) return '.';
         return csInterface.getSystemPath(SystemPath.EXTENSION);
     }
 
-    /**
-     * Check if running in mock/browser mode.
-     */
     function isInMockMode() {
         return isMockMode;
     }
@@ -118,8 +102,12 @@ var AutoCastBridge = (function () {
         ping: ping,
         getTrackInfo: getTrackInfo,
         applyKeyframes: applyKeyframes,
+        applyCuts: applyCuts,
         removeKeyframes: removeKeyframes,
         addMarkers: addMarkers,
+        addCutProgressListener: addCutProgressListener,
+        removeCutProgressListener: removeCutProgressListener,
+        getCutProgressEventName: getCutProgressEventName,
         getExtensionPath: getExtensionPath,
         isInMockMode: isInMockMode
     };

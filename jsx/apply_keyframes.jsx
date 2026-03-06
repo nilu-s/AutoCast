@@ -1,191 +1,302 @@
 /**
- * AutoCast – Apply Volume Keyframes (ExtendScript)
- * 
- * Generates volume automation keyframes on audio clips in Premiere Pro.
- * This creates the ducking effect: active speaker at 0dB, others at -XdB.
+ * AutoCast – Apply Cuts (ExtendScript)
+ *
+ * Rebuilds audio tracks from active/inactive segments.
+ * In "chop" mode, only active segments are kept.
+ * In "mixed" mode, inactive segments are also inserted and attenuated.
  */
 
-/**
- * Apply volume keyframes to audio tracks.
- * 
- * @param {object} data - Keyframe data from analyzer
- * @param {Array<Array<{time: number, gainDb: number}>>} data.keyframes - Per-track keyframe arrays
- * @param {Array<number>} data.trackIndices - Which Premiere tracks to apply to
- * @param {number} data.ticksPerSecond - Premiere ticks per second (254016000000)
- * @returns {object} Result with counts
- */
-function applyVolumeKeyframes(data) {
+function applyCuts(data) {
     var seq = app.project.activeSequence;
     if (!seq) {
         return { error: 'No active sequence.' };
     }
 
-    var keyframesPerTrack = data.keyframes;
-    var trackIndices = data.trackIndices;
+    var segmentsPerTrack = data.segments || [];
+    var trackIndices = data.trackIndices || [];
     var ticksPerSecond = data.ticksPerSecond || 254016000000;
+    var mode = data.mode || 'chop'; // 'chop' or 'mixed'
+    var duckingLevelDb = (data.duckingLevelDb !== undefined) ? data.duckingLevelDb : -24;
 
-    var totalKeyframesSet = 0;
-    var trackResults = [];
+    var totalClipsCreated = 0;
+    var errors = [];
 
-    // Disable UI updates for performance
     app.enableQE();
 
-    for (var t = 0; t < trackIndices.length; t++) {
-        var trackIdx = trackIndices[t];
-        var trackKeyframes = keyframesPerTrack[t];
-        var track = seq.audioTracks[trackIdx];
-
-        if (!track) {
-            trackResults.push({ trackIndex: trackIdx, error: 'Track not found', keyframesSet: 0 });
-            continue;
+    function ticksToSec(timeObj) {
+        if (!timeObj || timeObj.ticks === undefined || timeObj.ticks === null) {
+            return 0;
         }
+        return parseFloat(timeObj.ticks) / ticksPerSecond;
+    }
 
-        var keyframesSet = 0;
+    function makeTimeFromSeconds(sec) {
+        if (typeof Time !== 'undefined') {
+            var t = new Time();
+            t.seconds = sec;
+            return t;
+        }
+        return Math.round(sec * ticksPerSecond).toString();
+    }
 
-        // Apply keyframes to each clip on this track
-        for (var c = 0; c < track.clips.numItems; c++) {
-            var clip = track.clips[c];
-            var clipStartSec = ticksToSeconds(clip.start.ticks, ticksPerSecond);
-            var clipEndSec = ticksToSeconds(clip.end.ticks, ticksPerSecond);
+    function nearlyEqual(a, b, eps) {
+        return Math.abs(a - b) <= eps;
+    }
 
-            // Find the Volume component
-            var volumeComponent = null;
-            for (var comp = 0; comp < clip.components.numItems; comp++) {
-                if (clip.components[comp].displayName === 'Volume') {
-                    volumeComponent = clip.components[comp];
-                    break;
-                }
+    function collectClipRefs(track) {
+        var refs = [];
+        for (var i = 0; i < track.clips.numItems; i++) {
+            refs.push(track.clips[i]);
+        }
+        return refs;
+    }
+
+    function isKnownClip(candidate, knownRefs) {
+        for (var i = 0; i < knownRefs.length; i++) {
+            if (candidate === knownRefs[i]) {
+                return true;
             }
+        }
+        return false;
+    }
 
-            if (!volumeComponent) {
-                continue; // Skip if no Volume component found
-            }
+    function findInsertedClip(track, knownRefs, projectItem, expectedStartSec) {
+        var best = null;
+        var bestDelta = 999999;
 
-            // Find the Level property
-            var levelProperty = null;
-            for (var prop = 0; prop < volumeComponent.properties.numItems; prop++) {
-                if (volumeComponent.properties[prop].displayName === 'Level') {
-                    levelProperty = volumeComponent.properties[prop];
-                    break;
-                }
-            }
-
-            if (!levelProperty) {
+        for (var i = 0; i < track.clips.numItems; i++) {
+            var clip = track.clips[i];
+            if (isKnownClip(clip, knownRefs)) {
                 continue;
             }
 
-            // Enable keyframing
-            levelProperty.setTimeVarying(true);
+            if (clip.projectItem !== projectItem) {
+                continue;
+            }
 
-            // Apply keyframes that fall within this clip's time range
-            for (var k = 0; k < trackKeyframes.length; k++) {
-                var kf = trackKeyframes[k];
-                var kfTimeSec = kf.time;
+            var startSec = ticksToSec(clip.start);
+            var delta = Math.abs(startSec - expectedStartSec);
 
-                // Only apply keyframes within clip boundaries
-                if (kfTimeSec >= clipStartSec && kfTimeSec <= clipEndSec) {
-                    // Convert to clip-relative time in ticks
-                    var clipRelativeTimeTicks = secondsToTicks(kfTimeSec - clipStartSec, ticksPerSecond);
-
-                    // Add clip in-point offset
-                    var absoluteTimeTicks = clip.inPoint.ticks + clipRelativeTimeTicks;
-
-                    // Convert dB to Premiere's internal gain value
-                    // Premiere uses a linear scale where 1.0 = 0dB
-                    var gainLinear = dbToGain(kf.gainDb);
-
-                    try {
-                        levelProperty.addKey(absoluteTimeTicks);
-                        levelProperty.setValueAtKey(absoluteTimeTicks, gainLinear);
-                        keyframesSet++;
-                    } catch (e) {
-                        // Silently skip failed keyframes
-                    }
-                }
+            if (delta < bestDelta) {
+                best = clip;
+                bestDelta = delta;
             }
         }
 
-        totalKeyframesSet += keyframesSet;
-        trackResults.push({
-            trackIndex: trackIdx,
-            trackName: track.name,
-            keyframesSet: keyframesSet
-        });
+        if (best && bestDelta < 0.02) {
+            return best;
+        }
+
+        // Fallback: full scan by project item + nearest start
+        best = null;
+        bestDelta = 999999;
+
+        for (var j = 0; j < track.clips.numItems; j++) {
+            var clip2 = track.clips[j];
+            if (clip2.projectItem !== projectItem) {
+                continue;
+            }
+
+            var startSec2 = ticksToSec(clip2.start);
+            var delta2 = Math.abs(startSec2 - expectedStartSec);
+
+            if (delta2 < bestDelta) {
+                best = clip2;
+                bestDelta = delta2;
+            }
+        }
+
+        if (best && bestDelta < 0.02) {
+            return best;
+        }
+
+        return null;
     }
 
-    return {
-        success: true,
-        totalKeyframesSet: totalKeyframesSet,
-        tracks: trackResults
-    };
-}
+    function setClipVolumeDb(clip, levelDb) {
+        if (!clip || !clip.components) {
+            return false;
+        }
 
-/**
- * Remove all keyframes from Volume property on specified tracks (reset).
- * @param {Array<number>} trackIndices 
- * @returns {object} Result
- */
-function removeVolumeKeyframes(trackIndices) {
-    var seq = app.project.activeSequence;
-    if (!seq) {
-        return { error: 'No active sequence.' };
+        var volumeComponent = null;
+        var levelProperty = null;
+
+        for (var c = 0; c < clip.components.numItems; c++) {
+            var comp = clip.components[c];
+            if (comp && comp.displayName === 'Volume') {
+                volumeComponent = comp;
+                break;
+            }
+        }
+
+        if (!volumeComponent || !volumeComponent.properties) {
+            return false;
+        }
+
+        for (var p = 0; p < volumeComponent.properties.numItems; p++) {
+            var prop = volumeComponent.properties[p];
+            if (prop && prop.displayName === 'Level') {
+                levelProperty = prop;
+                break;
+            }
+        }
+
+        if (!levelProperty) {
+            return false;
+        }
+
+        try {
+            levelProperty.setTimeVarying(false);
+        } catch (e1) { }
+
+        try {
+            // Premiere expects dB here, not linear gain.
+            levelProperty.setValue(levelDb, true);
+            return true;
+        } catch (e2) {
+            try {
+                levelProperty.setValue(levelDb);
+                return true;
+            } catch (e3) {
+                return false;
+            }
+        }
     }
-
-    var totalRemoved = 0;
 
     for (var t = 0; t < trackIndices.length; t++) {
         var trackIdx = trackIndices[t];
+        var trackSegments = segmentsPerTrack[t] || [];
         var track = seq.audioTracks[trackIdx];
-        if (!track) continue;
 
+        if (!track) {
+            errors.push('Audio track not found: ' + trackIdx);
+            continue;
+        }
+
+        // Original clips snapshot
+        var originalClips = [];
         for (var c = 0; c < track.clips.numItems; c++) {
             var clip = track.clips[c];
 
-            // Find Volume > Level
-            var volumeComponent = null;
-            for (var comp = 0; comp < clip.components.numItems; comp++) {
-                if (clip.components[comp].displayName === 'Volume') {
-                    volumeComponent = clip.components[comp];
-                    break;
+            if (!clip || !clip.projectItem) {
+                continue;
+            }
+
+            originalClips.push({
+                projectItem: clip.projectItem,
+                startSec: ticksToSec(clip.start),
+                endSec: ticksToSec(clip.end),
+                inPointSec: ticksToSec(clip.inPoint),
+                outPointSec: ticksToSec(clip.outPoint)
+            });
+        }
+
+        // Remove old clips from the track
+        for (var r = track.clips.numItems - 1; r >= 0; r--) {
+            try {
+                track.clips[r].remove(0, 0);
+            } catch (removeErr) {
+                errors.push('Remove failed on track ' + trackIdx + ', clip ' + r + ': ' + removeErr);
+            }
+        }
+
+        // Rebuild from segments
+        for (var oc = 0; oc < originalClips.length; oc++) {
+            var oClip = originalClips[oc];
+
+            for (var s = 0; s < trackSegments.length; s++) {
+                var seg = trackSegments[s];
+                if (!seg) {
+                    continue;
+                }
+
+                if (mode === 'chop' && seg.state !== 'active') {
+                    continue;
+                }
+
+                var intersectStart = Math.max(seg.start, oClip.startSec);
+                var intersectEnd = Math.min(seg.end, oClip.endSec);
+
+                if (!(intersectStart < intersectEnd)) {
+                    continue;
+                }
+
+                var newClipInPointSec = oClip.inPointSec + (intersectStart - oClip.startSec);
+                var newClipDurationSec = intersectEnd - intersectStart;
+                var newClipOutPointSec = newClipInPointSec + newClipDurationSec;
+
+                // Safety clamp to original source range if available
+                if (oClip.outPointSec > oClip.inPointSec && newClipOutPointSec > oClip.outPointSec) {
+                    newClipOutPointSec = oClip.outPointSec;
+                    newClipDurationSec = newClipOutPointSec - newClipInPointSec;
+                    intersectEnd = intersectStart + newClipDurationSec;
+                }
+
+                if (!(newClipInPointSec < newClipOutPointSec)) {
+                    continue;
+                }
+
+                try {
+                    var beforeRefs = collectClipRefs(track);
+
+                    // Insert at timeline position
+                    track.overwriteClip(oClip.projectItem, makeTimeFromSeconds(intersectStart));
+
+                    var newClip = findInsertedClip(track, beforeRefs, oClip.projectItem, intersectStart);
+                    if (!newClip) {
+                        errors.push(
+                            'Inserted clip not found on track ' + trackIdx +
+                            ' at ' + intersectStart.toFixed(3) + 's'
+                        );
+                        continue;
+                    }
+
+                    // Trim source in
+                    try {
+                        newClip.inPoint = makeTimeFromSeconds(newClipInPointSec);
+                    } catch (eIn) {
+                        errors.push(
+                            'Setting inPoint failed on track ' + trackIdx +
+                            ' at ' + intersectStart.toFixed(3) + 's: ' + eIn
+                        );
+                    }
+
+                    // Set timeline end
+                    try {
+                        newClip.end = makeTimeFromSeconds(intersectEnd);
+                    } catch (eEnd) {
+                        errors.push(
+                            'Setting end failed on track ' + trackIdx +
+                            ' at ' + intersectStart.toFixed(3) + 's: ' + eEnd
+                        );
+                    }
+
+                    // In mixed mode, attenuate inactive segments
+                    if (mode === 'mixed' && seg.state !== 'active') {
+                        var volumeOk = setClipVolumeDb(newClip, duckingLevelDb);
+                        if (!volumeOk) {
+                            errors.push(
+                                'Could not set clip volume on track ' + trackIdx +
+                                ' at ' + intersectStart.toFixed(3) + 's'
+                            );
+                        }
+                    }
+
+                    totalClipsCreated++;
+                } catch (insertErr) {
+                    errors.push(
+                        'Insert failed on track ' + trackIdx +
+                        ', original clip ' + oc +
+                        ', segment ' + s + ': ' + insertErr
+                    );
                 }
             }
-            if (!volumeComponent) continue;
-
-            var levelProperty = null;
-            for (var prop = 0; prop < volumeComponent.properties.numItems; prop++) {
-                if (volumeComponent.properties[prop].displayName === 'Level') {
-                    levelProperty = volumeComponent.properties[prop];
-                    break;
-                }
-            }
-            if (!levelProperty) continue;
-
-            // Disable keyframing (removes all keyframes, resets to static value)
-            levelProperty.setTimeVarying(false);
-            // Set back to 0 dB (gain = 1.0)
-            levelProperty.setValue(1.0);
-            totalRemoved++;
         }
     }
 
-    return { success: true, clipsReset: totalRemoved };
-}
-
-// --- Utility functions ---
-
-function ticksToSeconds(ticks, ticksPerSecond) {
-    return parseFloat(ticks) / ticksPerSecond;
-}
-
-function secondsToTicks(seconds, ticksPerSecond) {
-    return Math.round(seconds * ticksPerSecond).toString();
-}
-
-/**
- * Convert dB to linear gain factor.
- * Premiere Pro uses linear gain where 1.0 = 0dB.
- */
-function dbToGain(db) {
-    if (db <= -100) return 0;
-    return Math.pow(10, db / 20);
+    return {
+        success: errors.length === 0,
+        clipsCreated: totalClipsCreated,
+        errors: errors
+    };
 }

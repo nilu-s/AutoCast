@@ -1,20 +1,13 @@
 /**
- * AutoCast – Main Analyzer v2.0
- * 
+ * AutoCast – Main Analyzer v2.1
+ *
  * Orchestrates the full analysis pipeline:
  *   WAV → RMS → Auto-Gain → VAD (RMS + Spectral) → Segments → Overlap → Adaptive Crossfades → Ducking Map
- * 
- * v2.0 additions:
- *   - Auto-gain matching across tracks
- *   - Per-track sensitivity override
- *   - FFT-based spectral VAD refinement
- *   - Adaptive crossfade lengths
- *   - Waveform preview data export
- *   - Save/load analysis results
- * 
- * Can be used:
- *   - As a module: require('./analyzer').analyze(tracks, params)
- *   - As CLI: node analyzer.js --tracks a.wav b.wav --output segments.json
+ *
+ * v2.1 changes:
+ *   - Bleed-safe overlap resolution as default
+ *   - Adaptive keyframes now use resolved segments directly
+ *   - Shared overlap logic for keyframes and cutting
  */
 
 'use strict';
@@ -52,21 +45,22 @@ var ANALYSIS_DEFAULTS = {
     minGapMs: 250,
 
     // Overlap
-    overlapPolicy: 'all_active',  // v2.0: changed default to 'all_active'
+    overlapPolicy: 'bleed_safe',
     overlapMarginDb: 6,
+    bleedMarginDb: 8,
 
     // Ducking output
     duckingLevelDb: -24,
     rampMs: 30,
 
-    // v2.0: Auto-gain matching
+    // Auto-gain matching
     autoGain: true,
 
-    // v2.0: Spectral VAD refinement
+    // Spectral VAD refinement
     useSpectralVAD: true,
     spectralMinConfidence: 0.3,
 
-    // v2.0: Adaptive crossfades
+    // Adaptive crossfades
     adaptiveCrossfade: true,
     crossfadeMinMs: 15,
     crossfadeMaxMs: 150,
@@ -74,17 +68,17 @@ var ANALYSIS_DEFAULTS = {
     // Alignment check
     alignmentToleranceSec: 0.5,
 
-    // v2.0: Waveform preview (downsample RMS for visual display)
-    waveformResolution: 500 // Max points per track for waveform display
+    // Waveform preview
+    waveformResolution: 500
 };
 
 /**
  * Run the full analysis pipeline.
- * 
+ *
  * @param {Array<string>} trackPaths - Absolute paths to WAV files (one per speaker)
- * @param {object} [userParams] - Override any defaults (see ANALYSIS_DEFAULTS)
- * @param {function} [progressCallback] - function(percent, message) called during processing
- * @returns {object} Analysis result with tracks, segments, keyframes, waveform, etc.
+ * @param {object} [userParams] - Override any defaults
+ * @param {function} [progressCallback] - function(percent, message)
+ * @returns {object}
  */
 function analyze(trackPaths, userParams, progressCallback) {
     var params = mergeDefaults(userParams, ANALYSIS_DEFAULTS);
@@ -95,9 +89,6 @@ function analyze(trackPaths, userParams, progressCallback) {
         throw new Error('No tracks provided for analysis.');
     }
 
-    // =====================
-    // Phase 1: Read WAV files
-    // =====================
     progress(5, 'Reading audio files...');
 
     var trackInfos = [];
@@ -119,21 +110,16 @@ function analyze(trackPaths, userParams, progressCallback) {
         audioData.push(wav);
     }
 
-    // =====================
-    // Phase 2: Alignment check
-    // =====================
     progress(15, 'Checking track alignment...');
     var alignment = wavReader.checkAlignment(trackInfos, params.alignmentToleranceSec);
 
     var totalDurationSec = Infinity;
-    for (var i = 0; i < trackInfos.length; i++) {
-        // Update duration with offset if provided
+    for (i = 0; i < trackInfos.length; i++) {
         var offsetSec = 0;
         if (params.trackOffsets && params.trackOffsets[i] !== undefined) {
             offsetSec = parseFloat(params.trackOffsets[i]);
             if (!isNaN(offsetSec)) {
                 trackInfos[i].durationSec += offsetSec;
-                // Don't let duration drop below 0
                 if (trackInfos[i].durationSec < 0) trackInfos[i].durationSec = 0;
             }
         }
@@ -143,15 +129,12 @@ function analyze(trackPaths, userParams, progressCallback) {
         }
     }
 
-    // =====================
-    // Phase 3: RMS calculation per track
-    // =====================
     progress(20, 'Calculating audio energy...');
 
     var rmsProfiles = [];
     var rawRmsProfiles = [];
 
-    for (var i = 0; i < trackCount; i++) {
+    for (i = 0; i < trackCount; i++) {
         progress(20 + Math.round((i / trackCount) * 10), 'RMS for track ' + (i + 1) + '/' + trackCount);
 
         var rmsResult = rmsCalc.calculateRMS(
@@ -162,9 +145,8 @@ function analyze(trackPaths, userParams, progressCallback) {
 
         var rmsArr = rmsResult.rms;
 
-        // Apply timeline offset padding
         if (params.trackOffsets && params.trackOffsets[i] !== undefined) {
-            var offsetSec = parseFloat(params.trackOffsets[i]);
+            offsetSec = parseFloat(params.trackOffsets[i]);
             if (!isNaN(offsetSec) && offsetSec !== 0) {
                 var padFrames = Math.round(offsetSec / (params.frameDurationMs / 1000));
 
@@ -184,30 +166,24 @@ function analyze(trackPaths, userParams, progressCallback) {
         }
 
         rmsProfiles.push(rmsArr);
-        rawRmsProfiles.push(rmsArr); // Keep raw for waveform
+        rawRmsProfiles.push(rmsArr);
     }
 
-    // =====================
-    // Phase 3b: Auto-Gain Matching (v2.0)
-    // =====================
     var gainInfo = null;
     if (params.autoGain) {
         progress(32, 'Matching track volumes...');
         gainInfo = gainNormalizer.computeGainMatching(rmsProfiles);
         rmsProfiles = gainNormalizer.applyGainToRMS(rmsProfiles, gainInfo.gains);
 
-        for (var i = 0; i < trackCount; i++) {
+        for (i = 0; i < trackCount; i++) {
             trackInfos[i].gainAdjustDb = gainInfo.gainsDb[i];
         }
     }
 
-    // =====================
-    // Phase 4: Spectral VAD (v2.0)
-    // =====================
     var spectralResults = [];
     if (params.useSpectralVAD) {
         progress(35, 'Running spectral analysis...');
-        for (var i = 0; i < trackCount; i++) {
+        for (i = 0; i < trackCount; i++) {
             progress(35 + Math.round((i / trackCount) * 10), 'FFT for track ' + (i + 1) + '/' + trackCount);
             var spectral = spectralVad.computeSpectralVAD(
                 audioData[i].samples,
@@ -215,19 +191,17 @@ function analyze(trackPaths, userParams, progressCallback) {
                 params.frameDurationMs
             );
 
-            // Apply identical timeline offset padding
             if (params.trackOffsets && params.trackOffsets[i] !== undefined) {
-                var offsetSec = parseFloat(params.trackOffsets[i]);
+                offsetSec = parseFloat(params.trackOffsets[i]);
                 if (!isNaN(offsetSec) && offsetSec !== 0) {
-                    var padFrames = Math.round(offsetSec / (params.frameDurationMs / 1000));
+                    padFrames = Math.round(offsetSec / (params.frameDurationMs / 1000));
 
                     if (padFrames > 0) {
                         var paddedConf = new Float32Array(spectral.confidence.length + padFrames);
-                        // Default confidence in padding is 0
                         paddedConf.set(spectral.confidence, padFrames);
                         spectral.confidence = paddedConf;
                     } else if (padFrames < 0) {
-                        var trimFrames = Math.abs(padFrames);
+                        trimFrames = Math.abs(padFrames);
                         if (trimFrames < spectral.confidence.length) {
                             spectral.confidence = spectral.confidence.slice(trimFrames);
                         } else {
@@ -241,21 +215,16 @@ function analyze(trackPaths, userParams, progressCallback) {
         }
     }
 
-    // Release audio data (free memory)
     audioData = null;
 
-    // =====================
-    // Phase 5: VAD per track (with per-track sensitivity)
-    // =====================
     progress(50, 'Detecting voice activity...');
 
     var vadResults = [];
     var allSegments = [];
 
-    for (var i = 0; i < trackCount; i++) {
+    for (i = 0; i < trackCount; i++) {
         progress(50 + Math.round((i / trackCount) * 15), 'VAD for track ' + (i + 1) + '/' + trackCount);
 
-        // Per-track sensitivity override (v2.0)
         var trackThreshold = params.thresholdAboveFloorDb;
         if (params.perTrackThresholdDb && params.perTrackThresholdDb[i] !== undefined) {
             trackThreshold = params.perTrackThresholdDb[i];
@@ -270,7 +239,6 @@ function analyze(trackPaths, userParams, progressCallback) {
             smoothingWindow: params.rmsSmoothing
         });
 
-        // Refine with spectral data (v2.0)
         if (params.useSpectralVAD && spectralResults[i]) {
             vadResult.gateOpen = spectralVad.refineGateWithSpectral(
                 vadResult.gateOpen,
@@ -281,7 +249,6 @@ function analyze(trackPaths, userParams, progressCallback) {
 
         vadResults.push(vadResult);
 
-        // Build segments from gate
         var segments = segmentBuilder.buildSegments(vadResult.gateOpen, i, {
             minSegmentMs: params.minSegmentMs,
             minGapMs: params.minGapMs,
@@ -289,7 +256,6 @@ function analyze(trackPaths, userParams, progressCallback) {
         });
         allSegments.push(segments);
 
-        // Store stats
         var stats = segmentBuilder.computeStats(segments, totalDurationSec);
         trackInfos[i].noiseFloorDb = Math.round(vadResult.noiseFloorDb * 10) / 10;
         trackInfos[i].thresholdDb = Math.round(vadResult.thresholdDb * 10) / 10;
@@ -298,56 +264,44 @@ function analyze(trackPaths, userParams, progressCallback) {
         trackInfos[i].totalActiveSec = stats.totalActiveSec;
     }
 
-    // =====================
-    // Phase 6: Overlap resolution
-    // =====================
     progress(70, 'Resolving overlaps...');
 
     var resolvedSegments = overlapResolver.resolveOverlaps(allSegments, rmsProfiles, {
         policy: params.overlapPolicy,
         frameDurationMs: params.frameDurationMs,
-        overlapMarginDb: params.overlapMarginDb
+        overlapMarginDb: params.overlapMarginDb,
+        bleedMarginDb: params.bleedMarginDb
     });
 
-    // =====================
-    // Phase 7: Generate ducking keyframe map (with adaptive crossfades)
-    // =====================
     progress(80, 'Generating ducking map...');
-
-    var segmentStates = [];
-    for (var t = 0; t < trackCount; t++) {
-        var states = [];
-        for (var s = 0; s < resolvedSegments[t].length; s++) {
-            states.push(resolvedSegments[t][s].state || 'active');
-        }
-        segmentStates.push(states);
-    }
 
     var keyframes;
     if (params.adaptiveCrossfade) {
         keyframes = generateAdaptiveKeyframes(
-            allSegments, totalDurationSec, segmentStates, rmsProfiles, params
+            resolvedSegments,
+            totalDurationSec,
+            rmsProfiles,
+            params
         );
     } else {
         keyframes = overlapResolver.generateDuckingMap(
-            allSegments, totalDurationSec, segmentStates,
-            { duckingLevelDb: params.duckingLevelDb, rampMs: params.rampMs }
+            resolvedSegments,
+            totalDurationSec,
+            null,
+            {
+                duckingLevelDb: params.duckingLevelDb,
+                rampMs: params.rampMs
+            }
         );
     }
 
-    // =====================
-    // Phase 8: Generate waveform preview data (v2.0)
-    // =====================
     progress(90, 'Building waveform preview...');
     var waveform = generateWaveformPreview(rawRmsProfiles, totalDurationSec, params);
 
     progress(95, 'Finalizing...');
 
-    // =====================
-    // Build output
-    // =====================
     var result = {
-        version: '2.0.0',
+        version: '2.1.0',
         timestamp: new Date().toISOString(),
         totalDurationSec: Math.round(totalDurationSec * 100) / 100,
         tracks: trackInfos,
@@ -366,23 +320,20 @@ function analyze(trackPaths, userParams, progressCallback) {
 
 /**
  * Generate adaptive crossfade keyframes.
- * Uses RMS context around transitions to choose ramp length:
- *   - Natural pauses (low RMS on both sides): longer, smoother crossfade
- *   - Interruptions (high RMS collision): shorter, faster crossfade
+ * Uses resolved segments directly, reading seg.state.
  */
-function generateAdaptiveKeyframes(allSegments, totalDurationSec, segmentStates, rmsProfiles, params) {
+function generateAdaptiveKeyframes(resolvedSegments, totalDurationSec, rmsProfiles, params) {
     var duckingLevelDb = params.duckingLevelDb || -24;
     var minRamp = (params.crossfadeMinMs || 15) / 1000;
     var maxRamp = (params.crossfadeMaxMs || 150) / 1000;
     var frameDurSec = (params.frameDurationMs || 10) / 1000;
-    var trackCount = allSegments.length;
+    var trackCount = resolvedSegments.length;
 
     var keyframesPerTrack = [];
 
     for (var t = 0; t < trackCount; t++) {
         var keyframes = [];
-        var segments = allSegments[t];
-        var states = segmentStates ? segmentStates[t] : null;
+        var segments = resolvedSegments[t];
 
         if (segments.length === 0) {
             keyframes.push({ time: 0, gainDb: duckingLevelDb });
@@ -391,17 +342,14 @@ function generateAdaptiveKeyframes(allSegments, totalDurationSec, segmentStates,
             continue;
         }
 
-        // Start ducked
         if (segments[0].start > minRamp) {
             keyframes.push({ time: 0, gainDb: duckingLevelDb });
         }
 
         for (var s = 0; s < segments.length; s++) {
             var seg = segments[s];
-            var isActive = !states || states[s] === 'active';
-            var targetDb = isActive ? 0 : duckingLevelDb;
+            var isActive = seg.state === 'active';
 
-            // Compute adaptive ramp based on surrounding RMS context
             var rampIn = computeAdaptiveRamp(rmsProfiles[t], seg.start, frameDurSec, minRamp, maxRamp, 'in');
             var rampOut = computeAdaptiveRamp(rmsProfiles[t], seg.end, frameDurSec, minRamp, maxRamp, 'out');
 
@@ -433,36 +381,34 @@ function generateAdaptiveKeyframes(allSegments, totalDurationSec, segmentStates,
 
 /**
  * Compute adaptive ramp duration based on surrounding RMS.
- * Low RMS around transition = natural pause → longer ramp
- * High RMS around transition = interruption → shorter ramp
  */
 function computeAdaptiveRamp(rmsProfile, timeSec, frameDurSec, minRamp, maxRamp, direction) {
     var frameIdx = Math.round(timeSec / frameDurSec);
-    var lookAhead = 10; // Look at 10 frames (~100ms) around transition
+    var lookAhead = 10;
 
     var sum = 0;
     var count = 0;
 
     if (direction === 'in') {
-        // Look backwards (before segment starts)
         for (var i = Math.max(0, frameIdx - lookAhead); i < frameIdx; i++) {
-            if (i < rmsProfile.length) { sum += rmsProfile[i]; count++; }
+            if (i < rmsProfile.length) {
+                sum += rmsProfile[i];
+                count++;
+            }
         }
     } else {
-        // Look forwards (after segment ends)
-        for (var i = frameIdx; i < Math.min(rmsProfile.length, frameIdx + lookAhead); i++) {
-            sum += rmsProfile[i]; count++;
+        for (i = frameIdx; i < Math.min(rmsProfile.length, frameIdx + lookAhead); i++) {
+            sum += rmsProfile[i];
+            count++;
         }
     }
 
     if (count === 0) return minRamp;
 
     var avgRms = sum / count;
-    var rmsCalcMod = require('./rms_calculator');
-    var rmsDb = rmsCalcMod.linearToDb(avgRms);
+    var rmsDb = rmsCalc.linearToDb(avgRms);
 
-    // Map: quiet (-60dB) → maxRamp, loud (-10dB) → minRamp
-    var t = Math.max(0, Math.min(1, (rmsDb + 60) / 50)); // 0=quiet, 1=loud
+    var t = Math.max(0, Math.min(1, (rmsDb + 60) / 50));
     return maxRamp - t * (maxRamp - minRamp);
 }
 
@@ -481,7 +427,6 @@ function generateWaveformPreview(rmsProfiles, totalDurationSec, params) {
         var points = [];
 
         for (var i = 0; i < frameCount; i += step) {
-            // Take max RMS in this window
             var maxRms = 0;
             for (var j = i; j < Math.min(i + step, frameCount); j++) {
                 if (rms[j] > maxRms) maxRms = rms[j];
@@ -544,7 +489,7 @@ if (require.main === module) {
     var args = process.argv.slice(2);
 
     if (args.length === 0 || args.indexOf('--help') !== -1) {
-        console.log('AutoCast Analyzer v2.0 CLI');
+        console.log('AutoCast Analyzer v2.1 CLI');
         console.log('Usage: node analyzer.js --tracks file1.wav file2.wav [--output result.json] [--params params.json]');
         console.log('');
         console.log('Options:');
@@ -601,12 +546,12 @@ if (require.main === module) {
             process.exit(1);
         }
     }
-    // Apply CLI overrides
+
     for (var key in cliOverrides) {
         cliParams[key] = cliOverrides[key];
     }
 
-    console.error('AutoCast Analyzer v2.0 – analyzing ' + tracks.length + ' track(s)...');
+    console.error('AutoCast Analyzer v2.1 – analyzing ' + tracks.length + ' track(s)...');
 
     try {
         var result = analyze(tracks, cliParams, function (pct, msg) {
@@ -624,15 +569,16 @@ if (require.main === module) {
             console.log(jsonOutput);
         }
 
-        // Print summary
         console.error('\n=== Summary ===');
         for (var t = 0; t < result.tracks.length; t++) {
             var ti = result.tracks[t];
             var gainStr = ti.gainAdjustDb ? ' (gain: ' + (ti.gainAdjustDb > 0 ? '+' : '') + ti.gainAdjustDb + 'dB)' : '';
-            console.error('Track ' + (t + 1) + ' (' + ti.name + '): ' +
+            console.error(
+                'Track ' + (t + 1) + ' (' + ti.name + '): ' +
                 ti.segmentCount + ' segments, ' +
                 ti.activePercent + '% active, ' +
-                'floor: ' + ti.noiseFloorDb + ' dBFS' + gainStr);
+                'floor: ' + ti.noiseFloorDb + ' dBFS' + gainStr
+            );
         }
         if (result.alignment.warning) {
             console.error('Warning: ' + result.alignment.warning);

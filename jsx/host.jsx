@@ -1,29 +1,19 @@
 /**
  * AutoCast – ExtendScript Host
- * 
+ *
  * Main entry point for all ExtendScript calls from the CEP Panel.
  * Premiere Pro runs this in its internal ExtendScript engine.
- * 
- * Functions are called via CSInterface.evalScript('functionName(args)')
  */
 
-// Include sub-modules
 //@include "get_track_info.jsx"
 //@include "apply_keyframes.jsx"
 //@include "apply_markers.jsx"
 //@include "apply_cuts.jsx"
 
-/**
- * Heartbeat – verify ExtendScript is running.
- */
 function autocast_ping() {
-    return JSON.stringify({ status: 'ok', version: '2.0.0', host: 'Premiere Pro' });
+    return JSON.stringify({ status: 'ok', version: '2.1.0', host: 'Premiere Pro' });
 }
 
-/**
- * Get info about the active sequence and its audio tracks.
- * Called before analysis to determine which WAV files to process.
- */
 function autocast_getTrackInfo() {
     try {
         return JSON.stringify(getTrackInfo());
@@ -32,10 +22,6 @@ function autocast_getTrackInfo() {
     }
 }
 
-/**
- * Apply volume ducking keyframes to tracks.
- * @param {string} keyframeDataJson - JSON string of keyframe data from analyzer
- */
 function autocast_applyKeyframes(keyframeDataJson) {
     try {
         var data = JSON.parse(keyframeDataJson);
@@ -46,10 +32,6 @@ function autocast_applyKeyframes(keyframeDataJson) {
     }
 }
 
-/**
- * Remove all AutoCast-generated keyframes (reset).
- * @param {string} trackIndicesJson - JSON array of track indices to reset
- */
 function autocast_removeKeyframes(trackIndicesJson) {
     try {
         var indices = JSON.parse(trackIndicesJson);
@@ -60,10 +42,6 @@ function autocast_removeKeyframes(trackIndicesJson) {
     }
 }
 
-/**
- * Add sequence markers at speaker change points.
- * @param {string} markerDataJson - JSON string of marker data
- */
 function autocast_addMarkers(markerDataJson) {
     try {
         var data = JSON.parse(markerDataJson);
@@ -74,14 +52,31 @@ function autocast_addMarkers(markerDataJson) {
     }
 }
 
-/**
- * Cut sequence clips according to active segments.
- * @param {string} segmentDataJson - JSON string
- */
+function autocast_dispatchCutProgress(percent, message) {
+    try {
+        if (typeof ExternalObject !== 'undefined') {
+            try {
+                new ExternalObject('lib:PlugPlugExternalObject');
+            } catch (loadErr) { }
+        }
+
+        if (typeof CSEvent !== 'undefined') {
+            var eventObj = new CSEvent('com.autocast.cutProgress', 'APPLICATION');
+            eventObj.data = JSON.stringify({
+                percent: percent,
+                message: message || ''
+            });
+            eventObj.dispatch();
+        }
+    } catch (e) { }
+}
+
 function autocast_applyCuts(segmentDataJson) {
     try {
         var data = JSON.parse(segmentDataJson);
-        var result = applyCuts(data);
+        var result = applyCuts(data, function (percent, message) {
+            autocast_dispatchCutProgress(percent, message);
+        });
         return JSON.stringify(result);
     } catch (e) {
         return JSON.stringify({ error: e.toString() });
