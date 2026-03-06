@@ -103,7 +103,7 @@ var AutoCastBridge = (function () {
      */
     function getExtensionPath() {
         if (!csInterface) return '.';
-        return csInterface.getSystemPath(0); // SystemPath.EXTENSION
+        return csInterface.getSystemPath(SystemPath.EXTENSION);
     }
 
     /**
