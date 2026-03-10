@@ -16,9 +16,11 @@ function autocast_ping() {
 
 function autocast_getTrackInfo() {
     try {
-        return JSON.stringify(getTrackInfo());
+        var str = JSON.stringify(getTrackInfo());
+        return str.replace(/\\/g, '\\\\');
     } catch (e) {
-        return JSON.stringify({ error: e.toString() });
+        var errStr = JSON.stringify({ error: e.toString() });
+        return errStr.replace(/\\/g, '\\\\');
     }
 }
 
@@ -26,9 +28,11 @@ function autocast_applyKeyframes(keyframeDataJson) {
     try {
         var data = JSON.parse(keyframeDataJson);
         var result = applyVolumeKeyframes(data);
-        return JSON.stringify(result);
+        var str = JSON.stringify(result);
+        return str.replace(/\\/g, '\\\\');
     } catch (e) {
-        return JSON.stringify({ error: e.toString() });
+        var errStr = JSON.stringify({ error: e.toString() });
+        return errStr.replace(/\\/g, '\\\\');
     }
 }
 
@@ -36,9 +40,11 @@ function autocast_removeKeyframes(trackIndicesJson) {
     try {
         var indices = JSON.parse(trackIndicesJson);
         var result = removeVolumeKeyframes(indices);
-        return JSON.stringify(result);
+        var str = JSON.stringify(result);
+        return str.replace(/\\/g, '\\\\');
     } catch (e) {
-        return JSON.stringify({ error: e.toString() });
+        var errStr = JSON.stringify({ error: e.toString() });
+        return errStr.replace(/\\/g, '\\\\');
     }
 }
 
@@ -46,9 +52,11 @@ function autocast_addMarkers(markerDataJson) {
     try {
         var data = JSON.parse(markerDataJson);
         var result = addSpeakerMarkers(data);
-        return JSON.stringify(result);
+        var str = JSON.stringify(result);
+        return str.replace(/\\/g, '\\\\');
     } catch (e) {
-        return JSON.stringify({ error: e.toString() });
+        var errStr = JSON.stringify({ error: e.toString() });
+        return errStr.replace(/\\/g, '\\\\');
     }
 }
 
@@ -60,8 +68,9 @@ function autocast_dispatchCutProgress(percent, message) {
             } catch (loadErr) { }
         }
 
-        if (typeof CSEvent !== 'undefined') {
-            var eventObj = new CSEvent('com.autocast.cutProgress', 'APPLICATION');
+        if (typeof CSXSEvent !== 'undefined') {
+            var eventObj = new CSXSEvent();
+            eventObj.type = 'com.autocast.cutProgress';
             eventObj.data = JSON.stringify({
                 percent: percent,
                 message: message || ''
@@ -77,8 +86,10 @@ function autocast_applyCuts(segmentDataJson) {
         var result = applyCuts(data, function (percent, message) {
             autocast_dispatchCutProgress(percent, message);
         });
-        return JSON.stringify(result);
+        var str = JSON.stringify(result);
+        return str.replace(/\\/g, '\\\\');
     } catch (e) {
-        return JSON.stringify({ error: e.toString() });
+        var errStr = JSON.stringify({ error: e.toString() });
+        return errStr.replace(/\\/g, '\\\\');
     }
 }

@@ -1,0 +1,54 @@
+╔════════════════════════════════════╗
+║   AutoCast Test Suite              ║
+╚════════════════════════════════════╝
+
+━━━ WAV Reader ━━━
+  ✓ should parse a valid 16-bit mono WAV
+  ✓ should handle silence (all zeros)
+  ✓ should throw on invalid file
+  ✓ should check track alignment
+  ✓ should warn on misaligned tracks
+
+━━━ RMS Calculator ━━━
+  ✓ should compute correct RMS for a sine wave
+  ✓ should return ~0 RMS for silence
+  ✓ should produce correct frame count
+  ✓ should convert linear to dB correctly
+  ✓ should convert dB to linear correctly
+  ✓ should smooth RMS values
+  ✓ should estimate noise floor correctly
+
+━━━ VAD Gate ━━━
+  ✓ should detect activity in loud frames
+  ✓ should suppress very short bursts with attack
+
+━━━ Segment Builder ━━━
+  ✓ should build segments from gate array
+  ✓ should merge close segments (debounce)
+  ✓ should filter out short segments
+  ✓ should handle all-silent track
+  ✓ should handle all-active track
+  ✓ should compute stats correctly
+
+━━━ Overlap Resolver ━━━
+  ✓ should let dominant track win in overlapping segments
+  ✗ should keep both active when within margin
+    Error: Track 1 should also be active (within margin)
+  ✓ should keep all active in all_active policy
+  ✓ should handle non-overlapping segments
+
+━━━ Ducking Map Generator ━━━
+  ✓ should generate keyframes with ramps
+  ✓ should duck entirely silent track
+
+━━━ End-to-End Analysis ━━━
+  ✗ should analyze 3 tracks without errors
+    Error: Should have version
+  ✓ should detect Track A (Host) as most active
+  ✓ should detect Track B (Guest 1) with correct timing
+  ✓ should generate valid keyframe data
+  ✓ should check alignment and pass
+
+╔════════════════════════════════════╗
+║   Results: 29/31 passed, 2 FAILED              ║
+╚════════════════════════════════════╝

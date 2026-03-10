@@ -15,7 +15,8 @@ var rmsCalc = require('./rms_calculator');
 var OVERLAP_POLICIES = {
     DOMINANT_WINS: 'dominant_wins',
     ALL_ACTIVE: 'all_active',
-    BLEED_SAFE: 'bleed_safe'
+    BLEED_SAFE: 'bleed_safe',
+    ALWAYS_ACTIVE_WITH_GAPS: 'always_active_with_gaps'
 };
 
 /**
@@ -61,8 +62,12 @@ function resolveOverlaps(allSegments, rmsProfiles, params) {
         return a.type === 'start' ? -1 : 1;
     });
 
-    if (policy === OVERLAP_POLICIES.ALL_ACTIVE) {
-        return formatOutput(allSegments, segmentStates);
+    if (policy === OVERLAP_POLICIES.ALL_ACTIVE || policy === OVERLAP_POLICIES.ALWAYS_ACTIVE_WITH_GAPS) {
+        var formatted = formatOutput(allSegments, segmentStates);
+        if (policy === OVERLAP_POLICIES.ALWAYS_ACTIVE_WITH_GAPS) {
+            return fillGaps(formatted, trackCount);
+        }
+        return formatted;
     }
 
     var activeSet = {};
@@ -276,6 +281,80 @@ function deduplicateKeyframes(keyframes) {
         } else {
             result.push(keyframes[i]);
         }
+    }
+    return result;
+}
+
+/**
+ * Fill gaps where no track is active by assigning the gap to the last active track.
+ */
+function fillGaps(formattedSegments, trackCount) {
+    var activeEvents = [];
+    for (var t = 0; t < trackCount; t++) {
+        for (var s = 0; s < formattedSegments[t].length; s++) {
+            var seg = formattedSegments[t][s];
+            if (seg.state === 'active') {
+                activeEvents.push({ time: seg.start, type: 'start', trackIndex: t });
+                activeEvents.push({ time: seg.end, type: 'end', trackIndex: t });
+            }
+        }
+    }
+
+    activeEvents.sort(function (a, b) {
+        if (Math.abs(a.time - b.time) > 0.0000001) return a.time - b.time;
+        return a.type === 'start' ? -1 : 1;
+    });
+
+    var activeCount = 0;
+    var lastActiveTrack = 0;
+    var gapStart = 0;
+    var additionalSegments = [];
+    for (var i = 0; i < trackCount; i++) additionalSegments[i] = [];
+
+    for (var e = 0; e < activeEvents.length; e++) {
+        var evt = activeEvents[e];
+
+        if (activeCount === 0 && evt.time > gapStart + 0.001) {
+            additionalSegments[lastActiveTrack].push({
+                start: gapStart,
+                end: evt.time,
+                trackIndex: lastActiveTrack,
+                state: 'active'
+            });
+        }
+
+        if (evt.type === 'start') {
+            activeCount++;
+            lastActiveTrack = evt.trackIndex;
+        } else {
+            activeCount--;
+            if (activeCount === 0) {
+                gapStart = evt.time;
+                lastActiveTrack = evt.trackIndex;
+            }
+        }
+    }
+
+    var result = [];
+    for (var tr = 0; tr < trackCount; tr++) {
+        var merged = formattedSegments[tr].concat(additionalSegments[tr]);
+        merged.sort(function (a, b) { return a.start - b.start; });
+
+        var cleanTrack = [];
+        if (merged.length > 0) {
+            var curr = merged[0];
+            for (var m = 1; m < merged.length; m++) {
+                var next = merged[m];
+                if (next.state === curr.state && Math.abs(curr.end - next.start) < 0.001) {
+                    curr.end = next.end;
+                } else {
+                    cleanTrack.push(curr);
+                    curr = next;
+                }
+            }
+            cleanTrack.push(curr);
+        }
+        result.push(cleanTrack);
     }
     return result;
 }

@@ -39,7 +39,7 @@ describe('End-to-End Analysis', function () {
         });
 
         // Basic structure checks
-        assert(result.version === '2.0.0', 'Should have version');
+        assert(result.version === '2.1.0', 'Should have version');
         assert(result.tracks.length === 3, 'Should have 3 tracks');
         assert(result.segments.length === 3, 'Should have segments for 3 tracks');
         assert(result.keyframes.length === 3, 'Should have keyframes for 3 tracks');

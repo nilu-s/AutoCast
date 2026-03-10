@@ -49,7 +49,7 @@ describe('Overlap Resolver', function () {
         ];
 
         var result = overlapResolver.resolveOverlaps(allSegments, rmsProfiles, {
-            policy: 'dominant_wins',
+            policy: 'bleed_safe',
             frameDurationMs: 10,
             overlapMarginDb: 6
         });

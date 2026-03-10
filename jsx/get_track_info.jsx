@@ -49,7 +49,9 @@ function getTrackInfo() {
             // Get media file path
             try {
                 if (clip.projectItem && clip.projectItem.getMediaPath) {
-                    clipInfo.mediaPath = clip.projectItem.getMediaPath();
+                    clipInfo.mediaPath = clip.projectItem.getMediaPath() || '';
+                } else {
+                    clipInfo.mediaPathError = 'Clip misses projectItem (nested/generator?)';
                 }
             } catch (e) {
                 clipInfo.mediaPath = '';

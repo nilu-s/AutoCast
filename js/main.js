@@ -1,29 +1,94 @@
 /**
- * AutoCast – Panel UI Controller v2.0
- * 
- * Manages the full user workflow:
- *   Load Tracks → Configure → Analyze → Preview → Apply → Undo
- * 
- * v2.0 features:
- *   - Waveform preview (canvas rendering)
- *   - Per-track sensitivity sliders
- *   - Keyboard shortcuts (Ctrl+Enter, Ctrl+Shift+Enter)
- *   - Save/Load analysis results
- *   - Undo history (stores previous keyframe states)
- *   - Feature toggles (auto-gain, spectral VAD, adaptive crossfade)
+ * AutoCast – Panel UI Controller v2.1
+ *
+ * Notes:
+ * - This keeps the existing UI structure.
+ * - Added live progress support for clip cutting.
+ * - Analyzer params now include bleedMarginDb support if the UI exposes it.
  */
 
 'use strict';
 
 (function () {
-    // =====================
-    // Initialize Bridge
-    // =====================
     AutoCastBridge.init();
 
-    // =====================
-    // State
-    // =====================
+    // Initialize Analyzer via Node.js worker_threads if running in Premiere
+    if (typeof require !== 'undefined') {
+        try {
+            var path = require('path');
+            var childProcess = require('child_process');
+
+            window.AutoCastAnalyzer = {
+                analyze: function (trackPaths, params, progressCallback) {
+                    return new Promise(function (resolve, reject) {
+                        var extensionPath = AutoCastBridge.getExtensionPath();
+                        if (!extensionPath || extensionPath === '.') {
+                            var pathname = window.location.pathname;
+                            if (window.navigator.platform.indexOf('Win') > -1 && pathname.charAt(0) === '/') {
+                                pathname = pathname.substring(1);
+                            }
+                            extensionPath = path.dirname(pathname).replace(/%20/g, ' ');
+                        }
+
+                        var workerPath = path.join(extensionPath, 'node', 'analyzer_worker_stdio.js');
+
+                        var proc = childProcess.spawn('node', [workerPath], {
+                            cwd: extensionPath
+                        });
+
+                        var stdoutData = '';
+                        var stderrData = '';
+
+                        proc.stdout.on('data', function (data) {
+                            var str = data.toString();
+                            stdoutData += str;
+
+                            // Try to parse line by line
+                            var lines = stdoutData.split('\n');
+                            stdoutData = lines.pop(); // Keep incomplete line
+
+                            for (var i = 0; i < lines.length; i++) {
+                                var line = lines[i].trim();
+                                if (!line) continue;
+                                try {
+                                    var msg = JSON.parse(line);
+                                    if (msg.type === 'progress') {
+                                        if (progressCallback) progressCallback(msg.percent, msg.message);
+                                    } else if (msg.type === 'done') {
+                                        resolve(msg.result);
+                                    } else if (msg.type === 'error') {
+                                        reject(new Error(msg.error));
+                                    }
+                                } catch (e) { }
+                            }
+                        });
+
+                        proc.stderr.on('data', function (data) {
+                            stderrData += data.toString();
+                        });
+
+                        proc.on('error', function (err) {
+                            reject(err);
+                        });
+
+                        proc.on('close', function (code) {
+                            if (code !== 0 && code !== null) {
+                                reject(new Error('Process exited (' + code + '): ' + stderrData.substring(0, 100)));
+                            }
+                        });
+
+                        // Send data
+                        proc.stdin.write(JSON.stringify({ trackPaths: trackPaths, params: params }) + '\n');
+                        proc.stdin.end();
+                    });
+                }
+            };
+        } catch (e) {
+            window.NODE_INIT_ERROR = e.toString();
+            console.error('[AutoCast] Failed to initialize worker_threads analyzer:', e);
+        }
+    }
+
     var state = {
         tracks: [],
         analysisResult: null,
@@ -31,9 +96,9 @@
         undoStack: [],
         maxUndoLevels: 5,
         perTrackSensitivity: {},
-        mockSamples: null, // Generated once on Load Tracks, reused on Analyze
-        currentAudio: null, // HTML5 Audio instance for playback
-        currentPlayingTrack: -1 // Index of currently playing track
+        mockSamples: null,
+        currentAudio: null,
+        currentPlayingTrack: -1
     };
 
     var TRACK_COLORS = [
@@ -41,10 +106,9 @@
         '#9c27b0', '#00bcd4', '#ffeb3b', '#795548'
     ];
 
-    // =====================
-    // DOM Elements
-    // =====================
-    function $(id) { return document.getElementById(id); }
+    function $(id) {
+        return document.getElementById(id);
+    }
 
     var els = {
         statusBar: $('statusBar'),
@@ -63,28 +127,13 @@
         btnPreviewMarkers: $('btnPreviewMarkers'),
         btnApply: $('btnApply'),
         btnReset: $('btnReset'),
-
         paramThreshold: $('paramThreshold'),
-        paramHold: $('paramHold'),
-        paramMinSeg: $('paramMinSeg'),
         paramDucking: $('paramDucking'),
-        paramCrossfade: $('paramCrossfade'),
-        paramOverlap: $('paramOverlap'),
-        paramOutputMode: $('paramOutputMode'),
         valThreshold: $('valThreshold'),
-        valHold: $('valHold'),
-        valMinSeg: $('valMinSeg'),
         valDucking: $('valDucking'),
-        valCrossfade: $('valCrossfade'),
-        toggleAutoGain: $('toggleAutoGain'),
-        toggleSpectralVAD: $('toggleSpectralVAD'),
-        toggleAdaptiveCrossfade: $('toggleAdaptiveCrossfade'),
         modeIndicator: $('modeIndicator')
     };
 
-    // =====================
-    // Parameter Binding
-    // =====================
     function bindSlider(slider, display, suffix) {
         if (!slider || !display) return;
         slider.addEventListener('input', function () {
@@ -93,741 +142,479 @@
     }
 
     bindSlider(els.paramThreshold, els.valThreshold, 'dB');
-    bindSlider(els.paramHold, els.valHold, 'ms');
-    bindSlider(els.paramMinSeg, els.valMinSeg, 'ms');
     bindSlider(els.paramDucking, els.valDucking, 'dB');
-    bindSlider(els.paramCrossfade, els.valCrossfade, 'ms');
 
     function getParams() {
         return {
-            thresholdAboveFloorDb: parseInt(els.paramThreshold.value),
-            holdFrames: Math.round(parseInt(els.paramHold.value) / 10),
-            minSegmentMs: parseInt(els.paramMinSeg.value),
-            duckingLevelDb: parseInt(els.paramDucking.value),
-            rampMs: parseInt(els.paramCrossfade.value),
-            overlapPolicy: els.paramOverlap.value,
-            autoGain: els.toggleAutoGain ? els.toggleAutoGain.checked : true,
-            useSpectralVAD: els.toggleSpectralVAD ? els.toggleSpectralVAD.checked : true,
-            adaptiveCrossfade: els.toggleAdaptiveCrossfade ? els.toggleAdaptiveCrossfade.checked : true,
+            thresholdAboveFloorDb: parseInt(els.paramThreshold.value, 10),
+            holdFrames: 50,
+            minSegmentMs: 300,
+            duckingLevelDb: els.paramDucking ? parseInt(els.paramDucking.value, 10) : -24,
+            rampMs: 30,
+            overlapPolicy: 'always_active_with_gaps',
+            bleedMarginDb: 8,
+            autoGain: true,
+            useSpectralVAD: true,
+            adaptiveCrossfade: true,
             perTrackThresholdDb: getPerTrackSensitivity()
         };
     }
 
     function getPerTrackSensitivity() {
         var hasPerTrack = false;
-        for (var key in state.perTrackSensitivity) { hasPerTrack = true; break; }
+        for (var key in state.perTrackSensitivity) {
+            if (state.perTrackSensitivity.hasOwnProperty(key)) {
+                hasPerTrack = true;
+                break;
+            }
+        }
+
         if (!hasPerTrack) return null;
 
         var arr = [];
-        var globalThreshold = parseInt(els.paramThreshold.value);
+        var globalThreshold = parseInt(els.paramThreshold.value, 10);
         for (var i = 0; i < state.tracks.length; i++) {
-            arr.push(state.perTrackSensitivity[i] !== undefined ? state.perTrackSensitivity[i] : globalThreshold);
+            arr.push(
+                state.perTrackSensitivity[i] !== undefined
+                    ? state.perTrackSensitivity[i]
+                    : globalThreshold
+            );
         }
         return arr;
     }
 
-    // =====================
-    // Status Management
-    // =====================
     function setStatus(type, text) {
-        els.statusBar.className = 'status-bar status-' + type;
-        els.statusText.textContent = text;
+        if (els.statusBar) els.statusBar.className = 'status-bar status-' + type;
+        if (els.statusText) els.statusText.textContent = text;
     }
 
     function setProgress(percent, message) {
+        if (!els.progressContainer || !els.progressFill || !els.progressText) return;
+
         els.progressContainer.style.display = 'flex';
         els.progressFill.style.width = percent + '%';
         els.progressText.textContent = percent + '%';
+
         if (message) setStatus('analyzing', message);
     }
 
     function hideProgress() {
-        els.progressContainer.style.display = 'none';
+        if (els.progressContainer) {
+            els.progressContainer.style.display = 'none';
+        }
     }
 
-    // =====================
-    // Track Loading
-    // =====================
-    els.btnLoadTracks.addEventListener('click', function () {
-        setStatus('analyzing', 'Loading tracks...');
+    function setButtonsDisabled(disabled) {
+        if (els.btnApply) els.btnApply.disabled = disabled;
+        if (els.btnAnalyze) els.btnAnalyze.disabled = disabled;
+        if (els.btnPreviewMarkers) els.btnPreviewMarkers.disabled = disabled;
+        if (els.btnReset) els.btnReset.disabled = disabled;
+    }
 
-        AutoCastBridge.getTrackInfo(function (trackData) {
-            if (!trackData || !trackData.tracks) {
-                setStatus('error', 'Failed to load tracks');
-                return;
+    function runMockCutting(done) {
+        var step = 0;
+        var messages = [
+            'Preparing cuts...',
+            'Mapping active islands...',
+            'Trimming clips...',
+            'Creating split clips...',
+            'Finalizing...'
+        ];
+
+        var interval = setInterval(function () {
+            step += 8;
+            var msgIdx = Math.min(Math.floor(step / 25), messages.length - 1);
+            setProgress(Math.min(step, 100), messages[msgIdx]);
+
+            if (step >= 100) {
+                clearInterval(interval);
+                done();
             }
+        }, 120);
+    }
 
-            state.tracks = trackData.tracks;
+    function renderTracks() {
+        if (!els.trackList) return;
 
-            // In browser mode: generate stable mock audio samples once
-            if (AutoCastBridge.isInMockMode()) {
-                state.mockSamples = generateMockSamples(trackData.tracks);
-            }
+        if (!state.tracks || state.tracks.length === 0) {
+            els.trackList.innerHTML = '<div class="empty-state">No tracks loaded.</div>';
+            return;
+        }
 
-            renderTrackList();
-            setStatus('idle', state.tracks.length + ' tracks loaded');
-        });
-    });
-
-    function renderTrackList() {
         var html = '';
         for (var i = 0; i < state.tracks.length; i++) {
             var track = state.tracks[i];
             var color = TRACK_COLORS[i % TRACK_COLORS.length];
-            var clipCount = track.clips ? track.clips.length : 1;
+            var threshold = state.perTrackSensitivity[i] !== undefined
+                ? state.perTrackSensitivity[i]
+                : parseInt(els.paramThreshold.value, 10);
 
-            html += '<div class="track-item">';
-            html += '<input type="checkbox" checked data-track="' + i + '">';
-            html += '<span class="track-name" style="color: ' + color + '">' + (track.name || 'Audio ' + (i + 1)) + '</span>';
-
-            // Playback Button
-            var playIcon = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
-            html += '<button class="btn-play-track" data-track-play="' + i + '" title="Play/Stop Track">' + playIcon + '</button>';
-
-            // v2.0: per-track sensitivity slider
-            html += '<div class="track-sensitivity" title="Per-Track Sensitivity">';
-            html += '<input type="range" class="slider track-sensitivity-slider" min="3" max="30" value="12" step="1" data-track-sens="' + i + '">';
-            html += '<span class="track-sensitivity-value" id="trackSens' + i + '">12</span>';
-            html += '</div>';
-
-            html += '<span class="track-clips">' + clipCount + ' clip' + (clipCount > 1 ? 's' : '') + '</span>';
-            html += '</div>';
+            html += ''
+                + '<div class="track-item" data-track-index="' + i + '">'
+                + '  <div class="track-color" style="background:' + color + ';"></div>'
+                + '  <div class="track-meta">'
+                + '    <div class="track-title">Track ' + (i + 1) + (track.name ? ' – ' + escapeHtml(track.name) : '') + '</div>'
+                + '    <div class="track-subtitle">'
+                + (track.path ? escapeHtml(track.path) : 'No available media files on this track')
+                + '    </div>'
+                + '  </div>'
+                + '  <div class="track-controls">'
+                + '    <label>Sensitivity</label>'
+                + '    <input class="track-sensitivity" type="range" min="3" max="24" step="1" value="' + threshold + '" data-track-index="' + i + '">'
+                + '    <span class="track-sensitivity-value">' + threshold + ' dB</span>'
+                + '  </div>'
+                + '</div>';
         }
+
         els.trackList.innerHTML = html;
 
-        // Bind per-track sensitivity sliders
-        var sensSliders = document.querySelectorAll('[data-track-sens]');
-        for (var i = 0; i < sensSliders.length; i++) {
-            (function (slider) {
-                var trackIdx = parseInt(slider.getAttribute('data-track-sens'));
-                slider.addEventListener('input', function () {
-                    var val = parseInt(slider.value);
-                    document.getElementById('trackSens' + trackIdx).textContent = val;
-                    state.perTrackSensitivity[trackIdx] = val;
-                });
-            })(sensSliders[i]);
-        }
+        var sliders = els.trackList.querySelectorAll('.track-sensitivity');
+        for (var s = 0; s < sliders.length; s++) {
+            sliders[s].addEventListener('input', function () {
+                var trackIndex = parseInt(this.getAttribute('data-track-index'), 10);
+                var value = parseInt(this.value, 10);
+                state.perTrackSensitivity[trackIndex] = value;
 
-        // Bind Play/Pause Buttons
-        var playBtns = document.querySelectorAll('.btn-play-track');
-        for (var i = 0; i < playBtns.length; i++) {
-            playBtns[i].addEventListener('click', function (e) {
-                e.stopPropagation(); // Don't toggle the checkbox
-                var trackIdx = parseInt(this.getAttribute('data-track-play'));
-                toggleAudioPlay(trackIdx, this);
+                var valueEl = this.parentNode.querySelector('.track-sensitivity-value');
+                if (valueEl) valueEl.textContent = value + ' dB';
             });
         }
     }
 
-    function toggleAudioPlay(trackIdx, buttonEl) {
-        var track = state.tracks[trackIdx];
-        if (!track || !track.clips || !track.clips[0] || !track.clips[0].mediaPath) {
-            setStatus('error', 'No media file found for this track');
+    function renderResults() {
+        if (!els.resultsSection || !els.resultsContent) return;
+
+        if (!state.analysisResult || !state.analysisResult.tracks) {
+            els.resultsSection.style.display = 'none';
             return;
         }
 
-        // If clicking the currently playing track, just stop it
-        if (state.currentPlayingTrack === trackIdx) {
-            stopAudio();
-            return;
-        }
-
-        // Stop any other currently playing track
-        stopAudio();
-
-        var mediaPath = track.clips[0].mediaPath;
-        var fileUrl = mediaPath.replace(/\\/g, '/');
-
-        // In Premiere Pro context, use a file:/// URL for local WAV files.
-        // In browser mock mode via HTTP server, use the relative path.
-        if (!AutoCastBridge.isInMockMode()) {
-            if (!fileUrl.startsWith('file:///')) {
-                fileUrl = 'file:///' + (fileUrl.startsWith('/') ? fileUrl.substring(1) : fileUrl);
-            }
-        }
-
-        try {
-            state.currentAudio = new Audio(fileUrl);
-            state.currentAudio.play();
-            state.currentPlayingTrack = trackIdx;
-
-            // Change icon to Stop
-            buttonEl.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>';
-            buttonEl.classList.add('playing');
-
-            state.currentAudio.onended = function () {
-                stopAudio();
-            };
-            state.currentAudio.onerror = function (e) {
-                console.error("Audio playback error", e);
-                setStatus('error', 'Could not play audio format');
-                stopAudio();
-            };
-        } catch (e) {
-            console.error("Audio playback error", e);
-            setStatus('error', 'Could not play audio');
-        }
-    }
-
-    function stopAudio() {
-        if (state.currentAudio) {
-            state.currentAudio.pause();
-            state.currentAudio.currentTime = 0;
-            state.currentAudio = null;
-        }
-
-        if (state.currentPlayingTrack !== -1) {
-            // Reset the button icon
-            var oldBtn = document.querySelector('.btn-play-track[data-track-play="' + state.currentPlayingTrack + '"]');
-            if (oldBtn) {
-                oldBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
-                oldBtn.classList.remove('playing');
-            }
-            state.currentPlayingTrack = -1;
-        }
-    }
-
-    function getSelectedTrackIndices() {
-        var checkboxes = els.trackList.querySelectorAll('input[type="checkbox"][data-track]');
-        var indices = [];
-        for (var i = 0; i < checkboxes.length; i++) {
-            if (checkboxes[i].checked) {
-                indices.push(parseInt(checkboxes[i].getAttribute('data-track')));
-            }
-        }
-        return indices;
-    }
-
-    // =====================
-    // Analysis (Mock in browser, real in Premiere)
-    // =====================
-    els.btnAnalyze.addEventListener('click', runAnalysis);
-
-    function runAnalysis() {
-        if (state.isAnalyzing) return;
-        state.isAnalyzing = true;
-
-        var selectedIndices = getSelectedTrackIndices();
-        if (selectedIndices.length === 0) {
-            setStatus('error', 'No tracks selected');
-            state.isAnalyzing = false;
-            return;
-        }
-
-        setStatus('analyzing', 'Analyzing...');
-        setProgress(0, 'Starting analysis...');
-
-        if (AutoCastBridge.isInMockMode()) {
-            runMockAnalysis(selectedIndices);
-        } else {
-            runPremierAnalysis(selectedIndices);
-        }
-    }
-
-    function runPremierAnalysis(selectedIndices) {
-        var params = getParams();
-
-        AutoCastBridge.getTrackInfo(function (trackData) {
-            if (!trackData || !trackData.tracks) {
-                state.isAnalyzing = false;
-                hideProgress();
-                setStatus('error', 'Could not read track info');
-                return;
-            }
-
-            // Collect selected track media paths and calculated offsets
-            var trackPaths = [];
-            var trackOffsets = [];
-            var ticksPerSecond = 254016000000;
-
-            for (var i = 0; i < selectedIndices.length; i++) {
-                var idx = selectedIndices[i];
-                var track = trackData.tracks[idx];
-                if (track && track.clips && track.clips.length > 0 && track.clips[0].mediaPath) {
-                    trackPaths.push(track.clips[0].mediaPath);
-
-                    var startTicks = parseFloat(track.clips[0].startTicks || 0);
-                    var inPointTicks = parseFloat(track.clips[0].inPointTicks || 0);
-                    var offsetSec = (startTicks - inPointTicks) / ticksPerSecond;
-                    trackOffsets.push(offsetSec);
-                }
-            }
-
-            if (trackPaths.length === 0) {
-                state.isAnalyzing = false;
-                hideProgress();
-                setStatus('error', 'No media files found on selected tracks');
-                return;
-            }
-
-            // Resolve analyzer path relative to extension root (CEP uses __dirname)
-            var analyzerPath;
-            try {
-                var extensionPath = AutoCastBridge.getExtensionPath();
-                analyzerPath = extensionPath + '/node/analyzer';
-            } catch (e) {
-                analyzerPath = './node/analyzer';
-            }
-
-            // Run analysis asynchronously so progress bar can update in CEP
-            setTimeout(function () {
-                try {
-                    var analyzer = require(analyzerPath);
-                    // Pass trackOffsets to the analyzer parameters directly
-                    params.trackOffsets = trackOffsets;
-                    var result = analyzer.analyze(trackPaths, params, function (pct, msg) {
-                        setProgress(pct, msg);
-                    });
-                    onAnalysisComplete(result);
-                } catch (e) {
-                    state.isAnalyzing = false;
-                    hideProgress();
-                    setStatus('error', 'Analysis failed: ' + e.message);
-                    console.error('[AutoCast] Analysis error:', e.stack || e);
-                }
-            }, 50);
-        });
-    }
-
-    function runMockAnalysis(selectedIndices) {
-        var step = 0;
-        var interval = setInterval(function () {
-            step += 5;
-            var messages = ['Reading audio files...', 'Calculating energy...', 'Matching track volumes...',
-                'Running spectral analysis...', 'Detecting voice activity...', 'Resolving overlaps...',
-                'Building waveform...', 'Generating ducking map...', 'Finalizing...'];
-            var msgIdx = Math.min(Math.floor(step / 12), messages.length - 1);
-            setProgress(step, messages[msgIdx]);
-
-            if (step >= 100) {
-                clearInterval(interval);
-                var result = generateMockResult(selectedIndices);
-                onAnalysisComplete(result);
-            }
-        }, 100);
-    }
-
-    function onAnalysisComplete(result) {
-        state.isAnalyzing = false;
-        hideProgress();
-        state.analysisResult = result;
-
-        // v2.0: push to undo stack
-        if (state.undoStack.length >= state.maxUndoLevels) {
-            state.undoStack.shift();
-        }
-        state.undoStack.push(JSON.parse(JSON.stringify(result)));
-
-        renderResults(result);
-        renderWaveform(result);
-
-        var totalSegs = 0;
-        for (var i = 0; i < result.tracks.length; i++) {
-            totalSegs += result.tracks[i].segmentCount;
-        }
-        setStatus('success', 'Analysis complete – ' + result.tracks.length + ' tracks, ' + totalSegs + ' segments');
-
-        els.btnPreviewMarkers.disabled = false;
-        els.btnApply.disabled = false;
-        els.btnReset.disabled = false;
-
-    }
-
-    // =====================
-    // Results Display
-    // =====================
-    function renderResults(result) {
         var html = '';
-        for (var i = 0; i < result.tracks.length; i++) {
-            var track = result.tracks[i];
-            var colorIdx = track.colorIndex !== undefined ? track.colorIndex : i;
-            var color = TRACK_COLORS[colorIdx % TRACK_COLORS.length];
+        for (var i = 0; i < state.analysisResult.tracks.length; i++) {
+            var t = state.analysisResult.tracks[i];
+            var color = TRACK_COLORS[i % TRACK_COLORS.length];
 
-            var gainBadge = '';
-            if (track.gainAdjustDb !== undefined && Math.abs(track.gainAdjustDb) > 0.1) {
-                var gainClass = track.gainAdjustDb > 0 ? 'gain-boost' : 'gain-cut';
-                var gainSign = track.gainAdjustDb > 0 ? '+' : '';
-                gainBadge = '<span class="result-gain-badge ' + gainClass + '">' + gainSign + track.gainAdjustDb + ' dB</span>';
-            }
-
-            html += '<div class="result-track">';
-            html += '<div class="result-track-name" style="color:' + color + '">' + (track.name || 'Track ' + (i + 1)) + gainBadge + '</div>';
-            html += '<div class="result-track-stats">' +
-                track.segmentCount + ' segments · ' +
-                track.activePercent + '% active · ' +
-                'Floor: ' + track.noiseFloorDb + ' dBFS' +
-                '</div>';
-            html += '</div>';
-        }
-
-        if (result.alignment && result.alignment.warning) {
-            html += '<div class="result-warning">' + result.alignment.warning + '</div>';
+            html += ''
+                + '<div class="result-card">'
+                + '  <div class="result-card-header">'
+                + '    <span class="result-dot" style="background:' + color + ';"></span>'
+                + '    <strong>Track ' + (i + 1) + (t.name ? ' – ' + escapeHtml(t.name) : '') + '</strong>'
+                + '  </div>'
+                + '  <div class="result-card-body">'
+                + '    <div>Segments: ' + safeNum(t.segmentCount) + '</div>'
+                + '    <div>Active: ' + safeNum(t.activePercent) + '%</div>'
+                + '    <div>Active sec: ' + safeNum(t.totalActiveSec) + '</div>'
+                + '    <div>Noise floor: ' + safeNum(t.noiseFloorDb) + ' dBFS</div>'
+                + '    <div>Threshold: ' + safeNum(t.thresholdDb) + ' dBFS</div>'
+                + (t.gainAdjustDb !== undefined ? '<div>Gain adjust: ' + safeNum(t.gainAdjustDb) + ' dB</div>' : '')
+                + '  </div>'
+                + '</div>';
         }
 
         els.resultsContent.innerHTML = html;
         els.resultsSection.style.display = 'block';
     }
 
-    // =====================
-    // v2.0: Waveform Preview
-    // =====================
-    function renderWaveform(result) {
-        if (!result.waveform || !result.waveform.pointsPerTrack) {
+    function renderWaveform() {
+        if (!els.waveformSection || !els.waveformContainer) return;
+
+        if (!state.analysisResult || !state.analysisResult.waveform) {
             els.waveformSection.style.display = 'none';
             return;
         }
 
+        var waveform = state.analysisResult.waveform;
         var html = '';
-        for (var t = 0; t < result.waveform.pointsPerTrack.length; t++) {
-            var trackName = (result.tracks[t] ? result.tracks[t].name : 'Track ' + (t + 1));
-            var colorIdx = (result.tracks[t] && result.tracks[t].colorIndex !== undefined) ? result.tracks[t].colorIndex : t;
-            var color = TRACK_COLORS[colorIdx % TRACK_COLORS.length];
-            html += '<div class="waveform-track">';
-            html += '<div class="waveform-track-label">' + trackName + '</div>';
-            html += '<canvas class="waveform-canvas" id="waveCanvas' + t + '" data-color="' + color + '"></canvas>';
-            html += '</div>';
+
+        for (var t = 0; t < waveform.pointsPerTrack.length; t++) {
+            var points = waveform.pointsPerTrack[t] || [];
+            var color = TRACK_COLORS[t % TRACK_COLORS.length];
+
+            html += '<div class="wave-track">';
+            html += '<div class="wave-track-label">Track ' + (t + 1) + '</div>';
+            html += '<div class="wave-track-bars">';
+
+            for (var i = 0; i < points.length; i++) {
+                var h = Math.max(1, Math.round(points[i] * 100));
+                html += '<span class="wave-bar" style="height:' + h + '%; background:' + color + ';"></span>';
+            }
+
+            html += '</div></div>';
         }
+
         els.waveformContainer.innerHTML = html;
         els.waveformSection.style.display = 'block';
-
-        // Draw with a small delay so DOM is ready
-        setTimeout(function () {
-            for (var t = 0; t < result.waveform.pointsPerTrack.length; t++) {
-                var cIdx = (result.tracks[t] && result.tracks[t].colorIndex !== undefined) ? result.tracks[t].colorIndex : t;
-                drawWaveform(
-                    document.getElementById('waveCanvas' + t),
-                    result.waveform.pointsPerTrack[t],
-                    result.segments[t] || [],
-                    TRACK_COLORS[cIdx % TRACK_COLORS.length],
-                    result.waveform.timeStep
-                );
-            }
-        }, 50);
     }
 
-    function drawWaveform(canvas, points, segments, color, timeStep) {
-        if (!canvas || !points.length) return;
-
-        var ctx = canvas.getContext('2d');
-        var w = canvas.parentElement.clientWidth - 12;
-        var h = 48;
-        canvas.width = w;
-        canvas.height = h;
-
-        // Parse hex color to RGB
-        var r = parseInt(color.slice(1, 3), 16);
-        var g = parseInt(color.slice(3, 5), 16);
-        var b = parseInt(color.slice(5, 7), 16);
-
-        var totalTime = timeStep * points.length;
-
-        // Build a lookup: for each point index, is it in an active segment?
-        var activeMap = new Uint8Array(points.length);
-        for (var s = 0; s < segments.length; s++) {
-            if (segments[s].state === 'active') {
-                var i1 = Math.floor((segments[s].start / totalTime) * points.length);
-                var i2 = Math.ceil((segments[s].end / totalTime) * points.length);
-                for (var idx = Math.max(0, i1); idx < Math.min(points.length, i2); idx++) {
-                    activeMap[idx] = 1;
-                }
-            }
-        }
-
-        // Find max for normalization
-        var maxVal = 0;
-        for (var i = 0; i < points.length; i++) {
-            if (points[i] > maxVal) maxVal = points[i];
-        }
-        if (maxVal === 0) maxVal = 1;
-
-        // 1. Draw a dim background for inactive areas and bright bg for active
-        for (var s = 0; s < segments.length; s++) {
-            if (segments[s].state === 'active') {
-                var x1 = (segments[s].start / totalTime) * w;
-                var x2 = (segments[s].end / totalTime) * w;
-                // Bright background for active segments
-                ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.12)';
-                ctx.fillRect(x1, 0, x2 - x1, h - 4);
-                // Colored indicator bar at bottom
-                ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.9)';
-                ctx.fillRect(x1, h - 3, x2 - x1, 3);
-            }
-        }
-
-        // 2. Draw waveform bars with clear active/inactive distinction
-        var barWidth = Math.max(1, w / points.length);
-        var waveH = h - 5; // Leave room for indicator bar
-
-        for (var i = 0; i < points.length; i++) {
-            var normalized = points[i] / maxVal;
-            var barHeight = Math.max(1, normalized * (waveH - 2));
-            var x = (i / points.length) * w;
-            var y = (waveH - barHeight) / 2;
-
-            if (activeMap[i]) {
-                // Active: bright, saturated color
-                ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',' + (0.5 + normalized * 0.5) + ')';
-            } else {
-                // Inactive: very dim gray
-                ctx.fillStyle = 'rgba(100,100,100,' + (0.1 + normalized * 0.2) + ')';
-            }
-            ctx.fillRect(x, y, Math.max(1, barWidth - 0.5), barHeight);
-        }
+    function updateModeIndicator() {
+        if (!els.modeIndicator) return;
+        els.modeIndicator.textContent = 'Mode: Mixed cut + duck';
     }
 
-    // =====================
-    // Action Buttons
-    // =====================
-    els.btnPreviewMarkers.addEventListener('click', function () {
-        if (!state.analysisResult) return;
-        setStatus('analyzing', 'Setting markers...');
+    function analyzeTracks() {
+        if (state.isAnalyzing) return;
 
-        AutoCastBridge.addMarkers({
-            segments: state.analysisResult.segments,
-            tracks: state.analysisResult.tracks
-        }, function (result) {
-            if (result && result.success) {
-                setStatus('success', 'Preview markers set (' + (result.markersAdded || 0) + ' markers)');
-            } else {
-                setStatus('error', 'Marker error');
+        if (!state.tracks || state.tracks.length === 0) {
+            setStatus('error', 'No tracks available');
+            return;
+        }
+
+        var trackPaths = [];
+        var firstError = '';
+        for (var i = 0; i < state.tracks.length; i++) {
+            var p = state.tracks[i].path;
+            if (p && !p.startsWith('[')) {
+                trackPaths.push(p);
+            } else if (p && !firstError) {
+                firstError = p;
             }
-        });
-    });
+        }
 
-    els.btnApply.addEventListener('click', function () {
-        if (!state.analysisResult) return;
+        if (trackPaths.length === 0) {
+            setStatus('error', 'No valid track paths. ' + (firstError || ''));
+            return;
+        }
 
-        var mode = els.paramOutputMode ? els.paramOutputMode.value : 'ducking';
-        var tIndices = getSelectedTrackIndices();
+        state.isAnalyzing = true;
+        setButtonsDisabled(true);
+        setProgress(0, 'Preparing analysis...');
+
+        var params = getParams();
+
+        if (window.AutoCastAnalyzer && typeof window.AutoCastAnalyzer.analyze === 'function') {
+            try {
+                window.AutoCastAnalyzer.analyze(trackPaths, params, function (percent, message) {
+                    setProgress(percent, message);
+                }).then(function (result) {
+                    state.analysisResult = result;
+                    state.isAnalyzing = false;
+                    hideProgress();
+                    setButtonsDisabled(false);
+                    setStatus('success', 'Analysis complete');
+                    renderResults();
+                    renderWaveform();
+                }).catch(function (err) {
+                    state.isAnalyzing = false;
+                    hideProgress();
+                    setButtonsDisabled(false);
+                    setStatus('error', err && err.message ? err.message : 'Analysis failed');
+                    console.error(err);
+                });
+            } catch (e) {
+                state.isAnalyzing = false;
+                hideProgress();
+                setButtonsDisabled(false);
+                setStatus('error', e && e.message ? e.message : 'Analysis failed');
+                console.error(e);
+            }
+            return;
+        }
+
+        if (typeof window.__AUTOCAST_ANALYZE__ === 'function') {
+            try {
+                window.__AUTOCAST_ANALYZE__(trackPaths, params, function (percent, message) {
+                    setProgress(percent, message);
+                }, function (result) {
+                    state.analysisResult = result;
+                    state.isAnalyzing = false;
+                    hideProgress();
+                    setButtonsDisabled(false);
+                    setStatus('success', 'Analysis complete');
+                    renderResults();
+                    renderWaveform();
+                }, function (err) {
+                    state.isAnalyzing = false;
+                    hideProgress();
+                    setButtonsDisabled(false);
+                    setStatus('error', err && err.message ? err.message : 'Analysis failed');
+                    console.error(err);
+                });
+            } catch (e2) {
+                state.isAnalyzing = false;
+                hideProgress();
+                setButtonsDisabled(false);
+                setStatus('error', e2 && e2.message ? e2.message : 'Analysis failed');
+                console.error(e2);
+            }
+            return;
+        }
+
+        state.isAnalyzing = false;
+        hideProgress();
+        setButtonsDisabled(false);
+        var errMsg = window.NODE_INIT_ERROR ? 'Node init failed: ' + window.NODE_INIT_ERROR : 'No analyzer bridge available';
+        setStatus('error', errMsg);
+    }
+
+    function applyEdits() {
+        if (!state.analysisResult) {
+            setStatus('error', 'No analysis result available');
+            return;
+        }
+
+        var tIndices = [];
+        for (var i = 0; i < state.tracks.length; i++) {
+            tIndices.push(state.tracks[i].index !== undefined ? state.tracks[i].index : i);
+        }
+
+        var mode = 'mixed';
 
         if (mode === 'chop' || mode === 'mixed') {
             setStatus('analyzing', 'Cutting clips...');
+            setProgress(0, 'Preparing cuts...');
+            setButtonsDisabled(true);
+
+            if (AutoCastBridge.isInMockMode()) {
+                runMockCutting(function () {
+                    hideProgress();
+                    setButtonsDisabled(false);
+                    setStatus('success', 'Mock cutting complete');
+                });
+                return;
+            }
+
+            var cutProgressHandler = function (evt) {
+                try {
+                    var payload = evt && evt.data ? JSON.parse(evt.data) : null;
+                    if (!payload) return;
+
+                    setProgress(
+                        Math.max(0, Math.min(100, parseInt(payload.percent, 10) || 0)),
+                        payload.message || 'Cutting clips...'
+                    );
+                } catch (e) {
+                    console.error('[AutoCast] Cut progress parse error:', e);
+                }
+            };
+
+            AutoCastBridge.addCutProgressListener(cutProgressHandler);
+
             AutoCastBridge.applyCuts({
                 segments: state.analysisResult.segments,
                 trackIndices: tIndices,
                 ticksPerSecond: 254016000000,
                 mode: mode,
-                duckingLevelDb: parseInt(els.paramDucking.value)
+                duckingLevelDb: parseInt(els.paramDucking.value, 10)
             }, function (result) {
+                AutoCastBridge.removeCutProgressListener(cutProgressHandler);
+                hideProgress();
+                setButtonsDisabled(false);
+
                 if (result && result.success) {
-                    setStatus('success', 'Clips cut successfully (' + (result.clipsCreated || 0) + ' clips)');
+                    setStatus(
+                        'success',
+                        'Clips cut successfully (' +
+                        (result.clipsTrimmed || 0) + ' trimmed, ' +
+                        (result.clipsCreated || 0) + ' created, ' +
+                        (result.clipsRemoved || 0) + ' removed)'
+                    );
                 } else {
-                    setStatus('error', 'Cut error');
-                }
-            });
-        } else {
-            setStatus('analyzing', 'Applying keyframes...');
-            AutoCastBridge.applyKeyframes({
-                keyframes: state.analysisResult.keyframes,
-                trackIndices: tIndices,
-                ticksPerSecond: 254016000000
-            }, function (result) {
-                if (result && result.success) {
-                    setStatus('success', 'Keyframes applied (' + (result.totalKeyframesSet || 0) + ' keyframes)');
-                } else {
-                    setStatus('error', 'Apply error');
-                }
-            });
-        }
-    });
-
-    els.btnReset.addEventListener('click', function () {
-        setStatus('analyzing', 'Removing keyframes...');
-
-        AutoCastBridge.removeKeyframes([], function (result) {
-            if (result && result.success) {
-                setStatus('idle', 'Keyframes removed');
-                // v2.0: pop undo stack
-                if (state.undoStack.length > 1) {
-                    state.undoStack.pop();
-                    state.analysisResult = state.undoStack[state.undoStack.length - 1];
-                } else {
-                    state.analysisResult = null;
-                    els.resultsSection.style.display = 'none';
-                    els.waveformSection.style.display = 'none';
-                    els.btnPreviewMarkers.disabled = true;
-                    els.btnApply.disabled = true;
-
-                }
-            } else {
-                setStatus('error', 'Reset error');
-            }
-        });
-    });
-
-
-    // =====================
-    // v2.0: Keyboard Shortcuts
-    // =====================
-    document.addEventListener('keydown', function (e) {
-        if (e.ctrlKey && e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            if (!state.isAnalyzing) runAnalysis();
-        }
-        if (e.ctrlKey && e.shiftKey && e.key === 'Enter') {
-            e.preventDefault();
-            if (state.analysisResult && !els.btnApply.disabled) els.btnApply.click();
-        }
-
-        if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
-            e.preventDefault();
-            if (!els.btnReset.disabled) els.btnReset.click();
-        }
-    });
-
-    // =====================
-    // Mode Indicator
-    // =====================
-    if (els.modeIndicator) {
-        els.modeIndicator.textContent = AutoCastBridge.isInMockMode() ? '🌐 Browser Mode' : 'Premiere Pro';
-    }
-
-    // =====================
-    // Mock Sample Generator (called once on Load Tracks)
-    // =====================
-    function seededRandom(seed) {
-        // Simple seeded PRNG for deterministic mock data
-        var s = seed;
-        return function () {
-            s = (s * 16807 + 0) % 2147483647;
-            return (s - 1) / 2147483646;
-        };
-    }
-
-    function generateMockSamples(tracks) {
-        var duration = 900; // 15 min
-        var wavePoints = 500;
-        var timeStep = duration / wavePoints;
-        var samples = {};
-
-        for (var t = 0; t < tracks.length; t++) {
-            // Each track gets a unique seed based on its index and name
-            var seed = 12345 + t * 7919 + (tracks[t].name || '').length * 131;
-            var rng = seededRandom(seed);
-
-            // Generate speech segments for this track
-            var segments = [];
-            var time = rng() * 10;
-            var segCount = 15 + Math.floor(rng() * 35);
-            for (var s = 0; s < segCount; s++) {
-                var gap = 3 + rng() * 20;
-                var len = 2 + rng() * 12;
-                var start = time + gap;
-                var end = start + len;
-                if (end > duration) break;
-                segments.push({ start: start, end: end });
-                time = end;
-            }
-
-            // Generate waveform points aligned with segments
-            var points = [];
-            for (var p = 0; p < wavePoints; p++) {
-                var pointTime = p * timeStep;
-                var isActive = false;
-                for (var ss = 0; ss < segments.length; ss++) {
-                    if (pointTime >= segments[ss].start && pointTime <= segments[ss].end) {
-                        isActive = true;
-                        break;
+                    var errMsg = (result && result.error) ? result.error : 'Cut error';
+                    setStatus('error', errMsg);
+                    if (result && result.errors && result.errors.length) {
+                        console.error('[AutoCast] Cut errors:', result.errors);
                     }
                 }
-                if (isActive) {
-                    points.push(0.3 + rng() * 0.5);
-                } else {
-                    points.push(0.01 + rng() * 0.07);
-                }
-            }
-
-            samples[t] = {
-                segments: segments,
-                waveform: points,
-                gainAdjustDb: Math.round((rng() * 8 - 4) * 10) / 10,
-                noiseFloorDb: -50 - Math.round(rng() * 10)
-            };
-        }
-
-        samples._duration = duration;
-        samples._wavePoints = wavePoints;
-        samples._timeStep = timeStep;
-        return samples;
-    }
-
-    // =====================
-    // Mock Analysis (uses pre-generated samples)
-    // =====================
-    function generateMockResult(selectedIndices) {
-        var mockData = state.mockSamples;
-        var duration = mockData._duration;
-        var timeStep = mockData._timeStep;
-
-        var tracks = [];
-        var segments = [];
-        var keyframes = [];
-        var waveformPoints = [];
-
-        // Get current threshold to adjust segments (simulates parameter sensitivity)
-        var threshold = parseInt(els.paramThreshold.value);
-        var minSegMs = parseInt(els.paramMinSeg.value);
-
-        for (var i = 0; i < selectedIndices.length; i++) {
-            var origIdx = selectedIndices[i];
-            var sample = mockData[origIdx];
-            if (!sample) continue;
-
-            var trackName = state.tracks[origIdx] ? state.tracks[origIdx].name : 'Track ' + (origIdx + 1);
-
-            // Apply threshold/minSeg to filter segments (simulate parameter effect)
-            var filteredSegs = [];
-            for (var s = 0; s < sample.segments.length; s++) {
-                var seg = sample.segments[s];
-                var segDurMs = (seg.end - seg.start) * 1000;
-                // Higher threshold = fewer segments kept
-                var keepChance = 1.0 - (threshold - 12) * 0.04;
-                if (segDurMs >= minSegMs && (keepChance >= 1.0 || segDurMs > minSegMs * 1.5)) {
-                    filteredSegs.push({
-                        start: seg.start,
-                        end: seg.end,
-                        trackIndex: i,
-                        state: 'active'
-                    });
-                }
-            }
-            segments.push(filteredSegs);
-
-            // Reuse stored waveform
-            waveformPoints.push(sample.waveform);
-
-            var activeTime = 0;
-            for (var s = 0; s < filteredSegs.length; s++) {
-                activeTime += filteredSegs[s].end - filteredSegs[s].start;
-            }
-
-            tracks.push({
-                name: trackName,
-                colorIndex: origIdx,
-                segmentCount: filteredSegs.length,
-                activePercent: Math.round((activeTime / duration) * 100),
-                noiseFloorDb: sample.noiseFloorDb,
-                gainAdjustDb: sample.gainAdjustDb
             });
 
-            keyframes.push([{ time: 0, gainDb: -24 }, { time: duration, gainDb: -24 }]);
+            return;
         }
 
-        return {
-            version: '2.0.0',
-            totalDurationSec: duration,
-            tracks: tracks,
-            segments: segments,
-            keyframes: keyframes,
-            waveform: {
-                pointsPerTrack: waveformPoints,
-                timeStep: timeStep,
-                totalDurationSec: duration
-            },
-            alignment: { aligned: true, maxDriftSec: 0.01, warning: null },
-            gainMatching: null
-        };
+        setStatus('analyzing', 'Applying keyframes...');
+        setButtonsDisabled(true);
+
+        AutoCastBridge.applyKeyframes({
+            keyframes: state.analysisResult.keyframes,
+            trackIndices: tIndices,
+            ticksPerSecond: 254016000000
+        }, function (result) {
+            setButtonsDisabled(false);
+
+            if (result && result.success) {
+                setStatus('success', 'Keyframes applied');
+            } else {
+                setStatus('error', (result && result.error) ? result.error : 'Apply failed');
+            }
+        });
     }
 
-    console.log('AutoCast v2.0 initialized' + (AutoCastBridge.isInMockMode() ? ' (browser mode)' : ''));
+    function resetUI() {
+        state.analysisResult = null;
+        hideProgress();
+        setStatus('idle', 'Ready');
+        renderResults();
+        renderWaveform();
+    }
+
+    function loadTracksFromHost() {
+        setStatus('analyzing', 'Loading track info...');
+
+        AutoCastBridge.getTrackInfo(function (result) {
+            if (!result || result.error) {
+                setStatus('error', result && result.error ? result.error : 'Could not load tracks');
+                return;
+            }
+
+            var loadedTracks = result.tracks || result || [];
+            for (var i = 0; i < loadedTracks.length; i++) {
+                var t = loadedTracks[i];
+                if (!t.path && t.clips && t.clips.length > 0) {
+                    var foundPath = false;
+                    for (var c = 0; c < t.clips.length; c++) {
+                        if (t.clips[c].mediaPath) {
+                            t.path = t.clips[c].mediaPath;
+                            foundPath = true;
+                            break;
+                        } else if (t.clips[c].mediaPathError) {
+                            t.path = '[Err] ' + t.clips[c].mediaPathError;
+                            foundPath = true;
+                        }
+                    }
+                    if (!foundPath) t.path = '[Info] No usable media paths found.';
+                } else if (!t.clips || t.clips.length === 0) {
+                    t.path = '[Empty] No clips on this track.';
+                }
+            }
+            state.tracks = loadedTracks;
+            renderTracks();
+            setStatus('success', state.tracks.length + ' track(s) loaded');
+        });
+    }
+
+    function safeNum(value) {
+        return (typeof value === 'number' && isFinite(value)) ? value : '-';
+    }
+
+    function escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    if (els.btnLoadTracks) {
+        els.btnLoadTracks.addEventListener('click', loadTracksFromHost);
+    }
+
+    if (els.btnAnalyze) {
+        els.btnAnalyze.addEventListener('click', analyzeTracks);
+    }
+
+    if (els.btnApply) {
+        els.btnApply.addEventListener('click', applyEdits);
+    }
+
+    if (els.btnReset) {
+        els.btnReset.addEventListener('click', resetUI);
+    }
+
+    updateModeIndicator();
+
+    hideProgress();
+    renderTracks();
+    renderResults();
+    renderWaveform();
+    setStatus('idle', 'Ready');
 })();
