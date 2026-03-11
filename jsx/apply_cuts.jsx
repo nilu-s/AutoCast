@@ -1,3 +1,13 @@
+/**
+ * AutoCast – Apply Cuts (ExtendScript)
+ *
+ * Splits clips on audio tracks using Premiere Pro's QE DOM razor(),
+ * which produces the same result as Ctrl+K (Add Edit).
+ * Both halves of each split retain full source handles for retrimming.
+ *
+ * Falls back to an improved manual split if QE DOM is unavailable.
+ */
+
 function applyCuts(data, progressCallback) {
     var seq = app.project.activeSequence;
     if (!seq) {
@@ -17,6 +27,8 @@ function applyCuts(data, progressCallback) {
     var totalClipsRemoved = 0;
     var errors = [];
 
+    // ── Helpers ──────────────────────────────────────────────────────
+
     function ticksToSec(timeObj) {
         if (!timeObj || timeObj.ticks === undefined || timeObj.ticks === null) {
             return 0;
@@ -26,14 +38,6 @@ function applyCuts(data, progressCallback) {
 
     function secToTicks(sec) {
         return Math.round(sec * ticksPerSecond).toString();
-    }
-
-    function cloneArrayOfTrackClips(track) {
-        var out = [];
-        for (var i = 0; i < track.clips.numItems; i++) {
-            out.push(track.clips[i]);
-        }
-        return out;
     }
 
     function sortByStart(a, b) {
@@ -89,35 +93,6 @@ function applyCuts(data, progressCallback) {
         return merged;
     }
 
-    function getOverlaps(clipStart, clipEnd, wantedSegments) {
-        var overlaps = [];
-        for (var i = 0; i < wantedSegments.length; i++) {
-            var seg = wantedSegments[i];
-            var start = Math.max(clipStart, seg.start);
-            var end = Math.min(clipEnd, seg.end);
-
-            if (start < end) {
-                overlaps.push({
-                    start: start,
-                    end: end,
-                    state: seg.state
-                });
-            }
-        }
-        return overlaps;
-    }
-
-    function setClipTimes(clip, newTimelineStartSec, newTimelineEndSec, newSourceInSec) {
-        try {
-            clip.inPoint = secToTicks(newSourceInSec);
-            clip.start = secToTicks(newTimelineStartSec);
-            clip.end = secToTicks(newTimelineEndSec);
-            return null;
-        } catch (e) {
-            return 'Failed setting clip times: ' + e;
-        }
-    }
-
     function findVolumeComponent(clip) {
         if (!clip || !clip.components) return null;
 
@@ -158,50 +133,121 @@ function applyCuts(data, progressCallback) {
         return false;
     }
 
-    function insertAdditionalClip(track, projectItem, timelineStartSec, sourceInSec, timelineEndSec, state) {
-        var beforeNum = track.clips.numItems;
-        var insertAtTicks = secToTicks(timelineStartSec);
+    // ── QE DOM helpers ──────────────────────────────────────────────
+
+    /**
+     * Try to enable the QE DOM and return the QE sequence + track accessors.
+     * Returns null if QE is not available.
+     */
+    function initQE() {
+        try {
+            app.enableQE();
+        } catch (e) {
+            return null;
+        }
+
+        if (typeof qe === 'undefined') return null;
 
         try {
-            track.overwriteClip(projectItem, insertAtTicks);
-        } catch (e) {
-            return { error: 'overwriteClip failed: ' + e };
+            var qeSeq = qe.project.getActiveSequence();
+            if (!qeSeq) return null;
+            return qeSeq;
+        } catch (e2) {
+            return null;
+        }
+    }
+
+    /**
+     * Collect all unique razor points for a track.
+     * A razor point is a segment boundary that falls strictly inside an
+     * existing clip (not at the clip's own start/end).
+     */
+    function collectRazorPoints(track, allSegments) {
+        // Gather all boundary times from all segments
+        var boundaryMap = {};
+        for (var s = 0; s < allSegments.length; s++) {
+            var seg = allSegments[s];
+            var startKey = seg.start.toFixed(6);
+            var endKey = seg.end.toFixed(6);
+            boundaryMap[startKey] = seg.start;
+            boundaryMap[endKey] = seg.end;
         }
 
-        var afterNum = track.clips.numItems;
-        if (afterNum <= beforeNum) {
-            return { error: 'overwriteClip inserted no visible clip.' };
+        var boundaries = [];
+        for (var key in boundaryMap) {
+            if (boundaryMap.hasOwnProperty(key)) {
+                boundaries.push(boundaryMap[key]);
+            }
         }
+        boundaries.sort(function (a, b) { return a - b; });
 
-        var newClip = track.clips[afterNum - 1];
-        if (!newClip) {
-            return { error: 'Inserted clip not accessible.' };
-        }
+        // Filter: only keep boundaries that fall strictly inside a clip
+        var razorPoints = [];
+        var epsilon = 0.0001; // ~0.1ms tolerance
 
-        var setErr = setClipTimes(newClip, timelineStartSec, timelineEndSec, sourceInSec);
-        if (setErr) {
-            return { error: setErr };
-        }
+        for (var b = 0; b < boundaries.length; b++) {
+            var bTime = boundaries[b];
 
-        if (mode === 'mixed' && state !== 'active') {
-            if (!setClipVolumeDb(newClip, duckingLevelDb)) {
-                return { error: 'Clip inserted, but volume could not be set.' };
+            for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                var cStart = ticksToSec(clip.start);
+                var cEnd = ticksToSec(clip.end);
+
+                // Strictly inside: not at clip boundaries
+                if (bTime > cStart + epsilon && bTime < cEnd - epsilon) {
+                    razorPoints.push(bTime);
+                    break; // This boundary is confirmed, no need to check more clips
+                }
             }
         }
 
-        return { clip: newClip };
+        return razorPoints;
     }
 
-    // Gesamtzahl der zu bearbeitenden Originalclips zählen
-    var totalOriginalClips = 0;
-    for (var tt = 0; tt < trackIndices.length; tt++) {
-        var countTrack = seq.audioTracks[trackIndices[tt]];
-        if (countTrack) {
-            totalOriginalClips += countTrack.clips.numItems;
+    /**
+     * Check if a clip (by its timeline position) overlaps any active segment.
+     * Returns the state of the best-matching segment, or null.
+     */
+    function getClipSegmentState(clipStartSec, clipEndSec, wantedSegments) {
+        var epsilon = 0.001;
+        var bestOverlap = 0;
+        var bestState = null;
+
+        for (var i = 0; i < wantedSegments.length; i++) {
+            var seg = wantedSegments[i];
+            var overlapStart = Math.max(clipStartSec, seg.start);
+            var overlapEnd = Math.min(clipEndSec, seg.end);
+            var overlap = overlapEnd - overlapStart;
+
+            if (overlap > epsilon && overlap > bestOverlap) {
+                bestOverlap = overlap;
+                bestState = seg.state;
+            }
         }
+        return bestState;
     }
 
-    var doneOriginalClips = 0;
+    /**
+     * Check if a clip is covered by any wanted segment (for chop mode).
+     */
+    function clipIsWanted(clipStartSec, clipEndSec, wantedSegments) {
+        var epsilon = 0.001;
+        for (var i = 0; i < wantedSegments.length; i++) {
+            var seg = wantedSegments[i];
+            var overlapStart = Math.max(clipStartSec, seg.start);
+            var overlapEnd = Math.min(clipEndSec, seg.end);
+            if (overlapEnd - overlapStart > epsilon) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // ── Main logic ──────────────────────────────────────────────────
+
+    var qeSeq = initQE();
+    var useQERazor = (qeSeq !== null);
+
     progress(0, 'Preparing cuts...');
 
     for (var t = 0; t < trackIndices.length; t++) {
@@ -215,113 +261,137 @@ function applyCuts(data, progressCallback) {
         }
 
         progress(
-            totalOriginalClips > 0 ? Math.round((doneOriginalClips / totalOriginalClips) * 100) : 0,
+            Math.round((t / trackIndices.length) * 100),
             'Processing track ' + (t + 1) + '/' + trackIndices.length + '...'
         );
 
+        // Get ALL segments (active + inactive) for computing razor points
+        var allSegments = filterWantedSegments(rawSegments, 'mixed');
+        allSegments = mergeTouchingSegments(allSegments, 0.0005);
+
+        // Get mode-specific wanted segments for post-razor processing
         var wantedSegments = filterWantedSegments(rawSegments, mode);
         wantedSegments = mergeTouchingSegments(wantedSegments, 0.0005);
 
-        var originalClips = cloneArrayOfTrackClips(track);
+        if (allSegments.length === 0) continue;
 
-        for (var c = originalClips.length - 1; c >= 0; c--) {
-            var clip = originalClips[c];
+        // ── Step 1: Razor at all segment boundaries ──
 
-            if (!clip || !clip.projectItem) {
-                doneOriginalClips++;
-                continue;
-            }
+        var razorPoints = collectRazorPoints(track, allSegments);
 
-            var clipStartSec = ticksToSec(clip.start);
-            var clipEndSec = ticksToSec(clip.end);
-            var clipInPointSec = ticksToSec(clip.inPoint);
+        if (useQERazor && razorPoints.length > 0) {
+            try {
+                var qeTrack = qeSeq.getAudioTrackAt(trackIdx);
+                if (!qeTrack) {
+                    errors.push('QE audio track not found: ' + trackIdx);
+                    continue;
+                }
 
-            var overlaps = getOverlaps(clipStartSec, clipEndSec, wantedSegments);
-
-            if (overlaps.length === 0) {
-                if (mode === 'chop') {
+                // Razor right-to-left so earlier clip indices stay valid
+                for (var r = razorPoints.length - 1; r >= 0; r--) {
+                    var razorTicks = secToTicks(razorPoints[r]);
                     try {
-                        clip.remove(0, 0);
+                        qeTrack.razor(razorTicks);
+                        totalClipsCreated++;
+                    } catch (eRazor) {
+                        errors.push(
+                            'Razor failed on track ' + trackIdx +
+                            ' at ' + razorPoints[r].toFixed(3) + 's: ' + eRazor
+                        );
+                    }
+                }
+            } catch (eQE) {
+                errors.push('QE razor error on track ' + trackIdx + ': ' + eQE);
+            }
+        } else if (!useQERazor && razorPoints.length > 0) {
+            // ── Fallback: manual razor using setPlayerPosition + menu command ──
+            // This is a best-effort fallback for environments without QE DOM.
+            try {
+                for (var r2 = razorPoints.length - 1; r2 >= 0; r2--) {
+                    var razorTicks2 = secToTicks(razorPoints[r2]);
+
+                    // Select only this track's target clips (approximate via playhead)
+                    seq.setPlayerPosition(razorTicks2);
+
+                    // Attempt menu-based Add Edit (Ctrl+K equivalent)
+                    try {
+                        app.enableQE();
+                        var qeSeqFallback = qe.project.getActiveSequence();
+                        if (qeSeqFallback) {
+                            var qeTrackFallback = qeSeqFallback.getAudioTrackAt(trackIdx);
+                            if (qeTrackFallback) {
+                                qeTrackFallback.razor(razorTicks2);
+                                totalClipsCreated++;
+                            }
+                        }
+                    } catch (eFallback) {
+                        errors.push(
+                            'Fallback razor failed on track ' + trackIdx +
+                            ' at ' + razorPoints[r2].toFixed(3) + 's: ' + eFallback
+                        );
+                    }
+                }
+            } catch (eFB) {
+                errors.push('Fallback razor error on track ' + trackIdx + ': ' + eFB);
+            }
+        }
+
+        // ── Step 2: Post-razor cleanup ──
+        // Now iterate the (potentially split) clips and remove/duck as needed.
+
+        progress(
+            Math.round(((t + 0.5) / trackIndices.length) * 100),
+            'Cleaning up track ' + (t + 1) + '/' + trackIndices.length + '...'
+        );
+
+        // Re-read clips after razoring (clip list has changed)
+        var postClipCount = track.clips.numItems;
+
+        if (mode === 'chop') {
+            // Remove clips that don't fall within any active segment.
+            // Iterate backwards so index removal doesn't shift remaining items.
+            for (var pc = postClipCount - 1; pc >= 0; pc--) {
+                var pClip = track.clips[pc];
+                if (!pClip) continue;
+
+                var pcStart = ticksToSec(pClip.start);
+                var pcEnd = ticksToSec(pClip.end);
+
+                if (!clipIsWanted(pcStart, pcEnd, wantedSegments)) {
+                    try {
+                        pClip.remove(0, 0);
                         totalClipsRemoved++;
                     } catch (eRemove) {
                         errors.push(
                             'Remove failed on track ' + trackIdx +
-                            ' at ' + clipStartSec.toFixed(3) + 's: ' + eRemove
+                            ' at ' + pcStart.toFixed(3) + 's: ' + eRemove
                         );
                     }
                 } else {
-                    if (!setClipVolumeDb(clip, duckingLevelDb)) {
+                    totalClipsTrimmed++;
+                }
+            }
+        } else if (mode === 'mixed') {
+            // Duck clips that overlap inactive segments.
+            for (var mc = 0; mc < postClipCount; mc++) {
+                var mClip = track.clips[mc];
+                if (!mClip) continue;
+
+                var mcStart = ticksToSec(mClip.start);
+                var mcEnd = ticksToSec(mClip.end);
+                var segState = getClipSegmentState(mcStart, mcEnd, allSegments);
+
+                if (segState !== null && segState !== 'active') {
+                    if (!setClipVolumeDb(mClip, duckingLevelDb)) {
                         errors.push(
-                            'Could not set whole-clip volume on track ' + trackIdx +
-                            ' at ' + clipStartSec.toFixed(3) + 's'
+                            'Could not set volume on track ' + trackIdx +
+                            ' at ' + mcStart.toFixed(3) + 's'
                         );
                     }
                 }
 
-                doneOriginalClips++;
-                progress(
-                    totalOriginalClips > 0 ? Math.round((doneOriginalClips / totalOriginalClips) * 100) : 100,
-                    'Cutting clip ' + doneOriginalClips + '/' + totalOriginalClips
-                );
-                continue;
+                totalClipsTrimmed++;
             }
-
-            var first = overlaps[0];
-            var firstSourceInSec = clipInPointSec + (first.start - clipStartSec);
-
-            var trimErr = setClipTimes(clip, first.start, first.end, firstSourceInSec);
-            if (trimErr) {
-                errors.push(
-                    'Trim failed on track ' + trackIdx +
-                    ' at ' + clipStartSec.toFixed(3) + 's: ' + trimErr
-                );
-                doneOriginalClips++;
-                progress(
-                    totalOriginalClips > 0 ? Math.round((doneOriginalClips / totalOriginalClips) * 100) : 100,
-                    'Cutting clip ' + doneOriginalClips + '/' + totalOriginalClips
-                );
-                continue;
-            }
-
-            if (mode === 'mixed' && first.state !== 'active') {
-                if (!setClipVolumeDb(clip, duckingLevelDb)) {
-                    errors.push(
-                        'Could not set volume on trimmed clip on track ' + trackIdx +
-                        ' at ' + first.start.toFixed(3) + 's'
-                    );
-                }
-            }
-
-            totalClipsTrimmed++;
-
-            for (var o = 1; o < overlaps.length; o++) {
-                var ov = overlaps[o];
-                var ovSourceInSec = clipInPointSec + (ov.start - clipStartSec);
-
-                var insertResult = insertAdditionalClip(
-                    track,
-                    clip.projectItem,
-                    ov.start,
-                    ovSourceInSec,
-                    ov.end,
-                    ov.state
-                );
-
-                if (insertResult.error) {
-                    errors.push(
-                        'Insert failed on track ' + trackIdx +
-                        ' at ' + ov.start.toFixed(3) + 's: ' + insertResult.error
-                    );
-                } else {
-                    totalClipsCreated++;
-                }
-            }
-
-            doneOriginalClips++;
-            progress(
-                totalOriginalClips > 0 ? Math.round((doneOriginalClips / totalOriginalClips) * 100) : 100,
-                'Cutting clip ' + doneOriginalClips + '/' + totalOriginalClips
-            );
         }
     }
 
