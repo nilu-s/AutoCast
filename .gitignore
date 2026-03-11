@@ -16,3 +16,9 @@ Thumbs.db
 # Build output
 *.zxp
 *.p12
+
+# Audio and Logs
+*.wav
+analysis_debug.json
+out.txt
+test_output.txt
