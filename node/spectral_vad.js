@@ -91,12 +91,15 @@ function computeSpectralVAD(samples, sampleRate, frameDurationMs) {
 
         // Combine features into confidence score:
         // - High speech ratio → likely speech
-        // - Low spectral flatness → tonal content (speech)
-        // - Moderate flux → speech has moderate variation
-        var ratioScore = Math.min(1.0, speechRatio * 2.5); // Scale: typical speech ~0.4-0.6
+        // - Low spectral flatness → tonal content (speech-like), not broadband noise
+        //
+        // Weight change versus v1:
+        //   flatnessScore weight: 0.4 → 0.5  (penalise broadband noise/bleed more)
+        //   ratioScore scale:     2.5 → 2.0  (avoid over-inflating ratio on noisy frames)
+        var ratioScore = Math.min(1.0, speechRatio * 2.0); // Scale: typical speech ~0.4-0.6
         var flatnessScore = 1.0 - Math.min(1.0, flatness * 2.0); // Invert: low flatness = speech
 
-        confidence[f] = (ratioScore * 0.6 + flatnessScore * 0.4);
+        confidence[f] = (ratioScore * 0.5 + flatnessScore * 0.5);
     }
 
     return {
@@ -222,8 +225,134 @@ function computeSpectralFlatness(magnitudes, startBin, endBin) {
     return geoMean / ariMean;
 }
 
+/**
+ * Compute compact spectral fingerprint per frame.
+ *
+ * Returns a Float32Array of shape [frameCount * NUM_BANDS] where each
+ * NUM_BANDS-length slice is a normalised log-spaced band energy vector
+ * representing the spectral "character" of the audio in that frame.
+ *
+ * @param {Float32Array} samples
+ * @param {number} sampleRate
+ * @param {number} frameDurationMs
+ * @returns {{ bands: Float32Array, frameCount: number, numBands: number }}
+ */
+function computeSpectralFingerprint(samples, sampleRate, frameDurationMs) {
+    frameDurationMs = frameDurationMs || 10;
+
+    var frameSize = Math.round((frameDurationMs / 1000) * sampleRate);
+    var fftSize = nextPowerOf2(frameSize);
+    var frameCount = Math.floor(samples.length / frameSize);
+
+    // 8 log-spaced bands from 100 Hz to 8000 Hz
+    var NUM_BANDS = 8;
+    var freqLow = 100;
+    var freqHigh = 8000;
+
+    // Precompute band edges (linear frequency bins)
+    var bandEdges = [];
+    for (var b = 0; b <= NUM_BANDS; b++) {
+        var t = b / NUM_BANDS;
+        var freq = freqLow * Math.pow(freqHigh / freqLow, t);
+        bandEdges.push(Math.round(freq * fftSize / sampleRate));
+    }
+
+    var hannWindow = createHannWindow(fftSize);
+    var result = new Float32Array(frameCount * NUM_BANDS);
+
+    for (var f = 0; f < frameCount; f++) {
+        var offset = f * frameSize;
+
+        var real = new Float64Array(fftSize);
+        var imag = new Float64Array(fftSize);
+
+        for (var i = 0; i < frameSize && (offset + i) < samples.length; i++) {
+            real[i] = samples[offset + i] * hannWindow[i];
+        }
+
+        fft(real, imag);
+
+        var halfN = fftSize / 2;
+
+        // Compute energy per band
+        var bandBase = f * NUM_BANDS;
+        var totalEnergy = 0;
+        for (var bd = 0; bd < NUM_BANDS; bd++) {
+            var lo = Math.max(0, bandEdges[bd]);
+            var hi = Math.min(halfN - 1, bandEdges[bd + 1]);
+            var bandEnergy = 0;
+            for (var k = lo; k <= hi; k++) {
+                var mag = real[k] * real[k] + imag[k] * imag[k];
+                bandEnergy += mag;
+            }
+            result[bandBase + bd] = bandEnergy;
+            totalEnergy += bandEnergy;
+        }
+
+        // Normalise so the vector sums to 1 (spectral shape, not loudness)
+        if (totalEnergy > 1e-20) {
+            for (var bd2 = 0; bd2 < NUM_BANDS; bd2++) {
+                result[bandBase + bd2] /= totalEnergy;
+            }
+        }
+    }
+
+    return { bands: result, frameCount: frameCount, numBands: NUM_BANDS };
+}
+
+/**
+ * Compute the average cosine similarity between two spectral fingerprints
+ * over a time window [startFrame, endFrame).
+ *
+ * Returns a score in [0, 1]:
+ *   ~1.0  → nearly identical spectral shape (likely bleed/echo)
+ *   ~0.0  → completely different spectral shape (different speaker)
+ *
+ * @param {{ bands: Float32Array, frameCount: number, numBands: number }} fpA
+ * @param {{ bands: Float32Array, frameCount: number, numBands: number }} fpB
+ * @param {number} startFrame
+ * @param {number} endFrame
+ * @returns {number}
+ */
+function computeCrossTrackSimilarity(fpA, fpB, startFrame, endFrame) {
+    var numBands = fpA.numBands;
+    if (!numBands || numBands !== fpB.numBands) return 0;
+
+    var clampedStart = Math.max(0, startFrame);
+    var clampedEnd = Math.min(Math.min(fpA.frameCount, fpB.frameCount), endFrame);
+
+    if (clampedEnd <= clampedStart) return 0;
+
+    var sumSim = 0;
+    var frameCount = 0;
+
+    for (var f = clampedStart; f < clampedEnd; f++) {
+        var baseA = f * numBands;
+        var baseB = f * numBands;
+
+        var dot = 0, normA = 0, normB = 0;
+        for (var b = 0; b < numBands; b++) {
+            var a = fpA.bands[baseA + b];
+            var bv = fpB.bands[baseB + b];
+            dot += a * bv;
+            normA += a * a;
+            normB += bv * bv;
+        }
+
+        var denom = Math.sqrt(normA * normB);
+        if (denom > 1e-20) {
+            sumSim += dot / denom;
+        }
+        frameCount++;
+    }
+
+    return frameCount > 0 ? sumSim / frameCount : 0;
+}
+
 module.exports = {
     computeSpectralVAD: computeSpectralVAD,
     refineGateWithSpectral: refineGateWithSpectral,
+    computeSpectralFingerprint: computeSpectralFingerprint,
+    computeCrossTrackSimilarity: computeCrossTrackSimilarity,
     fft: fft
 };

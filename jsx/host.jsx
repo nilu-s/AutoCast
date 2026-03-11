@@ -9,6 +9,8 @@
 //@include "apply_keyframes.jsx"
 //@include "apply_markers.jsx"
 //@include "apply_cuts.jsx"
+//@include "apply_gain.jsx"
+//@include "undo_cuts.jsx"
 
 function autocast_ping() {
     return JSON.stringify({ status: 'ok', version: '2.1.0', host: 'Premiere Pro' });
@@ -17,10 +19,10 @@ function autocast_ping() {
 function autocast_getTrackInfo() {
     try {
         var str = JSON.stringify(getTrackInfo());
-        return str.replace(/\\/g, '\\\\');
+        return str;
     } catch (e) {
         var errStr = JSON.stringify({ error: e.toString() });
-        return errStr.replace(/\\/g, '\\\\');
+        return errStr;
     }
 }
 
@@ -29,10 +31,10 @@ function autocast_applyKeyframes(keyframeDataJson) {
         var data = JSON.parse(keyframeDataJson);
         var result = applyVolumeKeyframes(data);
         var str = JSON.stringify(result);
-        return str.replace(/\\/g, '\\\\');
+        return str;
     } catch (e) {
         var errStr = JSON.stringify({ error: e.toString() });
-        return errStr.replace(/\\/g, '\\\\');
+        return errStr;
     }
 }
 
@@ -41,10 +43,10 @@ function autocast_removeKeyframes(trackIndicesJson) {
         var indices = JSON.parse(trackIndicesJson);
         var result = removeVolumeKeyframes(indices);
         var str = JSON.stringify(result);
-        return str.replace(/\\/g, '\\\\');
+        return str;
     } catch (e) {
         var errStr = JSON.stringify({ error: e.toString() });
-        return errStr.replace(/\\/g, '\\\\');
+        return errStr;
     }
 }
 
@@ -53,10 +55,10 @@ function autocast_addMarkers(markerDataJson) {
         var data = JSON.parse(markerDataJson);
         var result = addSpeakerMarkers(data);
         var str = JSON.stringify(result);
-        return str.replace(/\\/g, '\\\\');
+        return str;
     } catch (e) {
         var errStr = JSON.stringify({ error: e.toString() });
-        return errStr.replace(/\\/g, '\\\\');
+        return errStr;
     }
 }
 
@@ -87,9 +89,39 @@ function autocast_applyCuts(segmentDataJson) {
             autocast_dispatchCutProgress(percent, message);
         });
         var str = JSON.stringify(result);
-        return str.replace(/\\/g, '\\\\');
+        return str;
     } catch (e) {
         var errStr = JSON.stringify({ error: e.toString() });
-        return errStr.replace(/\\/g, '\\\\');
+        return errStr;
+    }
+}
+
+function autocast_applyGainNormalization(gainDataJson) {
+    try {
+        var data = JSON.parse(gainDataJson);
+        var result = applyGainNormalization(data);
+        var str = JSON.stringify(result);
+        return str;
+    } catch (e) {
+        var errStr = JSON.stringify({ error: e.toString() });
+        return errStr;
+    }
+}
+
+function autocast_captureTrackState(dataJson) {
+    try {
+        var data = JSON.parse(dataJson);
+        return captureTrackState(data);
+    } catch (e) {
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+function autocast_restoreTrackState(dataJson) {
+    try {
+        var data = JSON.parse(dataJson);
+        return restoreTrackState(data);
+    } catch (e) {
+        return JSON.stringify({ error: e.toString() });
     }
 }

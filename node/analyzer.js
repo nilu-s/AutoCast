@@ -33,21 +33,23 @@ var ANALYSIS_DEFAULTS = {
     // VAD / Gate
     thresholdAboveFloorDb: 12,
     absoluteThresholdDb: -50,
-    attackFrames: 2,
+    attackFrames: 3,
     releaseFrames: 5,
     holdFrames: 30,
+    hysteresisDb: 2,
 
     // Per-track sensitivity overrides (array, one per track, or null for global)
     perTrackThresholdDb: null,
 
     // Segments
-    minSegmentMs: 300,
+    minSegmentMs: 1000,
     minGapMs: 250,
 
     // Overlap
-    overlapPolicy: 'bleed_safe',
-    overlapMarginDb: 6,
-    bleedMarginDb: 8,
+    overlapPolicy: 'spectral_bleed_safe',
+    overlapMarginDb: 8,
+    bleedMarginDb: 15,
+    bleedSimilarityThreshold: 0.88,
 
     // Ducking output
     duckingLevelDb: -24,
@@ -58,7 +60,11 @@ var ANALYSIS_DEFAULTS = {
 
     // Spectral VAD refinement
     useSpectralVAD: true,
-    spectralMinConfidence: 0.3,
+    spectralMinConfidence: 0.35,
+
+    // Cross-track bleed suppression:
+    // Increased to 15 dB so we don't accidentally silence a quieter valid speaker.
+    bleedSuppressionDb: 15,
 
     // Adaptive crossfades
     adaptiveCrossfade: true,
@@ -95,7 +101,28 @@ function analyze(trackPaths, userParams, progressCallback) {
     var audioData = [];
 
     for (var i = 0; i < trackCount; i++) {
-        var absPath = path.resolve(trackPaths[i]);
+        var p = trackPaths[i];
+        if (!p) {
+            // Track is deselected or invalid
+            trackInfos.push({
+                path: null,
+                name: 'Unused Track ' + (i + 1),
+                durationSec: 0,
+                sampleRate: 48000,
+                channels: 1,
+                bitDepth: 16
+            });
+            audioData.push({
+                sampleRate: 48000,
+                channels: 1,
+                bitDepth: 16,
+                samples: new Float32Array(0),
+                durationSec: 0
+            });
+            continue;
+        }
+
+        var absPath = path.resolve(p);
         progress(5 + Math.round((i / trackCount) * 10), 'Reading: ' + path.basename(absPath));
 
         var wav = wavReader.readWav(absPath);
@@ -114,6 +141,7 @@ function analyze(trackPaths, userParams, progressCallback) {
     var alignment = wavReader.checkAlignment(trackInfos, params.alignmentToleranceSec);
 
     var totalDurationSec = Infinity;
+    var validTrackCount = 0;
     for (i = 0; i < trackInfos.length; i++) {
         var offsetSec = 0;
         if (params.trackOffsets && params.trackOffsets[i] !== undefined) {
@@ -124,9 +152,13 @@ function analyze(trackPaths, userParams, progressCallback) {
             }
         }
 
-        if (trackInfos[i].durationSec < totalDurationSec) {
+        if (trackInfos[i].path && trackInfos[i].durationSec < totalDurationSec) {
             totalDurationSec = trackInfos[i].durationSec;
+            validTrackCount++;
         }
+    }
+    if (validTrackCount === 0) {
+        totalDurationSec = 0;
     }
 
     progress(20, 'Calculating audio energy...');
@@ -181,6 +213,7 @@ function analyze(trackPaths, userParams, progressCallback) {
     }
 
     var spectralResults = [];
+    var fingerprintResults = [];
     if (params.useSpectralVAD) {
         progress(35, 'Running spectral analysis...');
         for (i = 0; i < trackCount; i++) {
@@ -190,6 +223,14 @@ function analyze(trackPaths, userParams, progressCallback) {
                 audioData[i].sampleRate,
                 params.frameDurationMs
             );
+
+            // Compute spectral fingerprint while we still have the audio data
+            var fingerprint = spectralVad.computeSpectralFingerprint(
+                audioData[i].samples,
+                audioData[i].sampleRate,
+                params.frameDurationMs
+            );
+            fingerprintResults.push(fingerprint);
 
             if (params.trackOffsets && params.trackOffsets[i] !== undefined) {
                 offsetSec = parseFloat(params.trackOffsets[i]);
@@ -236,7 +277,8 @@ function analyze(trackPaths, userParams, progressCallback) {
             attackFrames: params.attackFrames,
             releaseFrames: params.releaseFrames,
             holdFrames: params.holdFrames,
-            smoothingWindow: params.rmsSmoothing
+            smoothingWindow: params.rmsSmoothing,
+            hysteresisDb: params.hysteresisDb
         });
 
         if (params.useSpectralVAD && spectralResults[i]) {
@@ -248,8 +290,54 @@ function analyze(trackPaths, userParams, progressCallback) {
         }
 
         vadResults.push(vadResult);
+    }
 
-        var segments = segmentBuilder.buildSegments(vadResult.gateOpen, i, {
+    // --- Cross-track bleed suppression pass ---
+    // Suppress a frame on track B only when BOTH conditions are met:
+    //   (a) another track A has its own VAD gate open (A is actively speaking), AND
+    //   (b) A is at least bleedSuppressionDb louder than B in that frame.
+    //
+    // This prevents wiping a quiet speaker who is the ONLY active voice in a frame.
+    // Previously we compared raw RMS without checking gate state, which caused the
+    // quietest track to be fully erased when room noise on another track happened
+    // to exceed the low speaker's level.
+    var bleedDb = (params.bleedSuppressionDb !== undefined) ? params.bleedSuppressionDb : 10;
+    if (bleedDb > 0 && trackCount > 1) {
+        progress(53, 'Suppressing mic bleed...');
+        var bleedLinearRatio = Math.pow(10, bleedDb / 20);
+
+        // Common frame count across all tracks
+        var minFrames = Infinity;
+        for (var ti = 0; ti < trackCount; ti++) {
+            if (rmsProfiles[ti].length < minFrames) minFrames = rmsProfiles[ti].length;
+        }
+
+        for (var ti = 0; ti < trackCount; ti++) {
+            var gate = vadResults[ti].gateOpen;
+            var rmsA = rmsProfiles[ti];
+
+            for (var f = 0; f < Math.min(gate.length, minFrames); f++) {
+                if (!gate[f]) continue; // already closed – nothing to do
+
+                var shouldSuppress = false;
+                for (var tj = 0; tj < trackCount; tj++) {
+                    if (tj === ti) continue;
+                    // (a) The other track must actually be speaking in this frame
+                    if (!vadResults[tj].gateOpen[f]) continue;
+                    // (b) The other track must be dominantly louder
+                    if (rmsProfiles[tj][f] > rmsA[f] * bleedLinearRatio) {
+                        shouldSuppress = true;
+                        break;
+                    }
+                }
+                if (shouldSuppress) gate[f] = 0;
+            }
+        }
+    }
+
+    // Build segments from refined gates
+    for (i = 0; i < trackCount; i++) {
+        var segments = segmentBuilder.buildSegments(vadResults[i].gateOpen, i, {
             minSegmentMs: params.minSegmentMs,
             minGapMs: params.minGapMs,
             frameDurationMs: params.frameDurationMs
@@ -257,8 +345,8 @@ function analyze(trackPaths, userParams, progressCallback) {
         allSegments.push(segments);
 
         var stats = segmentBuilder.computeStats(segments, totalDurationSec);
-        trackInfos[i].noiseFloorDb = Math.round(vadResult.noiseFloorDb * 10) / 10;
-        trackInfos[i].thresholdDb = Math.round(vadResult.thresholdDb * 10) / 10;
+        trackInfos[i].noiseFloorDb = Math.round(vadResults[i].noiseFloorDb * 10) / 10;
+        trackInfos[i].thresholdDb = Math.round(vadResults[i].thresholdDb * 10) / 10;
         trackInfos[i].segmentCount = stats.segmentCount;
         trackInfos[i].activePercent = stats.activePercent;
         trackInfos[i].totalActiveSec = stats.totalActiveSec;
@@ -270,8 +358,77 @@ function analyze(trackPaths, userParams, progressCallback) {
         policy: params.overlapPolicy,
         frameDurationMs: params.frameDurationMs,
         overlapMarginDb: params.overlapMarginDb,
-        bleedMarginDb: params.bleedMarginDb
+        bleedMarginDb: params.bleedMarginDb,
+        fingerprints: fingerprintResults.length > 0 ? fingerprintResults : null,
+        bleedSimilarityThreshold: params.bleedSimilarityThreshold || 0.82,
+        overlapSimilarityThreshold: params.overlapSimilarityThreshold || 0.60
     });
+
+    // --- NEW: Strict post-processing to eliminate tiny segments generated by overlap resolver
+    progress(75, 'Enforcing minimum segment duration...');
+    function enforceMinimumSegmentDuration(segmentsArray, minSec) {
+        var out = [];
+        for (var i = 0; i < segmentsArray.length; i++) {
+            var trackSegs = JSON.parse(JSON.stringify(segmentsArray[i]));
+            if (!trackSegs || trackSegs.length === 0) {
+                out.push([]);
+                continue;
+            }
+
+            var changed = true;
+            // Prevent infinite loop by capping passes. Usually resolves in 1-2 passes.
+            var maxPasses = 10; 
+            while(changed && trackSegs.length > 1 && maxPasses > 0) {
+                changed = false;
+                maxPasses--;
+                for (var j = 0; j < trackSegs.length; j++) {
+                    var dur = trackSegs[j].end - trackSegs[j].start;
+                    if (dur < minSec) {
+                        var prev = j > 0 ? trackSegs[j-1] : null;
+                        var next = j < trackSegs.length - 1 ? trackSegs[j+1] : null;
+
+                        if (!prev && !next) continue;
+
+                        var target = prev;
+                        if (prev && next) {
+                             var prevDur = prev.end - prev.start;
+                             var nextDur = next.end - next.start;
+                             target = prevDur > nextDur ? prev : next;
+                        } else if (next) {
+                             target = next;
+                        }
+
+                        if (trackSegs[j].state !== target.state) {
+                            trackSegs[j].state = target.state; 
+                            changed = true;
+                        }
+                    }
+                }
+                
+                var merged = [];
+                if (trackSegs.length > 0) {
+                    merged.push(trackSegs[0]);
+                    for (var k = 1; k < trackSegs.length; k++) {
+                        var last = merged[merged.length - 1];
+                        var curr = trackSegs[k];
+                        if (last.state === curr.state && Math.abs(last.end - curr.start) < 0.005) {
+                            last.end = curr.end;
+                            if (last.durationMs !== undefined) last.durationMs = Math.round((last.end - last.start) * 1000);
+                        } else {
+                            merged.push(curr);
+                        }
+                    }
+                }
+                trackSegs = merged;
+            }
+            out.push(trackSegs);
+        }
+        return out;
+    }
+
+    resolvedSegments = enforceMinimumSegmentDuration(resolvedSegments, params.minSegmentMs / 1000);
+    // --- END NEW
+
 
     progress(80, 'Generating ducking map...');
 
@@ -312,6 +469,8 @@ function analyze(trackPaths, userParams, progressCallback) {
         gainMatching: gainInfo,
         params: params
     };
+
+
 
     progress(100, 'Analysis complete.');
 

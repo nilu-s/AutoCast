@@ -11,12 +11,14 @@
 'use strict';
 
 var rmsCalc = require('./rms_calculator');
+var spectralVad = require('./spectral_vad');
 
 var OVERLAP_POLICIES = {
     DOMINANT_WINS: 'dominant_wins',
     ALL_ACTIVE: 'all_active',
     BLEED_SAFE: 'bleed_safe',
-    ALWAYS_ACTIVE_WITH_GAPS: 'always_active_with_gaps'
+    ALWAYS_ACTIVE_WITH_GAPS: 'always_active_with_gaps',
+    SPECTRAL_BLEED_SAFE: 'spectral_bleed_safe'
 };
 
 /**
@@ -32,10 +34,17 @@ var OVERLAP_POLICIES = {
  * @returns {Array<Array>}
  */
 function resolveOverlaps(allSegments, rmsProfiles, params) {
-    var policy = (params && params.policy) || OVERLAP_POLICIES.BLEED_SAFE;
+    var policy = (params && params.policy) || OVERLAP_POLICIES.SPECTRAL_BLEED_SAFE;
     var frameDurationMs = (params && params.frameDurationMs) || 10;
     var overlapMarginDb = (params && params.overlapMarginDb !== undefined) ? params.overlapMarginDb : 6;
     var bleedMarginDb = (params && params.bleedMarginDb !== undefined) ? params.bleedMarginDb : 8;
+    var fingerprints = (params && params.fingerprints) || null;
+    var bleedSimilarityThreshold = (params && params.bleedSimilarityThreshold !== undefined) ? params.bleedSimilarityThreshold : 0.82;
+    var overlapSimilarityThreshold = (params && params.overlapSimilarityThreshold !== undefined) ? params.overlapSimilarityThreshold : 0.60;
+    // When spectral_bleed_safe is requested but no fingerprints are available, fall back to bleed_safe
+    if (policy === OVERLAP_POLICIES.SPECTRAL_BLEED_SAFE && !fingerprints) {
+        policy = OVERLAP_POLICIES.BLEED_SAFE;
+    }
     var frameDurSec = frameDurationMs / 1000;
     var trackCount = allSegments.length;
 
@@ -146,6 +155,48 @@ function resolveOverlaps(allSegments, rmsProfiles, params) {
                 }
             }
         }
+
+        if (policy === OVERLAP_POLICIES.SPECTRAL_BLEED_SAFE) {
+            var startFrame = Math.floor(regionStart / frameDurSec);
+            var endFrame = Math.ceil(regionEnd / frameDurSec);
+
+            for (i = 0; i < activeTracks.length; i++) {
+                t = activeTracks[i];
+                if (t === dominantTrack) {
+                    continue;
+                }
+
+                var trackDb2 = rmsCalc.linearToDb(energies[t]);
+                var dbDiff2 = dominantDb - trackDb2;
+
+                // Check spectral similarity between this track and the dominant track
+                var similarity = spectralVad.computeCrossTrackSimilarity(
+                    fingerprints[dominantTrack],
+                    fingerprints[t],
+                    startFrame,
+                    endFrame
+                );
+
+                // Scenario A: High similarity + loud dominant → classic bleed → duck
+                if (similarity >= bleedSimilarityThreshold && dbDiff2 > bleedMarginDb) {
+                    segmentScores[t][activeSet[t]] += (regionEnd - regionStart);
+                    continue;
+                }
+
+                // Scenario B: Low similarity → different speakers → both stay active
+                if (similarity < overlapSimilarityThreshold) {
+                    // Do NOT add to segmentScores → track remains active
+                    continue;
+                }
+
+                // Scenario C: Ambiguous – fall back to RMS margin rules
+                if (dbDiff2 > bleedMarginDb) {
+                    segmentScores[t][activeSet[t]] += (regionEnd - regionStart);
+                } else if (dbDiff2 > overlapMarginDb) {
+                    segmentScores[t][activeSet[t]] += (regionEnd - regionStart) * 0.5;
+                }
+            }
+        }
     }
 
     for (t = 0; t < trackCount; t++) {
@@ -164,7 +215,15 @@ function resolveOverlaps(allSegments, rmsProfiles, params) {
         }
     }
 
-    return formatOutput(allSegments, segmentStates);
+    var formatted = formatOutput(allSegments, segmentStates);
+
+    // spectral_bleed_safe: also fill silence gaps so at least one track
+    // is always active (last active speaker stays open during pauses).
+    if (policy === OVERLAP_POLICIES.SPECTRAL_BLEED_SAFE) {
+        return fillGaps(formatted, trackCount);
+    }
+
+    return formatted;
 }
 
 /**

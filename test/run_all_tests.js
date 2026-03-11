@@ -13,7 +13,8 @@ var testFiles = [
     'test_rms.js',
     'test_segmentation.js',
     'test_overlap.js',
-    'test_e2e.js'
+    'test_e2e.js',
+    'test_spectral_bleed.js'
 ];
 
 // Simple test framework

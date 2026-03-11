@@ -67,8 +67,11 @@ function computeGainMatching(rmsProfiles) {
             gains.push(1.0); // Silent track, no adjustment
         } else {
             var gain = targetMedian / medians[t];
-            // Clamp to reasonable range: max 12dB boost, max 12dB cut
-            gain = Math.max(0.25, Math.min(4.0, gain));
+            // Clamp to ±18 dB (factor 8.0 / 0.126).
+            // ±12 dB was too narrow – a quiet speaker more than 12 dB below
+            // reference would not be fully normalised, leaving their signal
+            // below the VAD threshold even after gain matching.
+            gain = Math.max(0.126, Math.min(8.0, gain));
             gains.push(gain);
         }
     }

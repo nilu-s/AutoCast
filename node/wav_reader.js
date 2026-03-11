@@ -144,11 +144,20 @@ function readWav(filePath) {
 function checkAlignment(trackInfos, toleranceSec) {
     toleranceSec = toleranceSec || 0.5;
     
-    if (trackInfos.length < 2) {
+    var validTracks = [];
+    for (var i = 0; i < trackInfos.length; i++) {
+        // Ignore explicitly disabled tracks (path === null and durationSec === 0).
+        // Accept mock tracks from tests (which omit the path property but have duration).
+        if (trackInfos[i].path !== null && trackInfos[i].durationSec > 0) {
+            validTracks.push(trackInfos[i]);
+        }
+    }
+    
+    if (validTracks.length < 2) {
         return { aligned: true, maxDriftSec: 0, warning: null };
     }
     
-    const durations = trackInfos.map(function(t) { return t.durationSec; });
+    const durations = validTracks.map(function(t) { return t.durationSec; });
     const minDur = Math.min.apply(null, durations);
     const maxDur = Math.max.apply(null, durations);
     var maxDrift = maxDur - minDur;

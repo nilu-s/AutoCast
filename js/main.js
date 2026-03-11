@@ -81,6 +81,72 @@
                         proc.stdin.write(JSON.stringify({ trackPaths: trackPaths, params: params }) + '\n');
                         proc.stdin.end();
                     });
+                },
+
+                /**
+                 * Lightweight gain scan: only computes RMS + gain matching per track.
+                 * Much faster than the full analysis – used for the startup preset.
+                 */
+                quickGainScan: function (trackPaths, progressCallback) {
+                    return new Promise(function (resolve, reject) {
+                        var extensionPath = AutoCastBridge.getExtensionPath();
+                        if (!extensionPath || extensionPath === '.') {
+                            var pathname = window.location.pathname;
+                            if (window.navigator.platform.indexOf('Win') > -1 && pathname.charAt(0) === '/') {
+                                pathname = pathname.substring(1);
+                            }
+                            extensionPath = path.dirname(pathname).replace(/%20/g, ' ');
+                        }
+
+                        var workerPath = path.join(extensionPath, 'node', 'quick_gain_scan.js');
+
+                        var proc = childProcess.spawn('node', [workerPath], {
+                            cwd: extensionPath
+                        });
+
+                        var stdoutData = '';
+                        var stderrData = '';
+
+                        proc.stdout.on('data', function (data) {
+                            var str = data.toString();
+                            stdoutData += str;
+
+                            var lines = stdoutData.split('\n');
+                            stdoutData = lines.pop();
+
+                            for (var i = 0; i < lines.length; i++) {
+                                var line = lines[i].trim();
+                                if (!line) continue;
+                                try {
+                                    var msg = JSON.parse(line);
+                                    if (msg.type === 'progress') {
+                                        if (progressCallback) progressCallback(msg.percent, msg.message);
+                                    } else if (msg.type === 'done') {
+                                        resolve(msg.result);
+                                    } else if (msg.type === 'error') {
+                                        reject(new Error(msg.error));
+                                    }
+                                } catch (e) { }
+                            }
+                        });
+
+                        proc.stderr.on('data', function (data) {
+                            stderrData += data.toString();
+                        });
+
+                        proc.on('error', function (err) {
+                            reject(err);
+                        });
+
+                        proc.on('close', function (code) {
+                            if (code !== 0 && code !== null) {
+                                reject(new Error('Quick scan exited (' + code + '): ' + stderrData.substring(0, 100)));
+                            }
+                        });
+
+                        proc.stdin.write(JSON.stringify({ trackPaths: trackPaths }) + '\n');
+                        proc.stdin.end();
+                    });
                 }
             };
         } catch (e) {
@@ -98,7 +164,8 @@
         perTrackSensitivity: {},
         mockSamples: null,
         currentAudio: null,
-        currentPlayingTrack: -1
+        currentPlayingTrack: -1,
+        lastCutUndoSteps: 0
     };
 
     var TRACK_COLORS = [
@@ -115,17 +182,18 @@
         statusText: $('statusText'),
         statusIcon: $('statusIcon'),
         trackList: $('trackList'),
-        resultsSection: $('resultsSection'),
-        resultsContent: $('resultsContent'),
+        resultsSection: null,
+        resultsContent: null,
         progressContainer: $('progressContainer'),
         progressFill: $('progressFill'),
         progressText: $('progressText'),
-        waveformSection: $('waveformSection'),
-        waveformContainer: $('waveformContainer'),
+        waveformSection: null,
+        waveformContainer: null,
         btnLoadTracks: $('btnLoadTracks'),
         btnAnalyze: $('btnAnalyze'),
         btnPreviewMarkers: $('btnPreviewMarkers'),
         btnApply: $('btnApply'),
+        btnUndo: $('btnUndo'),
         btnReset: $('btnReset'),
         paramThreshold: $('paramThreshold'),
         paramDucking: $('paramDucking'),
@@ -147,12 +215,14 @@
     function getParams() {
         return {
             thresholdAboveFloorDb: parseInt(els.paramThreshold.value, 10),
-            holdFrames: 50,
-            minSegmentMs: 300,
+            holdFrames: 80, // Keep gate open 800ms after speech ends
+            minSegmentMs: 1000, // Drop segments shorter than 1s
+            minGapMs: 800, // Merge gaps shorter than 800ms
             duckingLevelDb: els.paramDucking ? parseInt(els.paramDucking.value, 10) : -24,
             rampMs: 30,
-            overlapPolicy: 'always_active_with_gaps',
-            bleedMarginDb: 8,
+            overlapPolicy: 'spectral_bleed_safe',
+            bleedMarginDb: 15,
+            overlapMarginDb: 8,
             autoGain: true,
             useSpectralVAD: true,
             adaptiveCrossfade: true,
@@ -209,6 +279,8 @@
         if (els.btnAnalyze) els.btnAnalyze.disabled = disabled;
         if (els.btnPreviewMarkers) els.btnPreviewMarkers.disabled = disabled;
         if (els.btnReset) els.btnReset.disabled = disabled;
+        // btnUndo has its own enable/disable logic – only block during active operations
+        if (disabled && els.btnUndo) els.btnUndo.disabled = true;
     }
 
     function runMockCutting(done) {
@@ -241,27 +313,39 @@
             return;
         }
 
+        var globalThreshold = parseInt(els.paramThreshold.value, 10);
         var html = '';
         for (var i = 0; i < state.tracks.length; i++) {
             var track = state.tracks[i];
             var color = TRACK_COLORS[i % TRACK_COLORS.length];
             var threshold = state.perTrackSensitivity[i] !== undefined
                 ? state.perTrackSensitivity[i]
-                : parseInt(els.paramThreshold.value, 10);
+                : globalThreshold;
+
+            // Ensure selected state is initialized
+            if (track.selected === undefined) track.selected = true;
+
+            // Badge color: grün wenn nah am Default, orange wenn stark abweichend
+            var isModified = state.perTrackSensitivity[i] !== undefined;
+            var badgeClass = isModified ? 'sensitivity-badge sensitivity-badge--custom' : 'sensitivity-badge';
 
             html += ''
                 + '<div class="track-item" data-track-index="' + i + '">'
                 + '  <div class="track-color" style="background:' + color + ';"></div>'
+                + '  <div class="track-select" style="margin-right: 8px;"><input type="checkbox" class="track-cb" data-track-index="' + i + '" ' + (track.selected ? 'checked' : '') + '></div>'
                 + '  <div class="track-meta">'
-                + '    <div class="track-title">Track ' + (i + 1) + (track.name ? ' – ' + escapeHtml(track.name) : '') + '</div>'
+                + '    <div class="track-title">Track ' + (i + 1) + (track.name ? ' \u2013 ' + escapeHtml(track.name) : '') + '</div>'
                 + '    <div class="track-subtitle">'
                 + (track.path ? escapeHtml(track.path) : 'No available media files on this track')
                 + '    </div>'
                 + '  </div>'
                 + '  <div class="track-controls">'
-                + '    <label>Sensitivity</label>'
+                + '    <div class="track-threshold-row">'
+                + '      <span class="track-controls-label">Korrektur</span>'
+                + '      <span class="' + badgeClass + '" data-track-index="' + i + '">' + threshold + ' dB</span>'
+                + '    </div>'
                 + '    <input class="track-sensitivity" type="range" min="3" max="24" step="1" value="' + threshold + '" data-track-index="' + i + '">'
-                + '    <span class="track-sensitivity-value">' + threshold + ' dB</span>'
+                + '    <div class="slider-labels"><span>Sensitiver</span><span>Strenger</span></div>'
                 + '  </div>'
                 + '</div>';
         }
@@ -275,76 +359,27 @@
                 var value = parseInt(this.value, 10);
                 state.perTrackSensitivity[trackIndex] = value;
 
-                var valueEl = this.parentNode.querySelector('.track-sensitivity-value');
-                if (valueEl) valueEl.textContent = value + ' dB';
+                // Badge aktualisieren
+                var badge = els.trackList.querySelector('.sensitivity-badge[data-track-index="' + trackIndex + '"]');
+                if (badge) {
+                    badge.textContent = value + ' dB';
+                    badge.className = 'sensitivity-badge sensitivity-badge--custom';
+                }
+            });
+        }
+
+        var checkboxes = els.trackList.querySelectorAll('.track-cb');
+        for (var c = 0; c < checkboxes.length; c++) {
+            checkboxes[c].addEventListener('change', function () {
+                var idx = parseInt(this.getAttribute('data-track-index'), 10);
+                state.tracks[idx].selected = this.checked;
             });
         }
     }
 
-    function renderResults() {
-        if (!els.resultsSection || !els.resultsContent) return;
+    function renderResults() { /* removed */ }
 
-        if (!state.analysisResult || !state.analysisResult.tracks) {
-            els.resultsSection.style.display = 'none';
-            return;
-        }
-
-        var html = '';
-        for (var i = 0; i < state.analysisResult.tracks.length; i++) {
-            var t = state.analysisResult.tracks[i];
-            var color = TRACK_COLORS[i % TRACK_COLORS.length];
-
-            html += ''
-                + '<div class="result-card">'
-                + '  <div class="result-card-header">'
-                + '    <span class="result-dot" style="background:' + color + ';"></span>'
-                + '    <strong>Track ' + (i + 1) + (t.name ? ' – ' + escapeHtml(t.name) : '') + '</strong>'
-                + '  </div>'
-                + '  <div class="result-card-body">'
-                + '    <div>Segments: ' + safeNum(t.segmentCount) + '</div>'
-                + '    <div>Active: ' + safeNum(t.activePercent) + '%</div>'
-                + '    <div>Active sec: ' + safeNum(t.totalActiveSec) + '</div>'
-                + '    <div>Noise floor: ' + safeNum(t.noiseFloorDb) + ' dBFS</div>'
-                + '    <div>Threshold: ' + safeNum(t.thresholdDb) + ' dBFS</div>'
-                + (t.gainAdjustDb !== undefined ? '<div>Gain adjust: ' + safeNum(t.gainAdjustDb) + ' dB</div>' : '')
-                + '  </div>'
-                + '</div>';
-        }
-
-        els.resultsContent.innerHTML = html;
-        els.resultsSection.style.display = 'block';
-    }
-
-    function renderWaveform() {
-        if (!els.waveformSection || !els.waveformContainer) return;
-
-        if (!state.analysisResult || !state.analysisResult.waveform) {
-            els.waveformSection.style.display = 'none';
-            return;
-        }
-
-        var waveform = state.analysisResult.waveform;
-        var html = '';
-
-        for (var t = 0; t < waveform.pointsPerTrack.length; t++) {
-            var points = waveform.pointsPerTrack[t] || [];
-            var color = TRACK_COLORS[t % TRACK_COLORS.length];
-
-            html += '<div class="wave-track">';
-            html += '<div class="wave-track-label">Track ' + (t + 1) + '</div>';
-            html += '<div class="wave-track-bars">';
-
-            for (var i = 0; i < points.length; i++) {
-                var h = Math.max(1, Math.round(points[i] * 100));
-                html += '<span class="wave-bar" style="height:' + h + '%; background:' + color + ';"></span>';
-            }
-
-            html += '</div></div>';
-        }
-
-        els.waveformContainer.innerHTML = html;
-        els.waveformSection.style.display = 'block';
-    }
+    function renderWaveform() { /* removed */ }
 
     function updateModeIndicator() {
         if (!els.modeIndicator) return;
@@ -362,16 +397,31 @@
         var trackPaths = [];
         var firstError = '';
         for (var i = 0; i < state.tracks.length; i++) {
-            var p = state.tracks[i].path;
-            if (p && !p.startsWith('[')) {
-                trackPaths.push(p);
-            } else if (p && !firstError) {
-                firstError = p;
+            var track = state.tracks[i];
+            var p = track.path;
+            
+            // Only include track if checked by user
+            if (track.selected !== false) {
+                if (p && !p.startsWith('[')) {
+                    trackPaths.push(p);
+                } else if (p && !firstError) {
+                    firstError = p;
+                }
+            } else {
+                // If it is deselected, we push null to maintain the array index alignment
+                // so that the analyzer knows which track index it belongs to
+                trackPaths.push(null);
             }
         }
 
-        if (trackPaths.length === 0) {
-            setStatus('error', 'No valid track paths. ' + (firstError || ''));
+        // Check if there's at least one valid path
+        var hasValid = false;
+        for (var i=0; i < trackPaths.length; i++) {
+            if (trackPaths[i]) hasValid = true;
+        }
+
+        if (!hasValid) {
+            setStatus('error', 'No valid track paths selected. ' + (firstError || ''));
             return;
         }
 
@@ -454,7 +504,9 @@
 
         var tIndices = [];
         for (var i = 0; i < state.tracks.length; i++) {
-            tIndices.push(state.tracks[i].index !== undefined ? state.tracks[i].index : i);
+            if (state.tracks[i].selected !== false) {
+                tIndices.push(state.tracks[i].index !== undefined ? state.tracks[i].index : i);
+            }
         }
 
         var mode = 'mixed';
@@ -468,39 +520,63 @@
                 runMockCutting(function () {
                     hideProgress();
                     setButtonsDisabled(false);
+                    // Enable undo in mock mode
+                    state.undoSnapshot = { snapshot: [], ticksPerSecond: 254016000000, trackIndices: tIndices };
+                    if (els.btnUndo) els.btnUndo.disabled = false;
                     setStatus('success', 'Mock cutting complete');
                 });
                 return;
             }
 
-            var cutProgressHandler = function (evt) {
-                try {
-                    var payload = evt && evt.data ? JSON.parse(evt.data) : null;
-                    if (!payload) return;
-
-                    setProgress(
-                        Math.max(0, Math.min(100, parseInt(payload.percent, 10) || 0)),
-                        payload.message || 'Cutting clips...'
-                    );
-                } catch (e) {
-                    console.error('[AutoCast] Cut progress parse error:', e);
+            // Step 1: Capture current clip state before any cuts
+            setProgress(2, 'Saving clip state for undo...');
+            AutoCastBridge.captureTrackState({ trackIndices: tIndices, ticksPerSecond: 254016000000 }, function (captureResult) {
+                if (captureResult && captureResult.success) {
+                    state.undoSnapshot = {
+                        snapshot: captureResult.snapshot,
+                        trackIndices: tIndices,
+                        ticksPerSecond: 254016000000
+                    };
+                } else {
+                    // Capture failed – undo won't be available
+                    state.undoSnapshot = null;
+                    console.warn('[AutoCast] captureTrackState failed:', captureResult);
                 }
-            };
 
-            AutoCastBridge.addCutProgressListener(cutProgressHandler);
+                // Step 2: Proceed with the actual cuts
+                var cutProgressHandler = function (evt) {
+                    try {
+                        var payload = evt && evt.data ? JSON.parse(evt.data) : null;
+                        if (!payload) return;
+                        setProgress(
+                            Math.max(0, Math.min(100, parseInt(payload.percent, 10) || 0)),
+                            payload.message || 'Cutting clips...'
+                        );
+                    } catch (e) {
+                        console.error('[AutoCast] Cut progress parse error:', e);
+                    }
+                };
 
-            AutoCastBridge.applyCuts({
-                segments: state.analysisResult.segments,
-                trackIndices: tIndices,
-                ticksPerSecond: 254016000000,
-                mode: mode,
-                duckingLevelDb: parseInt(els.paramDucking.value, 10)
-            }, function (result) {
-                AutoCastBridge.removeCutProgressListener(cutProgressHandler);
-                hideProgress();
-                setButtonsDisabled(false);
+                AutoCastBridge.addCutProgressListener(cutProgressHandler);
 
-                if (result && result.success) {
+                AutoCastBridge.applyCuts({
+                    segments: state.analysisResult.segments,
+                    trackIndices: tIndices,
+                    ticksPerSecond: 254016000000,
+                    mode: mode,
+                    duckingLevelDb: parseInt(els.paramDucking.value, 10)
+                }, function (result) {
+                    AutoCastBridge.removeCutProgressListener(cutProgressHandler);
+                    hideProgress();
+                    setButtonsDisabled(false);
+                    console.log('[AutoCast] Raw result from ExtendScript:', result);
+
+                    if (result && result.success) {
+                        if (state.undoSnapshot && els.btnUndo) {
+                            els.btnUndo.disabled = false;
+                            els.btnUndo.title = 'Undo cuts (restores ' + (state.undoSnapshot.snapshot ? state.undoSnapshot.snapshot.length : 0) + ' track(s))';
+                        }
+
                     setStatus(
                         'success',
                         'Clips cut successfully (' +
@@ -509,13 +585,32 @@
                         (result.clipsRemoved || 0) + ' removed)'
                     );
                 } else {
-                    var errMsg = (result && result.error) ? result.error : 'Cut error';
+                    var errMsg = 'Cut error';
+                    if (typeof result === 'string') {
+                        errMsg = 'ExtendScript Crash: ' + result;
+                    } else if (result && result.error) {
+                        errMsg = result.error;
+                    } else if (result && result.errors && result.errors.length) {
+                        errMsg = result.errors[0];
+                        if (result.errors.length > 1) {
+                            errMsg += ' (+' + (result.errors.length - 1) + ' more)';
+                        }
+                    }
                     setStatus('error', errMsg);
                     if (result && result.errors && result.errors.length) {
                         console.error('[AutoCast] Cut errors:', result.errors);
                     }
                 }
-            });
+
+                // Always log debug info for diagnostics
+                if (result && result.debug && result.debug.length) {
+                    console.log('[AutoCast] Cut debug (' + result.debug.length + ' entries):');
+                    for (var d = 0; d < result.debug.length; d++) {
+                        console.log('  ' + result.debug[d]);
+                    }
+                    }
+                });
+            }); // end captureTrackState callback
 
             return;
         }
@@ -581,6 +676,125 @@
         });
     }
 
+    /**
+     * Beim Öffnen: Tracks laden → Lautstärke messen → Sensitivity-Slider
+     * automatisch als Preset einstellen (nur visuell, Premiere unberührt).
+     *
+     * Leise Spuren (hoher gainAdjustDb) → niedrigerer Schwellwert (sensitiver)
+     * Laute Spuren  (niedriger gainAdjustDb) → höherer Schwellwert (strenger)
+     *
+     * Formel: neuerThreshold = globalThreshold - gainAdjustDb * 0.5
+     * → Clamp auf [3, 24] dB
+     */
+    function autoAnalyzeAndNormalizeGain() {
+        setStatus('analyzing', 'Lade Tonspuren...');
+
+        AutoCastBridge.getTrackInfo(function (result) {
+            if (!result || result.error) {
+                setStatus('error', result && result.error ? result.error : 'Tonspuren konnten nicht geladen werden');
+                return;
+            }
+
+            var loadedTracks = result.tracks || result || [];
+            for (var i = 0; i < loadedTracks.length; i++) {
+                var t = loadedTracks[i];
+                if (!t.path && t.clips && t.clips.length > 0) {
+                    var foundPath = false;
+                    for (var c = 0; c < t.clips.length; c++) {
+                        if (t.clips[c].mediaPath) {
+                            t.path = t.clips[c].mediaPath;
+                            foundPath = true;
+                            break;
+                        } else if (t.clips[c].mediaPathError) {
+                            t.path = '[Err] ' + t.clips[c].mediaPathError;
+                            foundPath = true;
+                        }
+                    }
+                    if (!foundPath) t.path = '[Info] No usable media paths found.';
+                } else if (!t.clips || t.clips.length === 0) {
+                    t.path = '[Empty] No clips on this track.';
+                }
+            }
+
+            state.tracks = loadedTracks;
+            renderTracks();
+            setStatus('analyzing', state.tracks.length + ' Spur(en) geladen – messe Lautstärken...');
+
+            // Gültige Pfade für die Analyse sammeln
+            var trackPaths = [];
+            var trackIndexMap = [];
+            for (var j = 0; j < state.tracks.length; j++) {
+                var p = state.tracks[j].path;
+                if (p && !p.startsWith('[')) {
+                    trackPaths.push(p);
+                    trackIndexMap.push(j);
+                }
+            }
+
+            if (trackPaths.length === 0) {
+                setStatus('idle', state.tracks.length + ' Spur(en) geladen – keine Mediendateien gefunden');
+                return;
+            }
+
+            if (!window.AutoCastAnalyzer || typeof window.AutoCastAnalyzer.quickGainScan !== 'function') {
+                setStatus('idle', state.tracks.length + ' Spur(en) geladen');
+                return;
+            }
+
+            state.isAnalyzing = true;
+            setButtonsDisabled(true);
+            setProgress(0, 'Messe Lautstärken...');
+
+            var globalThreshold = parseInt(els.paramThreshold.value, 10);
+
+            window.AutoCastAnalyzer.quickGainScan(trackPaths, function (percent, message) {
+                setProgress(percent, message);
+            }).then(function (analysisResult) {
+                state.isAnalyzing = false;
+                hideProgress();
+                setButtonsDisabled(false);
+
+                // Sensitivity-Preset berechnen und Slider setzen
+                var tracks = analysisResult.tracks || [];
+                var presetParts = [];
+
+                for (var k = 0; k < tracks.length; k++) {
+                    var gainDb = tracks[k].gainAdjustDb || 0;
+                    var stateIdx = trackIndexMap[k] !== undefined ? trackIndexMap[k] : k;
+
+                    // Leise Spur → sensitiver (niedrigerer Schwellwert)
+                    // Laute Spur  → strenger (höherer Schwellwert)
+                    var recommended = Math.round(globalThreshold - gainDb * 0.5);
+                    recommended = Math.max(3, Math.min(24, recommended));
+
+                    state.perTrackSensitivity[stateIdx] = recommended;
+
+                    if (Math.abs(gainDb) >= 0.5) {
+                        presetParts.push('S' + (stateIdx + 1) + ': ' + recommended + ' dB');
+                    }
+                }
+
+                // Slider visuell aktualisieren (inklusive Badges)
+                renderTracks();
+
+                var statusMsg = 'Preset gesetzt';
+                if (presetParts.length > 0) {
+                    statusMsg += ': ' + presetParts.join(', ');
+                } else {
+                    statusMsg = 'Alle Spuren gleich laut – Preset: ' + globalThreshold + ' dB';
+                }
+                setStatus('success', statusMsg);
+
+            }).catch(function (err) {
+                state.isAnalyzing = false;
+                hideProgress();
+                setButtonsDisabled(false);
+                setStatus('idle', state.tracks.length + ' Spur(en) geladen – Lautstärkemessung fehlgeschlagen');
+                console.warn('[AutoCast] Auto-Preset fehlgeschlagen:', err);
+            });
+        });
+    }
+
     function safeNum(value) {
         return (typeof value === 'number' && isFinite(value)) ? value : '-';
     }
@@ -610,6 +824,51 @@
         els.btnReset.addEventListener('click', resetUI);
     }
 
+    function undoCuts() {
+        var snapshot = state.undoSnapshot;
+        if (!snapshot) {
+            setStatus('error', 'Nothing to undo');
+            return;
+        }
+
+        setStatus('analyzing', 'Undoing cuts...');
+        setProgress(0, 'Restoring clips...');
+        setButtonsDisabled(true);
+
+        if (AutoCastBridge.isInMockMode()) {
+            setTimeout(function () {
+                setButtonsDisabled(false);
+                if (els.btnUndo) els.btnUndo.disabled = true;
+                state.undoSnapshot = null;
+                hideProgress();
+                setStatus('success', 'Mock undo complete');
+            }, 600);
+            return;
+        }
+
+        AutoCastBridge.restoreTrackState(snapshot, function (result) {
+            hideProgress();
+            setButtonsDisabled(false);
+
+            if (result && result.success) {
+                if (els.btnUndo) els.btnUndo.disabled = true;
+                state.undoSnapshot = null;
+                setStatus('success', 'Cuts undone \u2013 ' + (result.restored || 0) + ' clip(s) restored');
+            } else {
+                if (els.btnUndo) els.btnUndo.disabled = false;
+                var errMsg = (result && result.error) ? result.error
+                    : (result && result.errors && result.errors.length) ? result.errors[0]
+                    : 'Undo failed';
+                setStatus('error', errMsg);
+                console.error('[AutoCast] restoreTrackState errors:', result);
+            }
+        });
+    }
+
+    if (els.btnUndo) {
+        els.btnUndo.addEventListener('click', undoCuts);
+    }
+
     updateModeIndicator();
 
     hideProgress();
@@ -617,4 +876,7 @@
     renderResults();
     renderWaveform();
     setStatus('idle', 'Ready');
+
+    // Beim Öffnen: Tracks laden + Lautstärke messen + Sensitivity-Preset setzen
+    setTimeout(autoAnalyzeAndNormalizeGain, 500);
 })();

@@ -133,11 +133,15 @@ function estimateNoiseFloor(rmsArray) {
 
     values.sort(function (a, b) { return a - b; });
 
-    // 10th percentile = noise floor estimate
-    var p10Idx = Math.floor(values.length * 0.10);
-    var noiseFloor = values[p10Idx];
+    // 5th percentile = noise floor estimate
+    // Using 5% instead of 10% makes the floor more conservative – mic bleed
+    // (which sits between true silence and active speech) is less likely to
+    // inflate the floor estimate, which in turn keeps the VAD threshold high
+    // enough to suppress bleed on idle tracks.
+    var p5Idx = Math.floor(values.length * 0.05);
+    var noiseFloor = values[p5Idx];
 
-    // Median = typical level
+    // Median = typical level (useful for dynamic-range checks)
     var medianIdx = Math.floor(values.length * 0.50);
     var median = values[medianIdx];
 

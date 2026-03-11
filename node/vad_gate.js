@@ -17,15 +17,20 @@ var VAD_DEFAULTS = {
     /** Threshold in dB above per-track noise floor. Higher = more aggressive gating. */
     thresholdAboveFloorDb: 12,
     /** Absolute minimum threshold in dBFS. Prevents opening gate on near-silence. */
-    absoluteThresholdDb: -50,
-    /** Attack time in frames – gate opens this many frames after signal exceeds threshold */
-    attackFrames: 2,
+    absoluteThresholdDb: -45,
+    /** Attack time in frames – gate opens this many frames after signal exceeds threshold.
+     *  3 frames = 30ms at 10ms frame size, filters out click/knock transients. */
+    attackFrames: 3,
     /** Release time in frames – gate stays open this many frames after signal drops */
     releaseFrames: 5,
     /** Hold time in frames – minimum time gate stays open once triggered */
     holdFrames: 30,
     /** Smoothing window for RMS (frames) before gating. Reduces flutter. */
-    smoothingWindow: 5
+    smoothingWindow: 5,
+    /** Hysteresis in dB: gate opens at threshold, but only closes once signal drops
+     *  this many dB below threshold. Prevents gate chatter near the boundary.
+     *  Keep low (2 dB) so quiet speakers are not permanently locked out. */
+    hysteresisDb: 2
 };
 
 /**
@@ -49,20 +54,39 @@ function detectActivity(rmsArray, params) {
     // --- 2. Estimate per-track noise floor ---
     var noiseInfo = rmsCalc.estimateNoiseFloor(rmsArray);
 
-    // --- 3. Compute adaptive threshold ---
-    // Threshold = noise floor + X dB (relative to each track's own noise)
-    var thresholdDb = Math.max(
+    // --- 3. Compute adaptive threshold (with hysteresis) ---
+    // Open threshold: signal must rise ABOVE this to open the gate
+    // Close threshold: signal must fall BELOW this to close the gate
+    // Hysteresis prevents chatter when signal hovers right at the boundary
+    // (typical for mic bleed which sits just below/at the threshold).
+    var openThresholdDb = Math.max(
         noiseInfo.noiseFloorDb + params.thresholdAboveFloorDb,
         params.absoluteThresholdDb
     );
-    var thresholdLinear = rmsCalc.dbToLinear(thresholdDb);
+    var hysteresisDb = (params.hysteresisDb !== undefined) ? params.hysteresisDb : 4;
+    var closeThresholdDb = openThresholdDb - hysteresisDb;
 
-    // --- 4. Raw gate decision (binary) ---
+    var openThresholdLinear  = rmsCalc.dbToLinear(openThresholdDb);
+    var closeThresholdLinear = rmsCalc.dbToLinear(closeThresholdDb);
+
+    // --- 4. Hysteresis gate decision ---
     var frameCount = smoothed.length;
     var rawGate = new Uint8Array(frameCount);
+    var gateCurrentlyOpen = false;
 
     for (var i = 0; i < frameCount; i++) {
-        rawGate[i] = smoothed[i] >= thresholdLinear ? 1 : 0;
+        if (!gateCurrentlyOpen) {
+            // Gate is closed: open only when signal rises ABOVE open threshold
+            if (smoothed[i] >= openThresholdLinear) {
+                gateCurrentlyOpen = true;
+            }
+        } else {
+            // Gate is open: close only when signal falls BELOW close threshold
+            if (smoothed[i] < closeThresholdLinear) {
+                gateCurrentlyOpen = false;
+            }
+        }
+        rawGate[i] = gateCurrentlyOpen ? 1 : 0;
     }
 
     // --- 5. Apply attack (delay opening) ---
@@ -76,9 +100,9 @@ function detectActivity(rmsArray, params) {
 
     return {
         gateOpen: finalGate,
-        thresholdLinear: thresholdLinear,
+        thresholdLinear: openThresholdLinear,
         noiseFloorDb: noiseInfo.noiseFloorDb,
-        thresholdDb: thresholdDb
+        thresholdDb: openThresholdDb
     };
 }
 
