@@ -3,13 +3,13 @@
 
 var path = require('path');
 var fs = require('fs');
-var analyzer = require('./node/analyzer');
-var wavReader = require('./node/wav_reader');
-var rmsCalc = require('./node/rms_calculator');
-var gainNormalizer = require('./node/gain_normalizer');
-var vadGate = require('./node/vad_gate');
-var spectralVad = require('./node/spectral_vad');
-var segmentBuilder = require('./node/segment_builder');
+var analyzer = require('./packages/analyzer/src/analyzer');
+var wavReader = require('./packages/analyzer/src/wav_reader');
+var rmsCalc = require('./packages/analyzer/src/rms_calculator');
+var gainNormalizer = require('./packages/analyzer/src/gain_normalizer');
+var vadGate = require('./packages/analyzer/src/vad_gate');
+var spectralVad = require('./packages/analyzer/src/spectral_vad');
+var segmentBuilder = require('./packages/analyzer/src/segment_builder');
 
 // Nutze die gleichen Tracks wie der User in Premiere (falls wir Pfade wüssten).
 // Da wir sie nicht wissen, machen wir einen Trockenlauf auf den vorhandenen Test-WAVs,

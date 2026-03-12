@@ -11,7 +11,7 @@
 Write-Host ""
 Write-Host "═══════════════════════════════════════" -ForegroundColor Cyan
 Write-Host "  AutoCast Installer v1.0 (Beta)       " -ForegroundColor Cyan
-Write-Host "  Premiere Pro Podcast Auto-Ducking     " -ForegroundColor Cyan
+Write-Host "  Premiere Pro Podcast Auto-Cutting     " -ForegroundColor Cyan
 Write-Host "═══════════════════════════════════════" -ForegroundColor Cyan
 Write-Host ""
 
@@ -69,7 +69,7 @@ $robocopyArgs = @(
     $sourceDir, 
     $targetDir, 
     "/E",           # Copy subdirectories including empty ones  
-    "/XD", "test", "scripts", ".git", "node_modules", "test_data",  # Exclude directories
+    "/XD", "test", "scripts", ".git", "node_modules", "test_data", "packages\\analyzer\\test",  # Exclude directories
     "/XF", "*.md", ".gitignore", ".debug",  # Exclude files
     "/NFL", "/NDL", "/NJH", "/NJS"  # Quiet output
 )

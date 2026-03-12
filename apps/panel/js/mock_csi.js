@@ -35,7 +35,7 @@
                         endTicks: '914457600000000',
                         inPointTicks: '0',
                         outPointTicks: '914457600000000',
-                        mediaPath: 'test/test_data/track_a_host.wav'
+                        mediaPath: 'packages/analyzer/test/test_data/track_a_host.wav'
                     }
                 ]
             },
@@ -50,7 +50,7 @@
                         endTicks: '914457600000000',
                         inPointTicks: '0',
                         outPointTicks: '914457600000000',
-                        mediaPath: 'test/test_data/track_b_guest1.wav'
+                        mediaPath: 'packages/analyzer/test/test_data/track_b_guest1.wav'
                     }
                 ]
             },
@@ -65,7 +65,7 @@
                         endTicks: '914457600000000',
                         inPointTicks: '0',
                         outPointTicks: '914457600000000',
-                        mediaPath: 'test/test_data/track_c_guest2.wav'
+                        mediaPath: 'packages/analyzer/test/test_data/track_c_guest2.wav'
                     }
                 ]
             }
@@ -89,31 +89,6 @@
         // Check for static mock responses
         if (mockResponses[script]) {
             if (callback) setTimeout(function () { callback(mockResponses[script]); }, 100);
-            return;
-        }
-
-        // Handle applyKeyframes
-        if (script.indexOf('autocast_applyKeyframes') === 0) {
-            console.log('[Mock CSInterface] Would apply keyframes:', script.substring(0, 200) + '...');
-            var mockResult = JSON.stringify({
-                success: true,
-                totalKeyframesSet: 42,
-                tracks: [
-                    { trackIndex: 0, trackName: 'Audio 1', keyframesSet: 14 },
-                    { trackIndex: 1, trackName: 'Audio 2', keyframesSet: 14 },
-                    { trackIndex: 2, trackName: 'Audio 3', keyframesSet: 14 }
-                ]
-            });
-            if (callback) setTimeout(function () { callback(mockResult); }, 500);
-            return;
-        }
-
-        // Handle removeKeyframes
-        if (script.indexOf('autocast_removeKeyframes') === 0) {
-            console.log('[Mock CSInterface] Would remove keyframes');
-            if (callback) setTimeout(function () {
-                callback(JSON.stringify({ success: true, clipsReset: 3 }));
-            }, 200);
             return;
         }
 

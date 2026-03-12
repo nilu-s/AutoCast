@@ -5,7 +5,7 @@ title AutoCast Installer
 echo.
 echo  ======================================
 echo   AutoCast Installer
-echo   Premiere Pro Podcast Auto-Ducking
+echo   Premiere Pro Podcast Auto-Cutting
 echo  ======================================
 echo.
 echo  Installiere AutoCast...

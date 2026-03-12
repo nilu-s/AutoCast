@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoCast</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="panel">
+
+        <!-- Header -->
+        <header class="header">
+            <div class="logo-row">
+                <svg class="logo-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                    <path d="M2 17l10 5 10-5" />
+                    <path d="M2 12l10 5 10-5" />
+                </svg>
+                <div class="header-titles">
+                    <h1 class="logo-text">AutoCast</h1>
+                    <span class="version">v2.1</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Status Bar -->
+        <div id="statusBar" class="status-bar status-idle">
+            <span id="statusIcon" class="status-icon">â—</span>
+            <span id="statusText">Ready</span>
+        </div>
+
+        <!-- Main Content -->
+        <div class="content-wrapper">
+
+            <!-- Tracks -->
+            <section class="section">
+                <div class="section-header">
+                    <h2 class="section-title">Tracks</h2>
+                    <button id="btnLoadTracks" class="btn btn-icon btn-secondary" title="Load Tracks">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                    </button>
+                </div>
+                <div id="trackList" class="track-list">
+                    <div class="empty-state">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        <p>No tracks loaded</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Parameters -->
+            <section class="section params-section">
+                <h2 class="section-title">Settings</h2>
+                <div class="param-card">
+                    <div class="param-group">
+                        <div class="param-header">
+                            <label class="param-label">Sensitivity
+                                <span class="tooltip"
+                                    data-tip="Lower = detects quiet speech. Higher = strict (only loud speech). Increase if there is heavy bleed.">?</span>
+                            </label>
+                            <span class="param-value" id="valThreshold">0</span>
+                        </div>
+                        <input type="range" id="paramThreshold" class="slider" min="-8" max="8" value="0" step="1">
+                        <div class="slider-labels"><span>More Sensitive</span><span>Stricter</span></div>
+                        <div class="param-help">-8 = very sensitive, 0 = neutral, +8 = very strict</div>
+                    </div>
+                    <div class="param-group">
+                        <div class="param-header">
+                            <label class="param-label">Smooth Blocks
+                                <span class="tooltip"
+                                    data-tip="Merges nearby speech snippets into larger connected blocks. Recommended if output feels too fragmented.">?</span>
+                            </label>
+                        </div>
+                        <div class="param-help">Always active. Preset values: snippet padding 1200 ms + primary gap fill 1800 ms.</div>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- Analysis Progress -->
+            <div id="progressContainer" class="progress-container" style="display: none;">
+                <div class="progress-bar">
+                    <div id="progressFill" class="progress-fill" style="width: 0%"></div>
+                </div>
+                <span id="progressText" class="progress-text">0%</span>
+            </div>
+            <section id="analysisSummary" class="section analysis-summary" style="display: none;">
+                <h2 class="section-title">Analysis Summary</h2>
+                <div id="summaryPrimary" class="summary-primary"></div>
+                <div id="summaryDetail" class="summary-detail"></div>
+            </section>
+
+
+
+
+
+        </div>
+
+        <!-- Footer Actions -->
+        <footer class="footer-actions">
+            <div class="action-row primary-actions">
+                <button id="btnAnalyze" class="btn btn-primary">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polygon points="10 8 16 12 10 16 10 8"></polygon>
+                    </svg>
+                    Analyze
+                </button>
+                <button id="btnApply" class="btn btn-accent" disabled title="Generate cuts on timeline">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    Apply Edits
+                </button>
+            </div>
+            <div class="action-row secondary-actions">
+                <button id="btnReset" class="btn btn-danger btn-sm" disabled>Reset</button>
+                <div class="footer-meta">
+                    <span id="modeIndicator" class="mode-badge">Cut-only</span>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="js/CSInterface.js?v=2"></script>
+    <script src="js/mock_csi.js?v=2"></script>
+    <script src="js/csi_bridge.js?v=2"></script>
+    <script src="js/main.js?v=2"></script>
+</body>
+
+</html>

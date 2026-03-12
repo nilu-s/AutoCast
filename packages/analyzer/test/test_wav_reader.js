@@ -1,11 +1,11 @@
-/**
- * AutoCast – WAV Reader Tests
+﻿/**
+ * AutoCast â€“ WAV Reader Tests
  */
 
 'use strict';
 
 var path = require('path');
-var wavReader = require(path.join(__dirname, '..', 'node', 'wav_reader'));
+var wavReader = require(path.join(__dirname, '..', 'src', 'wav_reader'));
 var genWav = require(path.join(__dirname, 'generate_test_wav'));
 
 describe('WAV Reader', function () {
@@ -98,3 +98,4 @@ describe('WAV Reader', function () {
         assert(result.warning !== null, 'Should have warning message');
     });
 });
+

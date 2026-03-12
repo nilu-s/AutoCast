@@ -26,8 +26,8 @@
         <Extension Id="com.autocast.panel.main">
             <DispatchInfo>
                 <Resources>
-                    <MainPath>./index.html</MainPath>
-                    <ScriptPath>./jsx/host.jsx</ScriptPath>
+                    <MainPath>./apps/panel/index.html</MainPath>
+                    <ScriptPath>./apps/panel/jsx/host.jsx</ScriptPath>
                     <CEFCommandLine>
                         <Parameter>--enable-nodejs</Parameter>
                         <Parameter>--mixed-context</Parameter>

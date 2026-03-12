@@ -1,11 +1,11 @@
-/**
- * AutoCast – Overlap Resolver Tests
+﻿/**
+ * AutoCast â€“ Overlap Resolver Tests
  */
 
 'use strict';
 
 var path = require('path');
-var overlapResolver = require(path.join(__dirname, '..', 'node', 'overlap_resolver'));
+var overlapResolver = require(path.join(__dirname, '..', 'src', 'overlap_resolver'));
 
 describe('Overlap Resolver', function () {
 
@@ -32,8 +32,8 @@ describe('Overlap Resolver', function () {
         assert(result.length === 2, 'Should have 2 tracks in result');
         // Track 0 should be active (it's louder)
         assert(result[0][0].state === 'active', 'Louder track should be active');
-        // Track 1 should be ducked (it's quieter by more than 6dB)
-        assert(result[1][0].state === 'ducked', 'Quieter track should be ducked');
+        // Track 1 should be suppressed (it's quieter by more than 6dB)
+        assert(result[1][0].state === 'suppressed', 'Quieter track should be suppressed');
     });
 
     it('should keep both active when within margin', function () {
@@ -100,52 +100,10 @@ describe('Overlap Resolver', function () {
     });
 });
 
-describe('Ducking Map Generator', function () {
-
-    it('should generate keyframes with ramps', function () {
-        var allSegments = [
-            [{ start: 2, end: 5, trackIndex: 0 }] // Active 2-5s
-        ];
-
-        var segmentStates = [['active']];
-
-        var keyframes = overlapResolver.generateDuckingMap(
-            allSegments, 10, segmentStates,
-            { duckingLevelDb: -24, rampMs: 30 }
-        );
-
-        assert(keyframes.length === 1, 'Should have 1 track of keyframes');
-        assert(keyframes[0].length > 2, 'Should have multiple keyframes');
-
-        // Verify ramp structure: should have 0dB at segment and -24dB outside
-        var hasZeroDb = false;
-        var hasDucked = false;
-        for (var i = 0; i < keyframes[0].length; i++) {
-            if (keyframes[0][i].gainDb === 0) hasZeroDb = true;
-            if (keyframes[0][i].gainDb === -24) hasDucked = true;
-        }
-        assert(hasZeroDb, 'Should have 0dB keyframes (active region)');
-        assert(hasDucked, 'Should have -24dB keyframes (ducked region)');
-    });
-
-    it('should duck entirely silent track', function () {
-        var allSegments = [[]]; // No segments
-        var segmentStates = [[]];
-
-        var keyframes = overlapResolver.generateDuckingMap(
-            allSegments, 10, segmentStates,
-            { duckingLevelDb: -24, rampMs: 30 }
-        );
-
-        assert(keyframes[0].length === 2, 'Silent track should have start/end keyframes');
-        assert(keyframes[0][0].gainDb === -24, 'Should be ducked at start');
-        assert(keyframes[0][1].gainDb === -24, 'Should be ducked at end');
-    });
-});
-
 // Helper: create uniform RMS array
 function createUniformRMS(value, length) {
     var rms = new Float64Array(length);
     for (var i = 0; i < length; i++) rms[i] = value;
     return rms;
 }
+

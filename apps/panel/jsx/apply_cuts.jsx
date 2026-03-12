@@ -9,8 +9,6 @@ function applyCuts(data, progressCallback) {
     var segmentsPerTrack = data.segments || [];
     var trackIndices = data.trackIndices || [];
     var ticksPerSecond = data.ticksPerSecond || 254016000000;
-    var mode = data.mode || 'chop';
-    var duckingLevelDb = (data.duckingLevelDb !== undefined) ? data.duckingLevelDb : -24;
 
     var totalClipsCreated = 0;
     var totalClipsTrimmed = 0;
@@ -40,21 +38,13 @@ function applyCuts(data, progressCallback) {
         return a.start - b.start;
     }
 
-    function filterWantedSegments(segments, currentMode) {
+    function filterWantedSegments(segments) {
         var out = [];
         for (var i = 0; i < segments.length; i++) {
             var seg = segments[i];
             if (!seg) continue;
 
-            if (currentMode === 'chop') {
-                if (seg.state === 'active') {
-                    out.push({
-                        start: seg.start,
-                        end: seg.end,
-                        state: seg.state || 'active'
-                    });
-                }
-            } else {
+            if (seg.state === 'active') {
                 out.push({
                     start: seg.start,
                     end: seg.end,
@@ -107,57 +97,6 @@ function applyCuts(data, progressCallback) {
         return overlaps;
     }
 
-    function setClipTimes(clip, newTimelineStartSec, newTimelineEndSec, newSourceInSec) {
-        try {
-            clip.inPoint = secToTicks(newSourceInSec);
-            clip.start = secToTicks(newTimelineStartSec);
-            clip.end = secToTicks(newTimelineEndSec);
-            return null;
-        } catch (e) {
-            return 'Failed setting clip times: ' + e;
-        }
-    }
-
-    function findVolumeComponent(clip) {
-        if (!clip || !clip.components) return null;
-
-        for (var i = 0; i < clip.components.numItems; i++) {
-            var comp = clip.components[i];
-            if (!comp) continue;
-
-            if (comp.matchName === 'ADBE Volume' || comp.displayName === 'Volume') {
-                return comp;
-            }
-        }
-        return null;
-    }
-
-    function setClipVolumeDb(clip, levelDb) {
-        var vol = findVolumeComponent(clip);
-        if (!vol || !vol.properties) return false;
-
-        for (var i = 0; i < vol.properties.numItems; i++) {
-            var prop = vol.properties[i];
-            if (!prop) continue;
-
-            if (prop.matchName === 'ADBE Volume Level' || prop.displayName === 'Level') {
-                try { prop.setTimeVarying(false); } catch (e1) { }
-                try {
-                    prop.setValue(levelDb, true);
-                    return true;
-                } catch (e2) {
-                    try {
-                        prop.setValue(levelDb);
-                        return true;
-                    } catch (e3) {
-                        return false;
-                    }
-                }
-            }
-        }
-        return false;
-    }
-
     function insertAdditionalClip(track, projectItem, timelineStartSec, sourceInSec, timelineEndSec, state) {
         var insertAtTicks = secToTicks(timelineStartSec);
 
@@ -179,9 +118,9 @@ function applyCuts(data, progressCallback) {
             projectItem.clearOutPoint();
         } catch (eInOut) {}
 
-        // We DO NOT call setClipTimes() here because manually modifying clip.inPoint or clip.end
-        // via ExtendScript API creates "hard" boundaries that prevent the user from dragging
-        // the handles (arbitrary extension). overwriteClip already placed it perfectly!
+        // We do not manually rewrite clip start/end here because
+        // overwriteClip already places the trimmed snippet correctly and
+        // keeps clip handles freely extendable in Premiere.
 
         return { success: true };
     }
@@ -213,7 +152,7 @@ function applyCuts(data, progressCallback) {
             'Processing track ' + (t + 1) + '/' + trackIndices.length + '...'
         );
 
-        var wantedSegments = filterWantedSegments(rawSegments, mode);
+        var wantedSegments = filterWantedSegments(rawSegments);
         wantedSegments = mergeTouchingSegments(wantedSegments, 0.0005);
 
         var originalClips = cloneArrayOfTrackClips(track);
@@ -233,13 +172,11 @@ function applyCuts(data, progressCallback) {
             var overlaps = getOverlaps(clipStartSec, clipEndSec, wantedSegments);
 
             if (overlaps.length === 0) {
-                if (mode === 'chop') {
-                    try {
-                        clip.remove(0, 0);
-                        totalClipsRemoved++;
-                    } catch (eRemove) {
-                        errors.push('Remove failed on track ' + trackIdx + ': ' + eRemove);
-                    }
+                try {
+                    clip.remove(0, 0);
+                    totalClipsRemoved++;
+                } catch (eRemove) {
+                    errors.push('Remove failed on track ' + trackIdx + ': ' + eRemove);
                 }
                 doneOriginalClips++;
                 progress(totalOriginalClips > 0 ? Math.round((doneOriginalClips / totalOriginalClips) * 100) : 100, 'Cutting clip...');

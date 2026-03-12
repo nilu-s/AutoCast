@@ -1,12 +1,14 @@
 /**
- * AutoCast compatibility host script.
- * Keeps legacy ScriptPath (./jsx/host.jsx) functional after project restructure.
+ * AutoCast – ExtendScript Host
+ *
+ * Main entry point for all ExtendScript calls from the CEP Panel.
+ * Premiere Pro runs this in its internal ExtendScript engine.
  */
 
-//@include "../apps/panel/jsx/get_track_info.jsx"
-//@include "../apps/panel/jsx/apply_markers.jsx"
-//@include "../apps/panel/jsx/apply_cuts.jsx"
-//@include "../apps/panel/jsx/apply_gain.jsx"
+//@include "get_track_info.jsx"
+//@include "apply_markers.jsx"
+//@include "apply_cuts.jsx"
+//@include "apply_gain.jsx"
 
 function autocast_ping() {
     return JSON.stringify({ status: 'ok', version: '2.1.0', host: 'Premiere Pro' });
@@ -79,3 +81,4 @@ function autocast_applyGainNormalization(gainDataJson) {
         return errStr;
     }
 }
+

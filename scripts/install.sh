@@ -8,7 +8,7 @@
 echo ""
 echo "═══════════════════════════════════════"
 echo "  AutoCast Installer v1.0 (Beta)"
-echo "  Premiere Pro Podcast Auto-Ducking"
+echo "  Premiere Pro Podcast Auto-Cutting"
 echo "═══════════════════════════════════════"
 echo ""
 
@@ -52,6 +52,7 @@ fi
 mkdir -p "$TARGET_DIR"
 rsync -a \
     --exclude='test/' \
+    --exclude='packages/analyzer/test/' \
     --exclude='scripts/' \
     --exclude='.git/' \
     --exclude='node_modules/' \

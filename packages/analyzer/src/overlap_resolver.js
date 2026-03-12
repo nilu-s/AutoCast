@@ -1,5 +1,5 @@
-/**
- * AutoCast – Overlap Resolver
+﻿/**
+ * AutoCast â€“ Overlap Resolver
  *
  * Resolves conflicts when multiple tracks are active simultaneously.
  * Supports:
@@ -38,6 +38,10 @@ function resolveOverlaps(allSegments, rmsProfiles, params) {
     var frameDurationMs = (params && params.frameDurationMs) || 10;
     var overlapMarginDb = (params && params.overlapMarginDb !== undefined) ? params.overlapMarginDb : 6;
     var bleedMarginDb = (params && params.bleedMarginDb !== undefined) ? params.bleedMarginDb : 8;
+    var suppressionScoreThreshold = (params && params.suppressionScoreThreshold !== undefined)
+        ? params.suppressionScoreThreshold
+        : (policy === OVERLAP_POLICIES.DOMINANT_WINS ? 0.5 : 0.65);
+    var fillSilenceGaps = (params && params.fillGaps === true);
     var fingerprints = (params && params.fingerprints) || null;
     var bleedSimilarityThreshold = (params && params.bleedSimilarityThreshold !== undefined) ? params.bleedSimilarityThreshold : 0.82;
     var overlapSimilarityThreshold = (params && params.overlapSimilarityThreshold !== undefined) ? params.overlapSimilarityThreshold : 0.60;
@@ -151,7 +155,7 @@ function resolveOverlaps(allSegments, rmsProfiles, params) {
                 if (dbDiff > bleedMarginDb) {
                     segmentScores[t][activeSet[t]] += (regionEnd - regionStart);
                 } else if (dbDiff > overlapMarginDb) {
-                    segmentScores[t][activeSet[t]] += (regionEnd - regionStart) * 0.5;
+                    segmentScores[t][activeSet[t]] += (regionEnd - regionStart) * 0.35;
                 }
             }
         }
@@ -177,23 +181,23 @@ function resolveOverlaps(allSegments, rmsProfiles, params) {
                     endFrame
                 );
 
-                // Scenario A: High similarity + loud dominant → classic bleed → duck
+                // Scenario A: High similarity + loud dominant â†’ classic bleed â†’ suppress
                 if (similarity >= bleedSimilarityThreshold && dbDiff2 > bleedMarginDb) {
                     segmentScores[t][activeSet[t]] += (regionEnd - regionStart);
                     continue;
                 }
 
-                // Scenario B: Low similarity → different speakers → both stay active
+                // Scenario B: Low similarity â†’ different speakers â†’ both stay active
                 if (similarity < overlapSimilarityThreshold) {
-                    // Do NOT add to segmentScores → track remains active
+                    // Do NOT add to segmentScores â†’ track remains active
                     continue;
                 }
 
-                // Scenario C: Ambiguous – fall back to RMS margin rules
+                // Scenario C: Ambiguous â€“ fall back to RMS margin rules
                 if (dbDiff2 > bleedMarginDb) {
                     segmentScores[t][activeSet[t]] += (regionEnd - regionStart);
                 } else if (dbDiff2 > overlapMarginDb) {
-                    segmentScores[t][activeSet[t]] += (regionEnd - regionStart) * 0.5;
+                    segmentScores[t][activeSet[t]] += (regionEnd - regionStart) * 0.35;
                 }
             }
         }
@@ -203,12 +207,12 @@ function resolveOverlaps(allSegments, rmsProfiles, params) {
         for (s = 0; s < allSegments[t].length; s++) {
             var segDur = Math.max(0, allSegments[t][s].end - allSegments[t][s].start);
             if (segDur <= 0) {
-                segmentStates[t][s] = 'ducked';
+                segmentStates[t][s] = 'suppressed';
                 continue;
             }
 
-            if (segmentScores[t][s] >= segDur * 0.5) {
-                segmentStates[t][s] = 'ducked';
+            if (segmentScores[t][s] >= segDur * suppressionScoreThreshold) {
+                segmentStates[t][s] = 'suppressed';
             } else {
                 segmentStates[t][s] = 'active';
             }
@@ -219,76 +223,11 @@ function resolveOverlaps(allSegments, rmsProfiles, params) {
 
     // spectral_bleed_safe: also fill silence gaps so at least one track
     // is always active (last active speaker stays open during pauses).
-    if (policy === OVERLAP_POLICIES.SPECTRAL_BLEED_SAFE) {
+    if (policy === OVERLAP_POLICIES.SPECTRAL_BLEED_SAFE && fillSilenceGaps) {
         return fillGaps(formatted, trackCount);
     }
 
     return formatted;
-}
-
-/**
- * Generate the final ducking map for keyframe generation.
- * Accepts either:
- *   - resolved segments with seg.state
- *   - or raw segments + explicit segmentStates
- */
-function generateDuckingMap(allSegments, totalDurationSec, segmentStates, params) {
-    var duckingLevelDb = (params && params.duckingLevelDb !== undefined) ? params.duckingLevelDb : -24;
-    var rampMs = (params && params.rampMs !== undefined) ? params.rampMs : 30;
-    var rampSec = rampMs / 1000;
-    var trackCount = allSegments.length;
-    var keyframesPerTrack = [];
-
-    for (var t = 0; t < trackCount; t++) {
-        var keyframes = [];
-        var segments = allSegments[t];
-        var states = segmentStates ? segmentStates[t] : null;
-
-        if (segments.length === 0) {
-            keyframes.push({ time: 0, gainDb: duckingLevelDb });
-            keyframes.push({ time: totalDurationSec, gainDb: duckingLevelDb });
-            keyframesPerTrack.push(keyframes);
-            continue;
-        }
-
-        if (segments[0].start > rampSec) {
-            keyframes.push({ time: 0, gainDb: duckingLevelDb });
-        }
-
-        for (var s = 0; s < segments.length; s++) {
-            var seg = segments[s];
-            var isActive;
-
-            if (states) {
-                isActive = states[s] === 'active';
-            } else {
-                isActive = seg.state === 'active';
-            }
-
-            if (isActive) {
-                var rampUpStart = Math.max(0, seg.start - rampSec);
-                keyframes.push({ time: rampUpStart, gainDb: duckingLevelDb });
-                keyframes.push({ time: seg.start, gainDb: 0 });
-
-                keyframes.push({ time: seg.end, gainDb: 0 });
-                var rampDownEnd = Math.min(totalDurationSec, seg.end + rampSec);
-                keyframes.push({ time: rampDownEnd, gainDb: duckingLevelDb });
-            } else {
-                keyframes.push({ time: seg.start, gainDb: duckingLevelDb });
-                keyframes.push({ time: seg.end, gainDb: duckingLevelDb });
-            }
-        }
-
-        var lastSeg = segments[segments.length - 1];
-        if (lastSeg.end + rampSec < totalDurationSec) {
-            keyframes.push({ time: totalDurationSec, gainDb: duckingLevelDb });
-        }
-
-        keyframes = deduplicateKeyframes(keyframes);
-        keyframesPerTrack.push(keyframes);
-    }
-
-    return keyframesPerTrack;
 }
 
 /**
@@ -323,23 +262,6 @@ function formatOutput(allSegments, segmentStates) {
             });
         }
         result.push(trackResult);
-    }
-    return result;
-}
-
-/**
- * Remove keyframes with duplicate timestamps (keep the last one).
- */
-function deduplicateKeyframes(keyframes) {
-    if (keyframes.length < 2) return keyframes;
-
-    var result = [keyframes[0]];
-    for (var i = 1; i < keyframes.length; i++) {
-        if (Math.abs(keyframes[i].time - result[result.length - 1].time) < 0.0001) {
-            result[result.length - 1] = keyframes[i];
-        } else {
-            result.push(keyframes[i]);
-        }
     }
     return result;
 }
@@ -420,6 +342,5 @@ function fillGaps(formattedSegments, trackCount) {
 
 module.exports = {
     resolveOverlaps: resolveOverlaps,
-    generateDuckingMap: generateDuckingMap,
     OVERLAP_POLICIES: OVERLAP_POLICIES
 };

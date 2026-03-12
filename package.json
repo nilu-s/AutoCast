@@ -1,19 +1,25 @@
 {
-  "name": "autocast",
-  "version": "1.0.0",
-  "description": "AutoCast – Automatic podcast multi-track ducking plugin for Adobe Premiere Pro",
-  "main": "index.html",
-  "scripts": {
-    "test": "node test/run_all_tests.js",
-    "test:wav": "node test/test_wav_reader.js",
-    "test:rms": "node test/test_rms.js",
-    "test:segments": "node test/test_segmentation.js",
-    "test:overlap": "node test/test_overlap.js",
-    "test:e2e": "node test/test_e2e.js",
-    "generate-test-data": "node test/generate_test_wav.js",
-    "analyze": "node node/analyzer.js"
-  },
-  "keywords": ["premiere", "podcast", "audio", "ducking", "cep"],
-  "author": "",
-  "license": "MIT"
+    "name":  "autocast",
+    "version":  "1.0.0",
+    "description":  "AutoCast - Automatic podcast multi-track cut editing plugin for Adobe Premiere Pro",
+    "main":  "apps/panel/index.html",
+    "scripts":  {
+                    "test":  "node packages/analyzer/test/run_all_tests.js",
+                    "test:wav":  "node packages/analyzer/test/test_wav_reader.js",
+                    "test:rms":  "node packages/analyzer/test/test_rms.js",
+                    "test:segments":  "node packages/analyzer/test/test_segmentation.js",
+                    "test:overlap":  "node packages/analyzer/test/test_overlap.js",
+                    "test:e2e":  "node packages/analyzer/test/test_e2e.js",
+                    "generate-test-data":  "node packages/analyzer/test/generate_test_wav.js",
+                    "analyze":  "node packages/analyzer/src/analyzer.js"
+                },
+    "keywords":  [
+                     "premiere",
+                     "podcast",
+                     "audio",
+                     "speech-editing",
+                     "cep"
+                 ],
+    "author":  "",
+    "license":  "MIT"
 }

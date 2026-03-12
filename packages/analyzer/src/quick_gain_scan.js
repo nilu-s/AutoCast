@@ -3,8 +3,8 @@
  *
  * Lightweight alternative to the full analyzer:
  * Only computes RMS profiles and gain matching per track.
- * Skips VAD, spectral analysis, segment building, overlap resolution,
- * keyframe generation and waveform preview.
+ * Skips VAD, spectral analysis, segment building, overlap resolution
+ * and waveform preview.
  *
  * Used on plugin startup to quickly set per-track sensitivity presets
  * without running the full analysis pipeline.

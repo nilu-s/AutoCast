@@ -1,11 +1,11 @@
-/**
- * AutoCast – RMS Calculator Tests
+﻿/**
+ * AutoCast â€“ RMS Calculator Tests
  */
 
 'use strict';
 
 var path = require('path');
-var rmsCalc = require(path.join(__dirname, '..', 'node', 'rms_calculator'));
+var rmsCalc = require(path.join(__dirname, '..', 'src', 'rms_calculator'));
 var genWav = require(path.join(__dirname, 'generate_test_wav'));
 
 describe('RMS Calculator', function () {
@@ -91,3 +91,4 @@ describe('RMS Calculator', function () {
         assert(noiseInfo.dynamicRangeDb > 10, 'Dynamic range should be > 10 dB');
     });
 });
+

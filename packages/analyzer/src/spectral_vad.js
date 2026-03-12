@@ -1,12 +1,12 @@
-/**
- * AutoCast – Spectral VAD (FFT-based Voice Activity Detection)
+﻿/**
+ * AutoCast â€“ Spectral VAD (FFT-based Voice Activity Detection)
  * 
  * Enhances the basic RMS-based VAD with frequency analysis.
  * Uses a simple FFT to compute spectral features that distinguish
  * speech (300-3000 Hz energy concentration) from noise
  * (broadband, clicks, keyboard, etc.)
  * 
- * Zero dependencies – uses a radix-2 DIT FFT implementation.
+ * Zero dependencies â€“ uses a radix-2 DIT FFT implementation.
  */
 
 'use strict';
@@ -90,12 +90,12 @@ function computeSpectralVAD(samples, sampleRate, frameDurationMs) {
         prevMagnitudes = magnitudes;
 
         // Combine features into confidence score:
-        // - High speech ratio → likely speech
-        // - Low spectral flatness → tonal content (speech-like), not broadband noise
+        // - High speech ratio â†’ likely speech
+        // - Low spectral flatness â†’ tonal content (speech-like), not broadband noise
         //
         // Weight change versus v1:
-        //   flatnessScore weight: 0.4 → 0.5  (penalise broadband noise/bleed more)
-        //   ratioScore scale:     2.5 → 2.0  (avoid over-inflating ratio on noisy frames)
+        //   flatnessScore weight: 0.4 â†’ 0.5  (penalise broadband noise/bleed more)
+        //   ratioScore scale:     2.5 â†’ 2.0  (avoid over-inflating ratio on noisy frames)
         var ratioScore = Math.min(1.0, speechRatio * 2.0); // Scale: typical speech ~0.4-0.6
         var flatnessScore = 1.0 - Math.min(1.0, flatness * 2.0); // Invert: low flatness = speech
 
@@ -117,14 +117,102 @@ function computeSpectralVAD(samples, sampleRate, frameDurationMs) {
  * @param {number} minConfidence - Only keep frames where spectral confidence > this
  * @returns {Uint8Array} Refined gate
  */
-function refineGateWithSpectral(rmsGate, spectralConf, minConfidence) {
-    minConfidence = minConfidence || 0.3;
+function refineGateWithSpectral(rmsGate, spectralConf, minConfidence, options) {
+    minConfidence = (minConfidence !== undefined) ? minConfidence : 0.3;
+    options = options || {};
+
     var len = Math.min(rmsGate.length, spectralConf.length);
     var refined = new Uint8Array(len);
+    var score = options.returnDebug ? new Float32Array(len) : null;
+    var reasonCode = options.returnDebug ? new Uint8Array(len) : null;
+
+    var softMargin = (options.softMargin !== undefined) ? options.softMargin : 0.12;
+    var openScore = (options.openScore !== undefined) ? options.openScore : 0.60;
+    var closeScore = (options.closeScore !== undefined) ? options.closeScore : 0.45;
+    var rmsWeight = (options.rmsWeight !== undefined) ? options.rmsWeight : 0.50;
+    var spectralWeight = 1.0 - rmsWeight;
+    var holdFrames = (options.holdFrames !== undefined) ? options.holdFrames : 2;
+
+    var softFloor = Math.max(0, minConfidence - softMargin);
+    var softDenom = Math.max(1e-6, minConfidence - softFloor);
+    var hardRejectConfidence = (options.hardRejectConfidence !== undefined)
+        ? options.hardRejectConfidence
+        : Math.max(0.05, softFloor * 0.5);
+
+    var isOpen = false;
+    var holdCounter = 0;
 
     for (var i = 0; i < len; i++) {
-        // Keep gate open only if BOTH RMS and spectral agree
-        refined[i] = (rmsGate[i] && spectralConf[i] >= minConfidence) ? 1 : 0;
+        var rmsVote = rmsGate[i] ? 1 : 0;
+        var conf = spectralConf[i];
+
+        var spectralVote = 0;
+        if (conf >= minConfidence) {
+            spectralVote = 1;
+        } else if (conf > softFloor) {
+            spectralVote = (conf - softFloor) / softDenom;
+        }
+
+        var combinedScore = rmsVote * rmsWeight + spectralVote * spectralWeight;
+        if (score) score[i] = combinedScore;
+
+        if (!rmsVote) {
+            // Never open from spectral-only evidence.
+            refined[i] = 0;
+            isOpen = false;
+            holdCounter = 0;
+            if (reasonCode) reasonCode[i] = 2; // below RMS gate
+            continue;
+        }
+
+        if (conf <= hardRejectConfidence) {
+            refined[i] = 0;
+            isOpen = false;
+            holdCounter = 0;
+            if (reasonCode) reasonCode[i] = 1;
+            continue;
+        }
+
+        if (!isOpen) {
+            if (combinedScore >= openScore) {
+                refined[i] = 1;
+                isOpen = true;
+                holdCounter = holdFrames;
+                if (reasonCode) reasonCode[i] = 0;
+            } else {
+                refined[i] = 0;
+                if (reasonCode) reasonCode[i] = 1; // spectral reject
+            }
+            continue;
+        }
+
+        if (combinedScore >= closeScore) {
+            refined[i] = 1;
+            holdCounter = holdFrames;
+            if (reasonCode) reasonCode[i] = 0;
+            continue;
+        }
+
+        // Small confidence dips are tolerated for a few frames.
+        if (holdCounter > 0 && conf >= softFloor) {
+            refined[i] = 1;
+            holdCounter--;
+            if (reasonCode) reasonCode[i] = 0;
+            continue;
+        }
+
+        refined[i] = 0;
+        isOpen = false;
+        holdCounter = 0;
+        if (reasonCode) reasonCode[i] = 1;
+    }
+
+    if (options.returnDebug) {
+        return {
+            gateOpen: refined,
+            score: score,
+            reasonCode: reasonCode
+        };
     }
 
     return refined;
@@ -305,8 +393,8 @@ function computeSpectralFingerprint(samples, sampleRate, frameDurationMs) {
  * over a time window [startFrame, endFrame).
  *
  * Returns a score in [0, 1]:
- *   ~1.0  → nearly identical spectral shape (likely bleed/echo)
- *   ~0.0  → completely different spectral shape (different speaker)
+ *   ~1.0  â†’ nearly identical spectral shape (likely bleed/echo)
+ *   ~0.0  â†’ completely different spectral shape (different speaker)
  *
  * @param {{ bands: Float32Array, frameCount: number, numBands: number }} fpA
  * @param {{ bands: Float32Array, frameCount: number, numBands: number }} fpB
@@ -349,10 +437,207 @@ function computeCrossTrackSimilarity(fpA, fpB, startFrame, endFrame) {
     return frameCount > 0 ? sumSim / frameCount : 0;
 }
 
+/**
+ * Frame-wise cosine similarity between two fingerprints.
+ * Useful for cautious frame-level bleed suppression.
+ *
+ * @param {{ bands: Float32Array, frameCount: number, numBands: number }} fpA
+ * @param {{ bands: Float32Array, frameCount: number, numBands: number }} fpB
+ * @param {number} frameIndex
+ * @returns {number}
+ */
+function computeFrameFingerprintSimilarity(fpA, fpB, frameIndex) {
+    if (!fpA || !fpB || !fpA.numBands || fpA.numBands !== fpB.numBands) return 0;
+
+    var maxFrame = Math.min(fpA.frameCount, fpB.frameCount) - 1;
+    if (maxFrame < 0) return 0;
+
+    var f = Math.max(0, Math.min(maxFrame, frameIndex));
+    var numBands = fpA.numBands;
+    var base = f * numBands;
+
+    var dot = 0;
+    var normA = 0;
+    var normB = 0;
+    for (var b = 0; b < numBands; b++) {
+        var av = fpA.bands[base + b];
+        var bv = fpB.bands[base + b];
+        dot += av * bv;
+        normA += av * av;
+        normB += bv * bv;
+    }
+
+    var denom = Math.sqrt(normA * normB);
+    if (denom <= 1e-20) return 0;
+    return dot / denom;
+}
+
+/**
+ * Learn a per-track speaker profile from active high-confidence frames.
+ *
+ * @param {{ bands: Float32Array, frameCount: number, numBands: number }} fingerprint
+ * @param {Uint8Array} gateOpen
+ * @param {Float64Array|Float32Array|null} spectralConfidence
+ * @param {{ minConfidence?: number, minFrames?: number }} options
+ * @returns {{ vector: Float32Array, numBands: number, frameCount: number }|null}
+ */
+function buildSpeakerProfile(fingerprint, gateOpen, spectralConfidence, options) {
+    if (!fingerprint || !fingerprint.bands || !fingerprint.numBands) return null;
+    if (!gateOpen || gateOpen.length === 0) return null;
+
+    options = options || {};
+    var minConfidence = (options.minConfidence !== undefined) ? options.minConfidence : 0.45;
+    var minFrames = (options.minFrames !== undefined) ? options.minFrames : 24;
+
+    var numBands = fingerprint.numBands;
+    var vec = new Float64Array(numBands);
+    var maxFrames = Math.min(fingerprint.frameCount, gateOpen.length);
+    var count = 0;
+
+    for (var f = 0; f < maxFrames; f++) {
+        if (!gateOpen[f]) continue;
+        if (spectralConfidence && spectralConfidence.length > f && spectralConfidence[f] < minConfidence) continue;
+
+        var base = f * numBands;
+        for (var b = 0; b < numBands; b++) {
+            vec[b] += fingerprint.bands[base + b];
+        }
+        count++;
+    }
+
+    if (count < minFrames) return null;
+
+    var norm = 0;
+    for (var i = 0; i < numBands; i++) {
+        vec[i] /= count;
+        norm += vec[i] * vec[i];
+    }
+
+    norm = Math.sqrt(norm);
+    if (norm <= 1e-20) return null;
+
+    var out = new Float32Array(numBands);
+    for (i = 0; i < numBands; i++) {
+        out[i] = vec[i] / norm;
+    }
+
+    return {
+        vector: out,
+        numBands: numBands,
+        frameCount: count
+    };
+}
+
+/**
+ * Compare a frame fingerprint against a speaker profile.
+ *
+ * @param {{ bands: Float32Array, frameCount: number, numBands: number }} fingerprint
+ * @param {{ vector: Float32Array, numBands: number }} profile
+ * @param {number} frameIndex
+ * @returns {number}
+ */
+function computeFrameToProfileSimilarity(fingerprint, profile, frameIndex) {
+    if (!fingerprint || !profile || !fingerprint.numBands || !profile.numBands) return 0;
+    if (fingerprint.numBands !== profile.numBands) return 0;
+    if (fingerprint.frameCount <= 0) return 0;
+
+    var f = Math.max(0, Math.min(fingerprint.frameCount - 1, frameIndex));
+    var base = f * fingerprint.numBands;
+
+    var dot = 0;
+    var normA = 0;
+    for (var b = 0; b < fingerprint.numBands; b++) {
+        var av = fingerprint.bands[base + b];
+        var pv = profile.vector[b];
+        dot += av * pv;
+        normA += av * av;
+    }
+
+    var denom = Math.sqrt(normA);
+    if (denom <= 1e-20) return 0;
+    return dot / denom;
+}
+
+/**
+ * Keep gate frames only when they match the learned track speaker profile.
+ *
+ * @param {Uint8Array} gateOpen
+ * @param {{ bands: Float32Array, frameCount: number, numBands: number }} fingerprint
+ * @param {{ vector: Float32Array, numBands: number }} profile
+ * @param {{ threshold?: number, softMargin?: number, holdFrames?: number, returnDebug?: boolean }} options
+ * @returns {Uint8Array|{gateOpen: Uint8Array, similarity: Float32Array, reasonCode: Uint8Array}}
+ */
+function applySpeakerProfileGate(gateOpen, fingerprint, profile, options) {
+    options = options || {};
+    if (!gateOpen || !fingerprint || !profile) return gateOpen;
+
+    var threshold = (options.threshold !== undefined) ? options.threshold : 0.72;
+    var softMargin = (options.softMargin !== undefined) ? options.softMargin : 0.06;
+    var holdFrames = (options.holdFrames !== undefined) ? options.holdFrames : 3;
+    var len = Math.min(gateOpen.length, fingerprint.frameCount);
+
+    var out = new Uint8Array(len);
+    var similarity = options.returnDebug ? new Float32Array(len) : null;
+    var reasonCode = options.returnDebug ? new Uint8Array(len) : null;
+
+    var isOpen = false;
+    var holdCounter = 0;
+    var softThreshold = Math.max(0, threshold - softMargin);
+
+    for (var i = 0; i < len; i++) {
+        if (!gateOpen[i]) {
+            out[i] = 0;
+            isOpen = false;
+            holdCounter = 0;
+            if (reasonCode) reasonCode[i] = 2; // no gate input
+            continue;
+        }
+
+        var sim = computeFrameToProfileSimilarity(fingerprint, profile, i);
+        if (similarity) similarity[i] = sim;
+
+        if (sim >= threshold) {
+            out[i] = 1;
+            isOpen = true;
+            holdCounter = holdFrames;
+            if (reasonCode) reasonCode[i] = 0; // keep
+            continue;
+        }
+
+        if (isOpen && holdCounter > 0 && sim >= softThreshold) {
+            out[i] = 1;
+            holdCounter--;
+            if (reasonCode) reasonCode[i] = 0;
+            continue;
+        }
+
+        out[i] = 0;
+        isOpen = false;
+        holdCounter = 0;
+        if (reasonCode) reasonCode[i] = 1; // speaker mismatch
+    }
+
+    if (options.returnDebug) {
+        return {
+            gateOpen: out,
+            similarity: similarity,
+            reasonCode: reasonCode
+        };
+    }
+
+    return out;
+}
 module.exports = {
     computeSpectralVAD: computeSpectralVAD,
     refineGateWithSpectral: refineGateWithSpectral,
     computeSpectralFingerprint: computeSpectralFingerprint,
     computeCrossTrackSimilarity: computeCrossTrackSimilarity,
+    computeFrameFingerprintSimilarity: computeFrameFingerprintSimilarity,
+    buildSpeakerProfile: buildSpeakerProfile,
+    computeFrameToProfileSimilarity: computeFrameToProfileSimilarity,
+    applySpeakerProfileGate: applySpeakerProfileGate,
     fft: fft
 };
+
+
+

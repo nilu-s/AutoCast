@@ -1,5 +1,5 @@
-/**
- * AutoCast – Panel UI Controller v2.1
+﻿/**
+ * AutoCast Ã¢â‚¬â€œ Panel UI Controller v2.1
  *
  * Notes:
  * - This keeps the existing UI structure.
@@ -28,9 +28,19 @@
                                 pathname = pathname.substring(1);
                             }
                             extensionPath = path.dirname(pathname).replace(/%20/g, ' ');
+                            if (path.basename(extensionPath) === 'panel' &&
+                                path.basename(path.dirname(extensionPath)) === 'apps') {
+                                extensionPath = path.resolve(extensionPath, '..', '..');
+                            }
                         }
 
-                        var workerPath = path.join(extensionPath, 'node', 'analyzer_worker_stdio.js');
+                        var workerPath = path.join(
+                            extensionPath,
+                            'packages',
+                            'analyzer',
+                            'src',
+                            'analyzer_worker_stdio.js'
+                        );
 
                         var proc = childProcess.spawn('node', [workerPath], {
                             cwd: extensionPath
@@ -85,7 +95,7 @@
 
                 /**
                  * Lightweight gain scan: only computes RMS + gain matching per track.
-                 * Much faster than the full analysis – used for the startup preset.
+                 * Much faster than the full analysis Ã¢â‚¬â€œ used for the startup preset.
                  */
                 quickGainScan: function (trackPaths, progressCallback) {
                     return new Promise(function (resolve, reject) {
@@ -96,9 +106,19 @@
                                 pathname = pathname.substring(1);
                             }
                             extensionPath = path.dirname(pathname).replace(/%20/g, ' ');
+                            if (path.basename(extensionPath) === 'panel' &&
+                                path.basename(path.dirname(extensionPath)) === 'apps') {
+                                extensionPath = path.resolve(extensionPath, '..', '..');
+                            }
                         }
 
-                        var workerPath = path.join(extensionPath, 'node', 'quick_gain_scan.js');
+                        var workerPath = path.join(
+                            extensionPath,
+                            'packages',
+                            'analyzer',
+                            'src',
+                            'quick_gain_scan.js'
+                        );
 
                         var proc = childProcess.spawn('node', [workerPath], {
                             cwd: extensionPath
@@ -159,13 +179,11 @@
         tracks: [],
         analysisResult: null,
         isAnalyzing: false,
-        undoStack: [],
-        maxUndoLevels: 5,
         perTrackSensitivity: {},
         mockSamples: null,
         currentAudio: null,
         currentPlayingTrack: -1,
-        lastCutUndoSteps: 0
+        analysisRunId: 0
     };
 
     var TRACK_COLORS = [
@@ -187,47 +205,95 @@
         progressContainer: $('progressContainer'),
         progressFill: $('progressFill'),
         progressText: $('progressText'),
+        analysisSummary: $('analysisSummary'),
+        summaryPrimary: $('summaryPrimary'),
+        summaryDetail: $('summaryDetail'),
         waveformSection: null,
         waveformContainer: null,
         btnLoadTracks: $('btnLoadTracks'),
         btnAnalyze: $('btnAnalyze'),
         btnPreviewMarkers: $('btnPreviewMarkers'),
         btnApply: $('btnApply'),
-        btnUndo: $('btnUndo'),
         btnReset: $('btnReset'),
         paramThreshold: $('paramThreshold'),
-        paramDucking: $('paramDucking'),
         valThreshold: $('valThreshold'),
-        valDucking: $('valDucking'),
         modeIndicator: $('modeIndicator')
     };
 
     function bindSlider(slider, display, suffix) {
         if (!slider || !display) return;
         slider.addEventListener('input', function () {
-            display.textContent = slider.value + ' ' + suffix;
+            display.textContent = suffix ? (slider.value + ' ' + suffix) : String(slider.value);
         });
     }
 
-    bindSlider(els.paramThreshold, els.valThreshold, 'dB');
-    bindSlider(els.paramDucking, els.valDucking, 'dB');
+    bindSlider(els.paramThreshold, els.valThreshold, '');
 
     function getParams() {
-        return {
+        var debugMode = false;
+        try {
+            debugMode = (window.__AUTOCAST_DEBUG__ === true) ||
+                (window.localStorage && window.localStorage.getItem('autocast.debug') === '1');
+        } catch (e) { }
+
+        var params = {
             thresholdAboveFloorDb: parseInt(els.paramThreshold.value, 10),
-            holdFrames: 80, // Keep gate open 800ms after speech ends
-            minSegmentMs: 1000, // Drop segments shorter than 1s
-            minGapMs: 800, // Merge gaps shorter than 800ms
-            duckingLevelDb: els.paramDucking ? parseInt(els.paramDucking.value, 10) : -24,
-            rampMs: 30,
-            overlapPolicy: 'spectral_bleed_safe',
+            absoluteThresholdDb: -64,
+            attackFrames: 1,
+            releaseFrames: 6,
+            holdFrames: 24,
+            minSegmentMs: 260,
+            postOverlapMinSegmentMs: 160,
+            minGapMs: 180,
+            independentTrackAnalysis: true,
+            snippetPadBeforeMs: 1200,
+            snippetPadAfterMs: 1200,
+            crossTrackTailTrimInIndependentMode: true,
+            overlapTailAllowanceMs: 180,
+            enablePrimaryTrackGapFill: true,
+            primaryTrackGapFillMaxMs: 1800,
+            primaryTrackGapFillQuietDb: -50,
+            overlapPolicy: 'dominant_wins',
             bleedMarginDb: 15,
             overlapMarginDb: 8,
+            suppressionScoreThreshold: 0.65,
+            fillGaps: false,
             autoGain: true,
             useSpectralVAD: true,
-            adaptiveCrossfade: true,
-            perTrackThresholdDb: getPerTrackSensitivity()
+            spectralMinConfidence: 0.18,
+            spectralSoftMargin: 0.18,
+            spectralScoreOpen: 0.50,
+            spectralScoreClose: 0.35,
+            spectralRmsWeight: 0.75,
+            spectralHoldFrames: 4,
+            primarySpeakerLock: true,
+            speakerProfileMinConfidence: 0.30,
+            speakerProfileMinFrames: 24,
+            speakerMatchThreshold: 0.56,
+            speakerMatchSoftMargin: 0.12,
+            speakerMatchHoldFrames: 4,
+            adaptiveNoiseFloor: true,
+            localNoiseWindowMs: 1500,
+            noiseFloorUpdateMs: 500,
+            localNoisePercentile: 0.15,
+            maxAdaptiveFloorRiseDb: 8,
+            localNoiseSampleStride: 2,
+            enableHardSilenceCut: true,
+            hardSilenceCutDb: -51,
+            hardSilenceLookaroundMs: 220,
+            hardSilencePeakDeltaDb: 8,
+            enableBleedHandling: false,
+            bleedSuppressionDb: 0,
+            bleedSuppressionSimilarityThreshold: 0.90,
+            bleedSuppressionProtectConfidence: 0.34,
+            perTrackThresholdDb: getPerTrackSensitivity(),
+            enableTrackLoudnessBias: true,
+            trackLoudnessBiasStrength: 0.35,
+            debugMode: debugMode,
+            debugMaxFrames: 4000
         };
+
+        return params;
     }
 
     function getPerTrackSensitivity() {
@@ -279,8 +345,53 @@
         if (els.btnAnalyze) els.btnAnalyze.disabled = disabled;
         if (els.btnPreviewMarkers) els.btnPreviewMarkers.disabled = disabled;
         if (els.btnReset) els.btnReset.disabled = disabled;
-        // btnUndo has its own enable/disable logic – only block during active operations
-        if (disabled && els.btnUndo) els.btnUndo.disabled = true;
+    }
+
+    function hideSummary() {
+        if (els.analysisSummary) {
+            els.analysisSummary.style.display = 'none';
+        }
+        if (els.summaryPrimary) els.summaryPrimary.textContent = '';
+        if (els.summaryDetail) els.summaryDetail.textContent = '';
+    }
+
+    function formatPercent(value) {
+        return Math.round(value * 10) / 10;
+    }
+
+    function computeSegmentStats(result) {
+        var tracks = (result && result.segments) ? result.segments : [];
+        var totalSegments = 0;
+        var totalDurationSec = 0;
+        var activePercentSum = 0;
+        var activeTrackCount = 0;
+
+        for (var t = 0; t < tracks.length; t++) {
+            var segs = tracks[t] || [];
+            for (var s = 0; s < segs.length; s++) {
+                var seg = segs[s];
+                if (!seg || seg.state === 'suppressed') continue;
+                totalSegments++;
+                totalDurationSec += Math.max(0, (seg.end || 0) - (seg.start || 0));
+            }
+            if (result.tracks && result.tracks[t] && typeof result.tracks[t].activePercent === 'number') {
+                activePercentSum += result.tracks[t].activePercent;
+                activeTrackCount++;
+            }
+        }
+
+        return {
+            totalSegments: totalSegments,
+            avgSegmentSec: totalSegments > 0 ? (totalDurationSec / totalSegments) : 0,
+            avgActivePercent: activeTrackCount > 0 ? (activePercentSum / activeTrackCount) : 0
+        };
+    }
+
+    function renderSummary(primaryText, detailText) {
+        if (!els.analysisSummary) return;
+        els.analysisSummary.style.display = 'block';
+        if (els.summaryPrimary) els.summaryPrimary.textContent = primaryText || '';
+        if (els.summaryDetail) els.summaryDetail.textContent = detailText || '';
     }
 
     function runMockCutting(done) {
@@ -325,10 +436,6 @@
             // Ensure selected state is initialized
             if (track.selected === undefined) track.selected = true;
 
-            // Badge color: grün wenn nah am Default, orange wenn stark abweichend
-            var isModified = state.perTrackSensitivity[i] !== undefined;
-            var badgeClass = isModified ? 'sensitivity-badge sensitivity-badge--custom' : 'sensitivity-badge';
-
             html += ''
                 + '<div class="track-item" data-track-index="' + i + '">'
                 + '  <div class="track-color" style="background:' + color + ';"></div>'
@@ -341,33 +448,14 @@
                 + '  </div>'
                 + '  <div class="track-controls">'
                 + '    <div class="track-threshold-row">'
-                + '      <span class="track-controls-label">Korrektur</span>'
-                + '      <span class="' + badgeClass + '" data-track-index="' + i + '">' + threshold + ' dB</span>'
+                + '      <span class="track-controls-label">Auto sensitivity</span>'
+                + '      <span class="sensitivity-badge" data-track-index="' + i + '">' + threshold + '</span>'
                 + '    </div>'
-                + '    <input class="track-sensitivity" type="range" min="3" max="24" step="1" value="' + threshold + '" data-track-index="' + i + '">'
-                + '    <div class="slider-labels"><span>Sensitiver</span><span>Strenger</span></div>'
                 + '  </div>'
                 + '</div>';
         }
 
         els.trackList.innerHTML = html;
-
-        var sliders = els.trackList.querySelectorAll('.track-sensitivity');
-        for (var s = 0; s < sliders.length; s++) {
-            sliders[s].addEventListener('input', function () {
-                var trackIndex = parseInt(this.getAttribute('data-track-index'), 10);
-                var value = parseInt(this.value, 10);
-                state.perTrackSensitivity[trackIndex] = value;
-
-                // Badge aktualisieren
-                var badge = els.trackList.querySelector('.sensitivity-badge[data-track-index="' + trackIndex + '"]');
-                if (badge) {
-                    badge.textContent = value + ' dB';
-                    badge.className = 'sensitivity-badge sensitivity-badge--custom';
-                }
-            });
-        }
-
         var checkboxes = els.trackList.querySelectorAll('.track-cb');
         for (var c = 0; c < checkboxes.length; c++) {
             checkboxes[c].addEventListener('change', function () {
@@ -383,7 +471,7 @@
 
     function updateModeIndicator() {
         if (!els.modeIndicator) return;
-        els.modeIndicator.textContent = 'Mode: Mixed cut + duck';
+        els.modeIndicator.textContent = 'Mode: Smooth Blocks';
     }
 
     function analyzeTracks() {
@@ -425,217 +513,227 @@
             return;
         }
 
+        var globalThreshold = parseInt(els.paramThreshold.value, 10);
+
+        function applyAutoSensitivityFromGainScan(scanResult) {
+            var tracks = (scanResult && scanResult.tracks) ? scanResult.tracks : [];
+            state.perTrackSensitivity = {};
+
+            var validIndex = 0;
+            for (var ti = 0; ti < state.tracks.length; ti++) {
+                if (!trackPaths[ti]) continue;
+                var gainDb = (tracks[validIndex] && tracks[validIndex].gainAdjustDb) || 0;
+                var recommended = Math.round(globalThreshold - gainDb * 0.25);
+                recommended = Math.max(-8, Math.min(8, recommended));
+                state.perTrackSensitivity[ti] = recommended;
+                validIndex++;
+            }
+            renderTracks();
+        }
+
+        function startFullAnalysis() {
+            var params = getParams();
+            var runId = state.analysisRunId;
+
+            if (window.AutoCastAnalyzer && typeof window.AutoCastAnalyzer.analyze === 'function') {
+                try {
+                    window.AutoCastAnalyzer.analyze(trackPaths, params, function (percent, message) {
+                        setProgress(percent, message);
+                    }).then(function (result) {
+                        if (runId !== state.analysisRunId) return;
+                        state.analysisResult = result;
+                        state.isAnalyzing = false;
+                        hideProgress();
+                        setButtonsDisabled(false);
+                        setStatus('success', 'Analysis complete');
+                        var smoothLabel = 'Smooth Blocks';
+                        var smoothStats = computeSegmentStats(result);
+                        renderSummary(
+                            'Mode ' + smoothLabel + ': ' + smoothStats.totalSegments + ' active segments',
+                            'Avg segment ' + formatPercent(smoothStats.avgSegmentSec) + ' s, avg active ' + formatPercent(smoothStats.avgActivePercent) + '%'
+                        );
+                        renderResults();
+                        renderWaveform();
+                    }).catch(function (err) {
+                        if (runId !== state.analysisRunId) return;
+                        state.isAnalyzing = false;
+                        hideProgress();
+                        setButtonsDisabled(false);
+                        hideSummary();
+                        setStatus('error', err && err.message ? err.message : 'Analysis failed');
+                        console.error(err);
+                    });
+                } catch (e) {
+                    if (runId !== state.analysisRunId) return;
+                    state.isAnalyzing = false;
+                    hideProgress();
+                    setButtonsDisabled(false);
+                    hideSummary();
+                    setStatus('error', e && e.message ? e.message : 'Analysis failed');
+                    console.error(e);
+                }
+                return;
+            }
+
+            if (typeof window.__AUTOCAST_ANALYZE__ === 'function') {
+                try {
+                    window.__AUTOCAST_ANALYZE__(trackPaths, params, function (percent, message) {
+                        setProgress(percent, message);
+                    }, function (result) {
+                        if (runId !== state.analysisRunId) return;
+                        state.analysisResult = result;
+                        state.isAnalyzing = false;
+                        hideProgress();
+                        setButtonsDisabled(false);
+                        setStatus('success', 'Analysis complete');
+                        var fallbackStats = computeSegmentStats(result);
+                        renderSummary(
+                            'Analysis complete: ' + fallbackStats.totalSegments + ' active segments',
+                            'Avg segment ' + formatPercent(fallbackStats.avgSegmentSec) + ' s, avg active ' + formatPercent(fallbackStats.avgActivePercent) + '%'
+                        );
+                        renderResults();
+                        renderWaveform();
+                    }, function (err) {
+                        if (runId !== state.analysisRunId) return;
+                        state.isAnalyzing = false;
+                        hideProgress();
+                        setButtonsDisabled(false);
+                        hideSummary();
+                        setStatus('error', err && err.message ? err.message : 'Analysis failed');
+                        console.error(err);
+                    });
+                } catch (e2) {
+                    if (runId !== state.analysisRunId) return;
+                    state.isAnalyzing = false;
+                    hideProgress();
+                    setButtonsDisabled(false);
+                    hideSummary();
+                    setStatus('error', e2 && e2.message ? e2.message : 'Analysis failed');
+                    console.error(e2);
+                }
+                return;
+            }
+
+            state.isAnalyzing = false;
+            hideProgress();
+            setButtonsDisabled(false);
+            hideSummary();
+            var errMsg = window.NODE_INIT_ERROR ? 'Node init failed: ' + window.NODE_INIT_ERROR : 'No analyzer bridge available';
+            setStatus('error', errMsg);
+        }
+
+        state.analysisRunId++;
         state.isAnalyzing = true;
         setButtonsDisabled(true);
-        setProgress(0, 'Preparing analysis...');
+        hideSummary();
+        setProgress(0, 'Measuring loudness...');
 
-        var params = getParams();
-
-        if (window.AutoCastAnalyzer && typeof window.AutoCastAnalyzer.analyze === 'function') {
-            try {
-                window.AutoCastAnalyzer.analyze(trackPaths, params, function (percent, message) {
-                    setProgress(percent, message);
-                }).then(function (result) {
-                    state.analysisResult = result;
-                    state.isAnalyzing = false;
-                    hideProgress();
-                    setButtonsDisabled(false);
-                    setStatus('success', 'Analysis complete');
-                    renderResults();
-                    renderWaveform();
-                }).catch(function (err) {
-                    state.isAnalyzing = false;
-                    hideProgress();
-                    setButtonsDisabled(false);
-                    setStatus('error', err && err.message ? err.message : 'Analysis failed');
-                    console.error(err);
-                });
-            } catch (e) {
-                state.isAnalyzing = false;
-                hideProgress();
-                setButtonsDisabled(false);
-                setStatus('error', e && e.message ? e.message : 'Analysis failed');
-                console.error(e);
+        if (window.AutoCastAnalyzer && typeof window.AutoCastAnalyzer.quickGainScan === 'function') {
+            var gainScanPaths = [];
+            for (var gp = 0; gp < trackPaths.length; gp++) {
+                if (trackPaths[gp]) gainScanPaths.push(trackPaths[gp]);
             }
+
+            window.AutoCastAnalyzer.quickGainScan(gainScanPaths, function (percent) {
+                setProgress(Math.min(45, Math.max(0, Math.round(percent * 0.45))), 'Measuring loudness...');
+            }).then(function (scanResult) {
+                applyAutoSensitivityFromGainScan(scanResult);
+                setProgress(45, 'Starting speech analysis...');
+                startFullAnalysis();
+            }).catch(function (scanErr) {
+                console.warn('[AutoCast] quickGainScan failed, continuing without auto sensitivity:', scanErr);
+                setProgress(20, 'Starting speech analysis...');
+                startFullAnalysis();
+            });
             return;
         }
 
-        if (typeof window.__AUTOCAST_ANALYZE__ === 'function') {
-            try {
-                window.__AUTOCAST_ANALYZE__(trackPaths, params, function (percent, message) {
-                    setProgress(percent, message);
-                }, function (result) {
-                    state.analysisResult = result;
-                    state.isAnalyzing = false;
-                    hideProgress();
-                    setButtonsDisabled(false);
-                    setStatus('success', 'Analysis complete');
-                    renderResults();
-                    renderWaveform();
-                }, function (err) {
-                    state.isAnalyzing = false;
-                    hideProgress();
-                    setButtonsDisabled(false);
-                    setStatus('error', err && err.message ? err.message : 'Analysis failed');
-                    console.error(err);
-                });
-            } catch (e2) {
-                state.isAnalyzing = false;
-                hideProgress();
-                setButtonsDisabled(false);
-                setStatus('error', e2 && e2.message ? e2.message : 'Analysis failed');
-                console.error(e2);
-            }
-            return;
-        }
-
-        state.isAnalyzing = false;
-        hideProgress();
-        setButtonsDisabled(false);
-        var errMsg = window.NODE_INIT_ERROR ? 'Node init failed: ' + window.NODE_INIT_ERROR : 'No analyzer bridge available';
-        setStatus('error', errMsg);
+        setProgress(20, 'Starting speech analysis...');
+        startFullAnalysis();
     }
 
-    function applyEdits() {
+        function applyEdits() {
         if (!state.analysisResult) {
             setStatus('error', 'No analysis result available');
             return;
         }
-
         var tIndices = [];
         for (var i = 0; i < state.tracks.length; i++) {
             if (state.tracks[i].selected !== false) {
                 tIndices.push(state.tracks[i].index !== undefined ? state.tracks[i].index : i);
             }
         }
-
-        var mode = 'mixed';
-
-        if (mode === 'chop' || mode === 'mixed') {
-            setStatus('analyzing', 'Cutting clips...');
-            setProgress(0, 'Preparing cuts...');
-            setButtonsDisabled(true);
-
-            if (AutoCastBridge.isInMockMode()) {
-                runMockCutting(function () {
-                    hideProgress();
-                    setButtonsDisabled(false);
-                    // Enable undo in mock mode
-                    state.undoSnapshot = { snapshot: [], ticksPerSecond: 254016000000, trackIndices: tIndices };
-                    if (els.btnUndo) els.btnUndo.disabled = false;
-                    setStatus('success', 'Mock cutting complete');
-                });
-                return;
-            }
-
-            // Step 1: Capture current clip state before any cuts
-            setProgress(2, 'Saving clip state for undo...');
-            AutoCastBridge.captureTrackState({ trackIndices: tIndices, ticksPerSecond: 254016000000 }, function (captureResult) {
-                if (captureResult && captureResult.success) {
-                    state.undoSnapshot = {
-                        snapshot: captureResult.snapshot,
-                        trackIndices: tIndices,
-                        ticksPerSecond: 254016000000
-                    };
-                } else {
-                    // Capture failed – undo won't be available
-                    state.undoSnapshot = null;
-                    console.warn('[AutoCast] captureTrackState failed:', captureResult);
-                }
-
-                // Step 2: Proceed with the actual cuts
-                var cutProgressHandler = function (evt) {
-                    try {
-                        var payload = evt && evt.data ? JSON.parse(evt.data) : null;
-                        if (!payload) return;
-                        setProgress(
-                            Math.max(0, Math.min(100, parseInt(payload.percent, 10) || 0)),
-                            payload.message || 'Cutting clips...'
-                        );
-                    } catch (e) {
-                        console.error('[AutoCast] Cut progress parse error:', e);
-                    }
-                };
-
-                AutoCastBridge.addCutProgressListener(cutProgressHandler);
-
-                AutoCastBridge.applyCuts({
-                    segments: state.analysisResult.segments,
-                    trackIndices: tIndices,
-                    ticksPerSecond: 254016000000,
-                    mode: mode,
-                    duckingLevelDb: parseInt(els.paramDucking.value, 10)
-                }, function (result) {
-                    AutoCastBridge.removeCutProgressListener(cutProgressHandler);
-                    hideProgress();
-                    setButtonsDisabled(false);
-                    console.log('[AutoCast] Raw result from ExtendScript:', result);
-
-                    if (result && result.success) {
-                        if (state.undoSnapshot && els.btnUndo) {
-                            els.btnUndo.disabled = false;
-                            els.btnUndo.title = 'Undo cuts (restores ' + (state.undoSnapshot.snapshot ? state.undoSnapshot.snapshot.length : 0) + ' track(s))';
-                        }
-
-                    setStatus(
-                        'success',
-                        'Clips cut successfully (' +
-                        (result.clipsTrimmed || 0) + ' trimmed, ' +
-                        (result.clipsCreated || 0) + ' created, ' +
-                        (result.clipsRemoved || 0) + ' removed)'
-                    );
-                } else {
-                    var errMsg = 'Cut error';
-                    if (typeof result === 'string') {
-                        errMsg = 'ExtendScript Crash: ' + result;
-                    } else if (result && result.error) {
-                        errMsg = result.error;
-                    } else if (result && result.errors && result.errors.length) {
-                        errMsg = result.errors[0];
-                        if (result.errors.length > 1) {
-                            errMsg += ' (+' + (result.errors.length - 1) + ' more)';
-                        }
-                    }
-                    setStatus('error', errMsg);
-                    if (result && result.errors && result.errors.length) {
-                        console.error('[AutoCast] Cut errors:', result.errors);
-                    }
-                }
-
-                // Always log debug info for diagnostics
-                if (result && result.debug && result.debug.length) {
-                    console.log('[AutoCast] Cut debug (' + result.debug.length + ' entries):');
-                    for (var d = 0; d < result.debug.length; d++) {
-                        console.log('  ' + result.debug[d]);
-                    }
-                    }
-                });
-            }); // end captureTrackState callback
-
+        setStatus('analyzing', 'Cutting clips...');
+        setProgress(0, 'Preparing cuts...');
+        setButtonsDisabled(true);
+        if (AutoCastBridge.isInMockMode()) {
+            runMockCutting(function () {
+                hideProgress();
+                setButtonsDisabled(false);
+                setStatus('success', 'Mock cutting complete');
+            });
             return;
         }
-
-        setStatus('analyzing', 'Applying keyframes...');
-        setButtonsDisabled(true);
-
-        AutoCastBridge.applyKeyframes({
-            keyframes: state.analysisResult.keyframes,
+        var cutProgressHandler = function (evt) {
+            try {
+                var payload = evt && evt.data ? JSON.parse(evt.data) : null;
+                if (!payload) return;
+                setProgress(
+                    Math.max(0, Math.min(100, parseInt(payload.percent, 10) || 0)),
+                    payload.message || 'Cutting clips...'
+                );
+            } catch (e) {
+                console.error('[AutoCast] Cut progress parse error:', e);
+            }
+        };
+        AutoCastBridge.addCutProgressListener(cutProgressHandler);
+        AutoCastBridge.applyCuts({
+            segments: state.analysisResult.segments,
             trackIndices: tIndices,
             ticksPerSecond: 254016000000
         }, function (result) {
+            AutoCastBridge.removeCutProgressListener(cutProgressHandler);
+            hideProgress();
             setButtonsDisabled(false);
-
+            console.log('[AutoCast] Raw result from ExtendScript:', result);
             if (result && result.success) {
-                setStatus('success', 'Keyframes applied');
+                setStatus(
+                    'success',
+                    'Clips cut successfully (' +
+                    (result.clipsTrimmed || 0) + ' trimmed, ' +
+                    (result.clipsCreated || 0) + ' created, ' +
+                    (result.clipsRemoved || 0) + ' removed)'
+                );
             } else {
-                setStatus('error', (result && result.error) ? result.error : 'Apply failed');
+                var errMsg = 'Cut error';
+                if (typeof result === 'string') {
+                    errMsg = 'ExtendScript Crash: ' + result;
+                } else if (result && result.error) {
+                    errMsg = result.error;
+                } else if (result && result.errors && result.errors.length) {
+                    errMsg = result.errors[0];
+                    if (result.errors.length > 1) {
+                        errMsg += ' (+' + (result.errors.length - 1) + ' more)';
+                    }
+                }
+                setStatus('error', errMsg);
+                if (result && result.errors && result.errors.length) {
+                    console.error('[AutoCast] Cut errors:', result.errors);
+                }
+            }
+            if (result && result.debug && result.debug.length) {
+                console.log('[AutoCast] Cut debug (' + result.debug.length + ' entries):');
+                for (var d = 0; d < result.debug.length; d++) {
+                    console.log('  ' + result.debug[d]);
+                }
             }
         });
+        return;
     }
-
     function resetUI() {
         state.analysisResult = null;
         hideProgress();
+        hideSummary();
         setStatus('idle', 'Ready');
         renderResults();
         renderWaveform();
@@ -676,125 +774,6 @@
         });
     }
 
-    /**
-     * Beim Öffnen: Tracks laden → Lautstärke messen → Sensitivity-Slider
-     * automatisch als Preset einstellen (nur visuell, Premiere unberührt).
-     *
-     * Leise Spuren (hoher gainAdjustDb) → niedrigerer Schwellwert (sensitiver)
-     * Laute Spuren  (niedriger gainAdjustDb) → höherer Schwellwert (strenger)
-     *
-     * Formel: neuerThreshold = globalThreshold - gainAdjustDb * 0.5
-     * → Clamp auf [3, 24] dB
-     */
-    function autoAnalyzeAndNormalizeGain() {
-        setStatus('analyzing', 'Lade Tonspuren...');
-
-        AutoCastBridge.getTrackInfo(function (result) {
-            if (!result || result.error) {
-                setStatus('error', result && result.error ? result.error : 'Tonspuren konnten nicht geladen werden');
-                return;
-            }
-
-            var loadedTracks = result.tracks || result || [];
-            for (var i = 0; i < loadedTracks.length; i++) {
-                var t = loadedTracks[i];
-                if (!t.path && t.clips && t.clips.length > 0) {
-                    var foundPath = false;
-                    for (var c = 0; c < t.clips.length; c++) {
-                        if (t.clips[c].mediaPath) {
-                            t.path = t.clips[c].mediaPath;
-                            foundPath = true;
-                            break;
-                        } else if (t.clips[c].mediaPathError) {
-                            t.path = '[Err] ' + t.clips[c].mediaPathError;
-                            foundPath = true;
-                        }
-                    }
-                    if (!foundPath) t.path = '[Info] No usable media paths found.';
-                } else if (!t.clips || t.clips.length === 0) {
-                    t.path = '[Empty] No clips on this track.';
-                }
-            }
-
-            state.tracks = loadedTracks;
-            renderTracks();
-            setStatus('analyzing', state.tracks.length + ' Spur(en) geladen – messe Lautstärken...');
-
-            // Gültige Pfade für die Analyse sammeln
-            var trackPaths = [];
-            var trackIndexMap = [];
-            for (var j = 0; j < state.tracks.length; j++) {
-                var p = state.tracks[j].path;
-                if (p && !p.startsWith('[')) {
-                    trackPaths.push(p);
-                    trackIndexMap.push(j);
-                }
-            }
-
-            if (trackPaths.length === 0) {
-                setStatus('idle', state.tracks.length + ' Spur(en) geladen – keine Mediendateien gefunden');
-                return;
-            }
-
-            if (!window.AutoCastAnalyzer || typeof window.AutoCastAnalyzer.quickGainScan !== 'function') {
-                setStatus('idle', state.tracks.length + ' Spur(en) geladen');
-                return;
-            }
-
-            state.isAnalyzing = true;
-            setButtonsDisabled(true);
-            setProgress(0, 'Messe Lautstärken...');
-
-            var globalThreshold = parseInt(els.paramThreshold.value, 10);
-
-            window.AutoCastAnalyzer.quickGainScan(trackPaths, function (percent, message) {
-                setProgress(percent, message);
-            }).then(function (analysisResult) {
-                state.isAnalyzing = false;
-                hideProgress();
-                setButtonsDisabled(false);
-
-                // Sensitivity-Preset berechnen und Slider setzen
-                var tracks = analysisResult.tracks || [];
-                var presetParts = [];
-
-                for (var k = 0; k < tracks.length; k++) {
-                    var gainDb = tracks[k].gainAdjustDb || 0;
-                    var stateIdx = trackIndexMap[k] !== undefined ? trackIndexMap[k] : k;
-
-                    // Leise Spur → sensitiver (niedrigerer Schwellwert)
-                    // Laute Spur  → strenger (höherer Schwellwert)
-                    var recommended = Math.round(globalThreshold - gainDb * 0.5);
-                    recommended = Math.max(3, Math.min(24, recommended));
-
-                    state.perTrackSensitivity[stateIdx] = recommended;
-
-                    if (Math.abs(gainDb) >= 0.5) {
-                        presetParts.push('S' + (stateIdx + 1) + ': ' + recommended + ' dB');
-                    }
-                }
-
-                // Slider visuell aktualisieren (inklusive Badges)
-                renderTracks();
-
-                var statusMsg = 'Preset gesetzt';
-                if (presetParts.length > 0) {
-                    statusMsg += ': ' + presetParts.join(', ');
-                } else {
-                    statusMsg = 'Alle Spuren gleich laut – Preset: ' + globalThreshold + ' dB';
-                }
-                setStatus('success', statusMsg);
-
-            }).catch(function (err) {
-                state.isAnalyzing = false;
-                hideProgress();
-                setButtonsDisabled(false);
-                setStatus('idle', state.tracks.length + ' Spur(en) geladen – Lautstärkemessung fehlgeschlagen');
-                console.warn('[AutoCast] Auto-Preset fehlgeschlagen:', err);
-            });
-        });
-    }
-
     function safeNum(value) {
         return (typeof value === 'number' && isFinite(value)) ? value : '-';
     }
@@ -824,51 +803,6 @@
         els.btnReset.addEventListener('click', resetUI);
     }
 
-    function undoCuts() {
-        var snapshot = state.undoSnapshot;
-        if (!snapshot) {
-            setStatus('error', 'Nothing to undo');
-            return;
-        }
-
-        setStatus('analyzing', 'Undoing cuts...');
-        setProgress(0, 'Restoring clips...');
-        setButtonsDisabled(true);
-
-        if (AutoCastBridge.isInMockMode()) {
-            setTimeout(function () {
-                setButtonsDisabled(false);
-                if (els.btnUndo) els.btnUndo.disabled = true;
-                state.undoSnapshot = null;
-                hideProgress();
-                setStatus('success', 'Mock undo complete');
-            }, 600);
-            return;
-        }
-
-        AutoCastBridge.restoreTrackState(snapshot, function (result) {
-            hideProgress();
-            setButtonsDisabled(false);
-
-            if (result && result.success) {
-                if (els.btnUndo) els.btnUndo.disabled = true;
-                state.undoSnapshot = null;
-                setStatus('success', 'Cuts undone \u2013 ' + (result.restored || 0) + ' clip(s) restored');
-            } else {
-                if (els.btnUndo) els.btnUndo.disabled = false;
-                var errMsg = (result && result.error) ? result.error
-                    : (result && result.errors && result.errors.length) ? result.errors[0]
-                    : 'Undo failed';
-                setStatus('error', errMsg);
-                console.error('[AutoCast] restoreTrackState errors:', result);
-            }
-        });
-    }
-
-    if (els.btnUndo) {
-        els.btnUndo.addEventListener('click', undoCuts);
-    }
-
     updateModeIndicator();
 
     hideProgress();
@@ -877,6 +811,7 @@
     renderWaveform();
     setStatus('idle', 'Ready');
 
-    // Beim Öffnen: Tracks laden + Lautstärke messen + Sensitivity-Preset setzen
-    setTimeout(autoAnalyzeAndNormalizeGain, 500);
+    // Auto-load track metadata, but no loudness scan on startup.
+    setTimeout(loadTracksFromHost, 500);
 })();
+

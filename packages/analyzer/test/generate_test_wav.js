@@ -1,5 +1,5 @@
-/**
- * AutoCast – Test WAV Generator
+﻿/**
+ * AutoCast â€“ Test WAV Generator
  * 
  * Generates synthetic WAV files that simulate podcast recordings:
  *   - Speaker A (loud, active 0-5s, silent 5-10s, active 10-15s)
@@ -8,7 +8,7 @@
  * 
  * Each track has slight "bleed" from other speakers to simulate same-room recording.
  * 
- * Usage: node test/generate_test_wav.js [outputDir]
+ * Usage: node packages/analyzer/test/generate_test_wav.js [outputDir]
  */
 
 'use strict';
@@ -256,3 +256,4 @@ if (require.main === module) {
     var outDir = process.argv[2] || undefined;
     generateTestFiles(outDir);
 }
+

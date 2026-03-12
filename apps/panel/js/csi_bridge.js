@@ -58,28 +58,12 @@ var AutoCastBridge = (function () {
         callExtendScript('autocast_getTrackInfo', null, callback);
     }
 
-    function applyKeyframes(keyframeData, callback) {
-        callExtendScript('autocast_applyKeyframes', keyframeData, callback);
-    }
-
     function applyCuts(cutData, callback) {
         callExtendScript('autocast_applyCuts', cutData, callback);
     }
 
-    function captureTrackState(captureData, callback) {
-        callExtendScript('autocast_captureTrackState', captureData, callback);
-    }
-
-    function restoreTrackState(restoreData, callback) {
-        callExtendScript('autocast_restoreTrackState', restoreData, callback);
-    }
-
     function applyGainNormalization(gainData, callback) {
         callExtendScript('autocast_applyGainNormalization', gainData, callback);
-    }
-
-    function removeKeyframes(trackIndices, callback) {
-        callExtendScript('autocast_removeKeyframes', trackIndices, callback);
     }
 
     function addMarkers(markerData, callback) {
@@ -113,12 +97,8 @@ var AutoCastBridge = (function () {
         init: init,
         ping: ping,
         getTrackInfo: getTrackInfo,
-        applyKeyframes: applyKeyframes,
         applyCuts: applyCuts,
-        captureTrackState: captureTrackState,
-        restoreTrackState: restoreTrackState,
         applyGainNormalization: applyGainNormalization,
-        removeKeyframes: removeKeyframes,
         addMarkers: addMarkers,
         addCutProgressListener: addCutProgressListener,
         removeCutProgressListener: removeCutProgressListener,
