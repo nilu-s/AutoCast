@@ -414,6 +414,46 @@ function analyze(trackPaths, userParams, progressCallback) {
     }
 
     for (i = 0; i < trackCount; i++) {
+        var healed = null;
+        if (params.enableInSpeechDropoutHeal) {
+            healed = healInSpeechDropouts(vadResults[i].gateOpen, rmsProfiles[i], vadResults[i].debug, {
+                frameDurationMs: params.frameDurationMs,
+                maxDropoutMs: params.maxInSpeechDropoutMs,
+                minRelativeDb: params.dropoutHealMinRelativeDb,
+                absoluteFloorDb: params.dropoutHealAbsoluteFloorDb,
+                minEnergyCoverage: params.dropoutHealMinEnergyCoverage,
+                fallbackThresholdLinear: vadResults[i].thresholdLinear
+            });
+
+            vadResults[i].gateOpen = healed.gateOpen;
+            if (trackInfos[i]) {
+                trackInfos[i].dropoutHealedFrames = healed.healedFrames;
+                trackInfos[i].dropoutHealedGaps = healed.healedGaps;
+            }
+        } else if (trackInfos[i]) {
+            trackInfos[i].dropoutHealedFrames = 0;
+            trackInfos[i].dropoutHealedGaps = 0;
+        }
+    }
+
+    if (params.enforceAlwaysOneTrackOpen) {
+        var alwaysOpenStats = enforceAtLeastOneOpenTrack(vadResults, rmsProfiles, {
+            frameDurationMs: params.frameDurationMs,
+            dominanceWindowMs: params.alwaysOpenDominanceWindowMs,
+            stickinessDb: params.alwaysOpenStickinessDb
+        });
+        for (i = 0; i < trackCount; i++) {
+            if (trackInfos[i]) {
+                trackInfos[i].alwaysOpenFilledFrames = alwaysOpenStats.perTrackFilledFrames[i] || 0;
+            }
+        }
+    } else {
+        for (i = 0; i < trackCount; i++) {
+            if (trackInfos[i]) trackInfos[i].alwaysOpenFilledFrames = 0;
+        }
+    }
+
+    for (i = 0; i < trackCount; i++) {
         gateSnapshots[i].afterBleed = cloneUint8Array(vadResults[i].gateOpen);
     }
 
@@ -1490,10 +1530,183 @@ function applyOffsetToFingerprint(fp, offsetSec, frameDurationMs) {
     };
 }
 
+function enforceAtLeastOneOpenTrack(vadResults, rmsProfiles, options) {
+    options = options || {};
+
+    var trackCount = vadResults ? vadResults.length : 0;
+    if (trackCount === 0) {
+        return {
+            filledFrames: 0,
+            perTrackFilledFrames: []
+        };
+    }
+
+    var maxFrames = 0;
+    for (var t = 0; t < trackCount; t++) {
+        var gate = vadResults[t] && vadResults[t].gateOpen ? vadResults[t].gateOpen : null;
+        if (gate && gate.length > maxFrames) maxFrames = gate.length;
+    }
+
+    var perTrackFilledFrames = new Array(trackCount);
+    for (t = 0; t < trackCount; t++) perTrackFilledFrames[t] = 0;
+    if (maxFrames === 0) {
+        return {
+            filledFrames: 0,
+            perTrackFilledFrames: perTrackFilledFrames
+        };
+    }
+
+    var frameDurationMs = options.frameDurationMs || 10;
+    var dominanceWindowMs = Math.max(frameDurationMs, options.dominanceWindowMs || 2500);
+    var windowFrames = Math.max(1, Math.round(dominanceWindowMs / frameDurationMs));
+    var decay = Math.exp(-1 / windowFrames);
+    var stickinessLinear = rmsCalc.dbToLinear(options.stickinessDb !== undefined ? options.stickinessDb : 2.5);
+
+    var dominanceScore = new Float64Array(trackCount);
+    var lastChosenTrack = -1;
+    var filledFrames = 0;
+
+    for (var f = 0; f < maxFrames; f++) {
+        var activeCount = 0;
+        for (t = 0; t < trackCount; t++) {
+            dominanceScore[t] *= decay;
+            gate = vadResults[t].gateOpen;
+            if (f < gate.length && gate[f]) {
+                activeCount++;
+                dominanceScore[t] += 1;
+            }
+        }
+
+        if (activeCount > 0) continue;
+
+        var bestTrack = -1;
+        var bestScore = -1;
+        var bestRms = -1;
+        var lastTrackRms = -1;
+
+        for (t = 0; t < trackCount; t++) {
+            gate = vadResults[t].gateOpen;
+            if (f >= gate.length) continue;
+
+            var frameRms = getFrameValue(rmsProfiles[t], f, 0);
+            var score = dominanceScore[t];
+            if (score > bestScore || (score === bestScore && frameRms > bestRms)) {
+                bestScore = score;
+                bestRms = frameRms;
+                bestTrack = t;
+            }
+
+            if (t === lastChosenTrack) {
+                lastTrackRms = frameRms;
+            }
+        }
+
+        if (bestTrack === -1) continue;
+
+        var chosenTrack = bestTrack;
+        if (lastChosenTrack !== -1 &&
+            f < vadResults[lastChosenTrack].gateOpen.length &&
+            lastTrackRms > 0 &&
+            bestRms > 0 &&
+            lastTrackRms * stickinessLinear >= bestRms) {
+            chosenTrack = lastChosenTrack;
+        }
+
+        vadResults[chosenTrack].gateOpen[f] = 1;
+        dominanceScore[chosenTrack] += 1;
+        perTrackFilledFrames[chosenTrack]++;
+        filledFrames++;
+        lastChosenTrack = chosenTrack;
+    }
+
+    return {
+        filledFrames: filledFrames,
+        perTrackFilledFrames: perTrackFilledFrames
+    };
+}
+
 function cloneUint8Array(arr) {
     var out = new Uint8Array(arr.length);
     out.set(arr);
     return out;
+}
+
+function healInSpeechDropouts(gateArray, rmsArray, vadDebug, options) {
+    options = options || {};
+    if (!gateArray || gateArray.length === 0) {
+        return {
+            gateOpen: gateArray || new Uint8Array(0),
+            healedFrames: 0,
+            healedGaps: 0
+        };
+    }
+
+    var out = cloneUint8Array(gateArray);
+    var frameDurationMs = options.frameDurationMs || 10;
+    var maxDropoutFrames = Math.max(1, Math.round((options.maxDropoutMs || 260) / frameDurationMs));
+    var minCoverage = clampNumber(
+        (options.minEnergyCoverage !== undefined) ? options.minEnergyCoverage : 0.35,
+        0.05,
+        1
+    );
+    var relativeFactor = rmsCalc.dbToLinear(
+        (options.minRelativeDb !== undefined) ? options.minRelativeDb : -8
+    );
+    var absFloorLinear = rmsCalc.dbToLinear(
+        (options.absoluteFloorDb !== undefined) ? options.absoluteFloorDb : -62
+    );
+
+    var thresholdByFrame = vadDebug && vadDebug.openThresholdLinearByFrame
+        ? vadDebug.openThresholdLinearByFrame
+        : null;
+    var fallbackThreshold = vadDebug && vadDebug.openThresholdLinearByFrame && vadDebug.openThresholdLinearByFrame.length > 0
+        ? getFrameValue(vadDebug.openThresholdLinearByFrame, 0, 0)
+        : (options.fallbackThresholdLinear || 0);
+
+    var healedFrames = 0;
+    var healedGaps = 0;
+
+    var i = 0;
+    while (i < out.length) {
+        if (out[i]) {
+            i++;
+            continue;
+        }
+
+        var gapStart = i;
+        while (i < out.length && !out[i]) i++;
+        var gapEnd = i - 1;
+        var gapFrames = gapEnd - gapStart + 1;
+
+        if (gapFrames > maxDropoutFrames) continue;
+        if (gapStart <= 0 || gapEnd >= out.length - 1) continue;
+        if (!out[gapStart - 1] || !out[gapEnd + 1]) continue;
+
+        var energeticFrames = 0;
+        for (var f = gapStart; f <= gapEnd; f++) {
+            var frameRms = getFrameValue(rmsArray, f, 0);
+            var frameThreshold = thresholdByFrame
+                ? getFrameValue(thresholdByFrame, f, fallbackThreshold)
+                : fallbackThreshold;
+            var minKeep = Math.max(absFloorLinear, frameThreshold * relativeFactor);
+            if (frameRms >= minKeep) energeticFrames++;
+        }
+
+        var requiredFrames = Math.max(1, Math.ceil(gapFrames * minCoverage));
+        if (energeticFrames >= requiredFrames) {
+            for (f = gapStart; f <= gapEnd; f++) {
+                out[f] = 1;
+            }
+            healedFrames += gapFrames;
+            healedGaps++;
+        }
+    }
+
+    return {
+        gateOpen: out,
+        healedFrames: healedFrames,
+        healedGaps: healedGaps
+    };
 }
 
 function getFrameValue(arr, frameIndex, fallback) {

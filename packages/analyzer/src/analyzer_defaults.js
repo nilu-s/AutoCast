@@ -29,6 +29,14 @@ var ANALYSIS_DEFAULTS = {
     hardSilenceCutDb: -51,
     hardSilenceLookaroundMs: 220,
     hardSilencePeakDeltaDb: 8,
+    enableInSpeechDropoutHeal: true,
+    maxInSpeechDropoutMs: 260,
+    dropoutHealMinRelativeDb: -8,
+    dropoutHealAbsoluteFloorDb: -62,
+    dropoutHealMinEnergyCoverage: 0.35,
+    enforceAlwaysOneTrackOpen: true,
+    alwaysOpenDominanceWindowMs: 2500,
+    alwaysOpenStickinessDb: 2.5,
 
     // Per-track sensitivity overrides (array, one per track, or null for global)
     perTrackThresholdDb: null,
