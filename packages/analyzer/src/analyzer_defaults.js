@@ -77,6 +77,16 @@ var ANALYSIS_DEFAULTS = {
     peakAnchorPostPadMs: 650,
     peakAnchorMinClusterMs: 60,
     peakAnchorJoinGapMs: 120,
+    enableResidualSnippetPrune: true,
+    residualSnippetMaxDurationMs: 220,
+    residualSnippetMinPeakAboveThresholdDb: 2.5,
+    residualSnippetMinMeanAboveThresholdDb: -0.5,
+    residualSnippetMaxPeakDbFs: -53.0,
+    residualSnippetMaxMeanDbFs: -57.0,
+    residualSnippetProtectGapMs: 240,
+    residualSnippetProtectOtherOverlapRatio: 0.12,
+    enableFinalPeakGate: true,
+    finalMinPeakDbFs: -52.0,
 
     // Overlap
     overlapPolicy: 'spectral_bleed_safe',

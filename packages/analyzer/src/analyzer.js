@@ -655,6 +655,33 @@ function analyze(trackPaths, userParams, progressCallback) {
         }, trackInfos, totalDurationSec);
     }
 
+    // Final conservative cleanup: remove only clearly weak, isolated residual snippets.
+    // Guardrails:
+    // - no global threshold shifts
+    // - no dominance/fillGaps side effects (disabled when fillGaps=true)
+    // - protect short turn-taking and boundary continuity
+    if (params.enableResidualSnippetPrune && !params.fillGaps) {
+        resolvedSegments = pruneResidualSnippets(resolvedSegments, rmsProfiles, rawRmsProfiles, vadResults, {
+            frameDurationMs: params.frameDurationMs,
+            maxDurationMs: params.residualSnippetMaxDurationMs,
+            minPeakAboveThresholdDb: params.residualSnippetMinPeakAboveThresholdDb,
+            minMeanAboveThresholdDb: params.residualSnippetMinMeanAboveThresholdDb,
+            maxPeakDbFs: params.residualSnippetMaxPeakDbFs,
+            maxMeanDbFs: params.residualSnippetMaxMeanDbFs,
+            protectGapMs: params.residualSnippetProtectGapMs,
+            protectOtherOverlapRatio: params.residualSnippetProtectOtherOverlapRatio
+        }, trackInfos);
+    }
+
+    // Final hard floor in absolute dBFS for active segments.
+    // This is intentionally last so earlier context-aware passes can run first.
+    if (params.enableFinalPeakGate && !params.fillGaps) {
+        resolvedSegments = filterByAbsolutePeakFloor(resolvedSegments, rawRmsProfiles, {
+            frameDurationMs: params.frameDurationMs,
+            minPeakDbFs: params.finalMinPeakDbFs
+        }, trackInfos);
+    }
+
     for (i = 0; i < trackCount; i++) {
         var finalStats = computeStatsFromResolvedSegments(resolvedSegments[i], totalDurationSec);
         trackInfos[i].segmentCount = finalStats.segmentCount;
@@ -750,24 +777,29 @@ function loadAnalysis(filePath) {
 
 function enforceSingleModeParams(params) {
     if (!params) params = {};
-
-    // Single production mode: Smooth Blocks.
-    params.independentTrackAnalysis = true;
-    params.snippetPadBeforeMs = 1200;
-    params.snippetPadAfterMs = 1200;
-    params.enablePrimaryTrackGapFill = true;
-    params.primaryTrackGapFillMaxMs = 1800;
-    params.crossTrackTailTrimInIndependentMode = true;
-    params.closeConfirmMs = 1000;
-    params.closeConfirmDynamic = true;
-    params.enablePreTriggerCleanup = true;
-    params.enableSameTrackGapMerge = true;
-    params.enableDominantTrackStickiness = true;
-    params.enableLowSignificancePrune = true;
-    params.enablePeakAnchorKeep = true;
-    params.overlapPolicy = 'dominant_wins';
-    params.fillGaps = false;
-
+    // Keep UI/user intent intact. This function only normalizes unsafe values
+    // and must not hard-override explicit settings.
+    params.snippetPadBeforeMs = clampNumber(parseOrFallback(params.snippetPadBeforeMs, 0), 0, 10000);
+    params.snippetPadAfterMs = clampNumber(parseOrFallback(params.snippetPadAfterMs, 0), 0, 10000);
+    params.minSegmentMs = clampNumber(parseOrFallback(params.minSegmentMs, 0), 0, 10000);
+    params.postOverlapMinSegmentMs = clampNumber(parseOrFallback(params.postOverlapMinSegmentMs, 0), 0, 10000);
+    params.minGapMs = clampNumber(parseOrFallback(params.minGapMs, 0), 0, 10000);
+    params.primaryTrackGapFillMaxMs = clampNumber(parseOrFallback(params.primaryTrackGapFillMaxMs, 0), 0, 10000);
+    params.sameTrackGapMergeMaxMs = clampNumber(parseOrFallback(params.sameTrackGapMergeMaxMs, 0), 0, 15000);
+    params.preTriggerJoinGapMs = clampNumber(parseOrFallback(params.preTriggerJoinGapMs, 0), 0, 15000);
+    params.preTriggerAbsorbGapMs = clampNumber(parseOrFallback(params.preTriggerAbsorbGapMs, 0), 0, 5000);
+    params.dominantTrackHoldMs = clampNumber(parseOrFallback(params.dominantTrackHoldMs, 0), 0, 15000);
+    params.dominantTrackReturnWindowMs = clampNumber(parseOrFallback(params.dominantTrackReturnWindowMs, 0), 0, 30000);
+    params.residualSnippetMaxDurationMs = clampNumber(parseOrFallback(params.residualSnippetMaxDurationMs, 220), 60, 1000);
+    params.residualSnippetMaxPeakDbFs = clampNumber(parseOrFallback(params.residualSnippetMaxPeakDbFs, -53.0), -90, -20);
+    params.residualSnippetMaxMeanDbFs = clampNumber(parseOrFallback(params.residualSnippetMaxMeanDbFs, -57.0), -90, -20);
+    params.residualSnippetProtectGapMs = clampNumber(parseOrFallback(params.residualSnippetProtectGapMs, 240), 60, 1200);
+    params.residualSnippetProtectOtherOverlapRatio = clampNumber(
+        parseOrFallback(params.residualSnippetProtectOtherOverlapRatio, 0.12),
+        0,
+        1
+    );
+    params.finalMinPeakDbFs = clampNumber(parseOrFallback(params.finalMinPeakDbFs, -52.0), -90, -20);
     return params;
 }
 
@@ -1462,6 +1494,186 @@ function pruneLowSignificanceSegments(resolvedSegments, rmsProfiles, vadResults,
     }
 
     return out;
+}
+
+function pruneResidualSnippets(resolvedSegments, rmsProfiles, rawRmsProfiles, vadResults, options, trackInfos) {
+    options = options || {};
+    var frameDurationMs = options.frameDurationMs || 10;
+    var frameDurSec = frameDurationMs / 1000;
+    var maxDurationSec = Math.max(0, (options.maxDurationMs || 220) / 1000);
+    var minPeakAboveThresholdDb = (options.minPeakAboveThresholdDb !== undefined) ? options.minPeakAboveThresholdDb : 2.5;
+    var minMeanAboveThresholdDb = (options.minMeanAboveThresholdDb !== undefined) ? options.minMeanAboveThresholdDb : -0.5;
+    var maxPeakDbFs = (options.maxPeakDbFs !== undefined) ? options.maxPeakDbFs : -53.0;
+    var maxMeanDbFs = (options.maxMeanDbFs !== undefined) ? options.maxMeanDbFs : -57.0;
+    var protectGapSec = Math.max(0, (options.protectGapMs || 240) / 1000);
+    var protectOtherOverlapRatio = clampNumber(
+        (options.protectOtherOverlapRatio !== undefined) ? options.protectOtherOverlapRatio : 0.12,
+        0,
+        1
+    );
+
+    var out = [];
+    for (var t = 0; t < resolvedSegments.length; t++) {
+        var segs = resolvedSegments[t] || [];
+        var rms = rmsProfiles[t] || [];
+        var rmsRaw = (rawRmsProfiles && rawRmsProfiles[t]) ? rawRmsProfiles[t] : rms;
+        var thresholdDb = (vadResults[t] && isFinite(vadResults[t].thresholdDb)) ? vadResults[t].thresholdDb : -Infinity;
+        var trackOut = [];
+        var pruned = 0;
+
+        for (var i = 0; i < segs.length; i++) {
+            var seg = segs[i];
+            if (!seg || seg.state === 'suppressed') {
+                trackOut.push(seg);
+                continue;
+            }
+
+            var durSec = Math.max(0, seg.end - seg.start);
+            if (durSec <= 0 || durSec > maxDurationSec) {
+                trackOut.push(seg);
+                continue;
+            }
+
+            var prevActive = findNeighborActive(segs, i, -1);
+            var nextActive = findNeighborActive(segs, i, 1);
+            // Keep boundary snippets unless they are clearly weak in absolute dBFS.
+            if (!prevActive || !nextActive) {
+                var edgeStats = computeSegmentRmsStats(seg, rmsRaw, frameDurSec);
+                if (!edgeStats) {
+                    trackOut.push(seg);
+                    continue;
+                }
+                var weakEdgeByAbsolute = edgeStats.peakDb <= maxPeakDbFs && edgeStats.meanDb <= maxMeanDbFs;
+                if (!weakEdgeByAbsolute) {
+                    trackOut.push(seg);
+                    continue;
+                }
+                pruned++;
+                continue;
+            }
+
+            if (prevActive && nextActive) {
+                var leftGap = Math.max(0, seg.start - prevActive.end);
+                var rightGap = Math.max(0, nextActive.start - seg.end);
+                if (leftGap <= protectGapSec || rightGap <= protectGapSec) {
+                    trackOut.push(seg);
+                    continue;
+                }
+            }
+
+            var overlapRatio = computeOtherTrackOverlapRatio(resolvedSegments, t, seg.start, seg.end);
+            if (overlapRatio > protectOtherOverlapRatio) {
+                trackOut.push(seg);
+                continue;
+            }
+
+            var stats = computeSegmentRmsStats(seg, rms, frameDurSec);
+            var rawStats = computeSegmentRmsStats(seg, rmsRaw, frameDurSec);
+            if (!stats || !rawStats) {
+                trackOut.push(seg);
+                continue;
+            }
+
+            var peakAboveThreshold = stats.peakDb - thresholdDb;
+            var meanAboveThreshold = stats.meanDb - thresholdDb;
+            var weakByRelative = peakAboveThreshold < minPeakAboveThresholdDb &&
+                meanAboveThreshold < minMeanAboveThresholdDb;
+            var weakByAbsolute = rawStats.peakDb <= maxPeakDbFs &&
+                rawStats.meanDb <= maxMeanDbFs;
+            if (!(weakByRelative || weakByAbsolute)) {
+                trackOut.push(seg);
+                continue;
+            }
+
+            pruned++;
+        }
+
+        var merged = mergeContiguousStateSegments(trackOut);
+        if (trackInfos && trackInfos[t]) {
+            trackInfos[t].residualSnippetsPruned = pruned;
+        }
+        out.push(merged);
+    }
+    return out;
+}
+
+function filterByAbsolutePeakFloor(resolvedSegments, rmsProfiles, options, trackInfos) {
+    options = options || {};
+    var frameDurationMs = options.frameDurationMs || 10;
+    var frameDurSec = frameDurationMs / 1000;
+    var minPeakDbFs = (options.minPeakDbFs !== undefined) ? options.minPeakDbFs : -52.0;
+
+    var out = [];
+    for (var t = 0; t < resolvedSegments.length; t++) {
+        var segs = resolvedSegments[t] || [];
+        var rms = rmsProfiles[t] || [];
+        var kept = [];
+        var pruned = 0;
+
+        for (var i = 0; i < segs.length; i++) {
+            var seg = segs[i];
+            if (!seg || seg.state === 'suppressed') {
+                kept.push(seg);
+                continue;
+            }
+
+            var stats = computeSegmentRmsStats(seg, rms, frameDurSec);
+            if (!stats) {
+                // If stats are unavailable, keep segment to avoid accidental data loss.
+                kept.push(seg);
+                continue;
+            }
+
+            if (stats.peakDb < minPeakDbFs) {
+                pruned++;
+                continue;
+            }
+
+            kept.push(seg);
+        }
+
+        var merged = mergeContiguousStateSegments(kept);
+        if (trackInfos && trackInfos[t]) {
+            trackInfos[t].finalPeakFloorPruned = pruned;
+        }
+        out.push(merged);
+    }
+
+    return out;
+}
+
+function findNeighborActive(segs, index, direction) {
+    var i = index + direction;
+    while (i >= 0 && i < segs.length) {
+        if (segs[i] && segs[i].state !== 'suppressed') return segs[i];
+        i += direction;
+    }
+    return null;
+}
+
+function mergeContiguousStateSegments(segs) {
+    if (!segs || segs.length === 0) return [];
+
+    var ordered = segs.slice().sort(function (a, b) { return a.start - b.start; });
+    var out = [cloneSegment(ordered[0])];
+    for (var i = 1; i < ordered.length; i++) {
+        var cur = ordered[i];
+        var prev = out[out.length - 1];
+        if (prev.state === cur.state && cur.start <= prev.end + 0.001) {
+            if (cur.end > prev.end) prev.end = cur.end;
+            prev.durationMs = Math.round((prev.end - prev.start) * 1000);
+        } else {
+            var copied = cloneSegment(cur);
+            copied.durationMs = Math.round((copied.end - copied.start) * 1000);
+            out.push(copied);
+        }
+    }
+    return out;
+}
+
+function parseOrFallback(v, fallback) {
+    var n = parseFloat(v);
+    return isFinite(n) ? n : fallback;
 }
 
 function getTrackOffsetSec(trackOffsets, trackIndex) {

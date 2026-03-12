@@ -159,6 +159,24 @@ describe('End-to-End Analysis', function () {
         assert(trackBSegs[0].start <= 4.7, 'Track B segment should start earlier due to pre-roll');
         assert(trackBSegs[0].end >= 10.3, 'Track B segment should end later due to post-roll');
     });
+
+    it('should preserve explicit overlap/fill settings from params (no hard override)', function () {
+        var tracks = [
+            path.join(testDataDir, 'track_a_host.wav'),
+            path.join(testDataDir, 'track_b_guest1.wav'),
+            path.join(testDataDir, 'track_c_guest2.wav')
+        ];
+
+        var result = analyzer.analyze(tracks, {
+            independentTrackAnalysis: false,
+            overlapPolicy: 'always_active_with_gaps',
+            fillGaps: true
+        });
+
+        assert(result.params.independentTrackAnalysis === false, 'independentTrackAnalysis should remain user-defined false');
+        assert(result.params.overlapPolicy === 'always_active_with_gaps', 'overlapPolicy should remain user-defined');
+        assert(result.params.fillGaps === true, 'fillGaps should remain user-defined true');
+    });
 });
 
 

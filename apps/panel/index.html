@@ -80,6 +80,18 @@
                     </div>
                     <div class="param-group">
                         <div class="param-header">
+                            <label class="param-label">Min Peak (dBFS)
+                                <span class="tooltip"
+                                    data-tip="Final hard filter: segments with peak below this value are removed. Higher value = stricter cleanup of very quiet snippets.">?</span>
+                            </label>
+                            <span class="param-value" id="valMinPeak">-52 dB</span>
+                        </div>
+                        <input type="range" id="paramMinPeak" class="slider" min="-60" max="-45" value="-52" step="1">
+                        <div class="slider-labels"><span>Keep more</span><span>Filter more</span></div>
+                        <div class="param-help">Default -52 dBFS. Raise (e.g. -50) to remove more very quiet snippets.</div>
+                    </div>
+                    <div class="param-group">
+                        <div class="param-header">
                             <label class="param-label">Smooth Blocks
                                 <span class="tooltip"
                                     data-tip="Merges nearby speech snippets into larger connected blocks. Recommended if output feels too fragmented.">?</span>

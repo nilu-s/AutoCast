@@ -217,6 +217,8 @@
         btnReset: $('btnReset'),
         paramThreshold: $('paramThreshold'),
         valThreshold: $('valThreshold'),
+        paramMinPeak: $('paramMinPeak'),
+        valMinPeak: $('valMinPeak'),
         modeIndicator: $('modeIndicator')
     };
 
@@ -228,6 +230,7 @@
     }
 
     bindSlider(els.paramThreshold, els.valThreshold, '');
+    bindSlider(els.paramMinPeak, els.valMinPeak, 'dB');
 
     function getParams() {
         var debugMode = false;
@@ -258,6 +261,7 @@
             overlapMarginDb: 8,
             suppressionScoreThreshold: 0.65,
             fillGaps: false,
+            finalMinPeakDbFs: parseFloat(els.paramMinPeak.value),
             autoGain: true,
             useSpectralVAD: true,
             spectralMinConfidence: 0.18,
