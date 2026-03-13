@@ -212,7 +212,6 @@
         waveformContainer: null,
         btnLoadTracks: $('btnLoadTracks'),
         btnAnalyze: $('btnAnalyze'),
-        btnPreviewMarkers: $('btnPreviewMarkers'),
         btnApply: $('btnApply'),
         btnReset: $('btnReset'),
         paramThreshold: $('paramThreshold'),
@@ -347,7 +346,6 @@
     function setButtonsDisabled(disabled) {
         if (els.btnApply) els.btnApply.disabled = disabled;
         if (els.btnAnalyze) els.btnAnalyze.disabled = disabled;
-        if (els.btnPreviewMarkers) els.btnPreviewMarkers.disabled = disabled;
         if (els.btnReset) els.btnReset.disabled = disabled;
     }
 
@@ -469,10 +467,6 @@
         }
     }
 
-    function renderResults() { /* removed */ }
-
-    function renderWaveform() { /* removed */ }
-
     function updateModeIndicator() {
         if (!els.modeIndicator) return;
         els.modeIndicator.textContent = 'Mode: Smooth Blocks';
@@ -556,8 +550,6 @@
                             'Mode ' + smoothLabel + ': ' + smoothStats.totalSegments + ' active segments',
                             'Avg segment ' + formatPercent(smoothStats.avgSegmentSec) + ' s, avg active ' + formatPercent(smoothStats.avgActivePercent) + '%'
                         );
-                        renderResults();
-                        renderWaveform();
                     }).catch(function (err) {
                         if (runId !== state.analysisRunId) return;
                         state.isAnalyzing = false;
@@ -595,8 +587,6 @@
                             'Analysis complete: ' + fallbackStats.totalSegments + ' active segments',
                             'Avg segment ' + formatPercent(fallbackStats.avgSegmentSec) + ' s, avg active ' + formatPercent(fallbackStats.avgActivePercent) + '%'
                         );
-                        renderResults();
-                        renderWaveform();
                     }, function (err) {
                         if (runId !== state.analysisRunId) return;
                         state.isAnalyzing = false;
@@ -739,8 +729,6 @@
         hideProgress();
         hideSummary();
         setStatus('idle', 'Ready');
-        renderResults();
-        renderWaveform();
     }
 
     function loadTracksFromHost() {
@@ -811,8 +799,6 @@
 
     hideProgress();
     renderTracks();
-    renderResults();
-    renderWaveform();
     setStatus('idle', 'Ready');
 
     // Auto-load track metadata, but no loudness scan on startup.

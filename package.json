@@ -1,6 +1,6 @@
 {
     "name":  "autocast",
-    "version":  "1.0.0",
+    "version":  "2.2.0",
     "description":  "AutoCast - Automatic podcast multi-track cut editing plugin for Adobe Premiere Pro",
     "main":  "apps/panel/index.html",
     "scripts":  {

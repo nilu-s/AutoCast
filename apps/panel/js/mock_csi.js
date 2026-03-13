@@ -74,7 +74,7 @@
 
     // Mock ExtendScript responses
     var mockResponses = {
-        'autocast_ping()': JSON.stringify({ status: 'ok', version: '1.0.0', host: 'Mock Browser' }),
+        'autocast_ping()': JSON.stringify({ status: 'ok', version: '2.2.0', host: 'Mock Browser' }),
         'autocast_getTrackInfo()': JSON.stringify(mockTrackInfo)
     };
 
@@ -89,15 +89,6 @@
         // Check for static mock responses
         if (mockResponses[script]) {
             if (callback) setTimeout(function () { callback(mockResponses[script]); }, 100);
-            return;
-        }
-
-        // Handle addMarkers
-        if (script.indexOf('autocast_addMarkers') === 0) {
-            console.log('[Mock CSInterface] Would add markers');
-            if (callback) setTimeout(function () {
-                callback(JSON.stringify({ success: true, markersAdded: 15 }));
-            }, 200);
             return;
         }
 

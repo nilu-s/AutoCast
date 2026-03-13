@@ -2,11 +2,11 @@
 <ExtensionManifest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                    Version="11.0"
                    ExtensionBundleId="com.autocast.panel"
-                   ExtensionBundleVersion="2.0.0"
+                   ExtensionBundleVersion="2.2.0"
                    ExtensionBundleName="AutoCast">
 
     <ExtensionList>
-        <Extension Id="com.autocast.panel.main" Version="2.0.0" />
+        <Extension Id="com.autocast.panel.main" Version="2.2.0" />
     </ExtensionList>
 
     <ExecutionEnvironment>
@@ -53,10 +53,6 @@
                             <Width>600</Width>
                         </MaxSize>
                     </Geometry>
-                    <Icons>
-                        <Icon Type="Normal">./icons/icon_normal.png</Icon>
-                        <Icon Type="RollOver">./icons/icon_hover.png</Icon>
-                    </Icons>
                 </UI>
             </DispatchInfo>
         </Extension>

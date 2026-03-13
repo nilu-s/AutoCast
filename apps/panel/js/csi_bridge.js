@@ -62,14 +62,6 @@ var AutoCastBridge = (function () {
         callExtendScript('autocast_applyCuts', cutData, callback);
     }
 
-    function applyGainNormalization(gainData, callback) {
-        callExtendScript('autocast_applyGainNormalization', gainData, callback);
-    }
-
-    function addMarkers(markerData, callback) {
-        callExtendScript('autocast_addMarkers', markerData, callback);
-    }
-
     function addCutProgressListener(handler) {
         if (!csInterface || isMockMode) return;
         csInterface.addEventListener(CUT_PROGRESS_EVENT, handler);
@@ -98,8 +90,6 @@ var AutoCastBridge = (function () {
         ping: ping,
         getTrackInfo: getTrackInfo,
         applyCuts: applyCuts,
-        applyGainNormalization: applyGainNormalization,
-        addMarkers: addMarkers,
         addCutProgressListener: addCutProgressListener,
         removeCutProgressListener: removeCutProgressListener,
         getCutProgressEventName: getCutProgressEventName,

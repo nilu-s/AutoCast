@@ -14,7 +14,10 @@ var testFiles = [
     'test_segmentation.js',
     'test_overlap.js',
     'test_e2e.js',
-    'test_spectral_bleed.js'
+    'test_spectral_bleed.js',
+    'test_laughter_detector.js',
+    'test_laughter_postprocess_protection.js',
+    'test_handover_smoothing.js'
 ];
 
 // Simple test framework

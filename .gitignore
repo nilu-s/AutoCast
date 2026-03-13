@@ -20,5 +20,7 @@ Thumbs.db
 # Audio and Logs
 *.wav
 analysis_debug.json
+_tmp_*.json
+temp_analyzer_debug.js
 out.txt
 test_output.txt
