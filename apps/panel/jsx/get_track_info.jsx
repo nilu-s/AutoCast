@@ -14,11 +14,13 @@ function getTrackInfo() {
     if (!seq) {
         return { error: 'No active sequence. Please open a sequence first.' };
     }
+    var ticksPerSecond = 254016000000;
 
     var result = {
         sequenceName: seq.name,
         sequenceId: seq.sequenceID,
         framerate: seq.getSettings().videoFrameRate.ticks,
+        ticksPerSecond: ticksPerSecond,
         audioTrackCount: seq.audioTracks.numTracks,
         tracks: []
     };
@@ -38,18 +40,23 @@ function getTrackInfo() {
             var clip = track.clips[c];
             var clipInfo = {
                 name: clip.name,
+                clipIndex: c,
                 startTicks: clip.start.ticks,
                 endTicks: clip.end.ticks,
                 inPointTicks: clip.inPoint.ticks,
                 outPointTicks: clip.outPoint.ticks,
                 durationTicks: clip.duration.ticks,
-                mediaPath: ''
+                mediaPath: '',
+                hasProjectItem: !!clip.projectItem,
+                canResolveMediaPath: false
             };
 
             // Get media file path
             try {
                 if (clip.projectItem && clip.projectItem.getMediaPath) {
                     clipInfo.mediaPath = clip.projectItem.getMediaPath() || '';
+                    clipInfo.canResolveMediaPath = true;
+                    clipInfo.projectItemType = clip.projectItem.type;
                 } else {
                     clipInfo.mediaPathError = 'Clip misses projectItem (nested/generator?)';
                 }

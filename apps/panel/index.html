@@ -115,6 +115,37 @@
                 <div id="summaryPrimary" class="summary-primary"></div>
                 <div id="summaryDetail" class="summary-detail"></div>
             </section>
+            <section id="cutPreviewSection" class="section cut-preview" style="display: none;">
+                <div class="section-header">
+                    <h2 class="section-title">Cut Preview</h2>
+                    <div id="cutPreviewMeta" class="cut-preview-meta"></div>
+                </div>
+                <div class="cut-preview-controls">
+                    <div class="cut-preview-filter-group">
+                        <button class="btn btn-sm btn-secondary cut-preview-filter-btn" data-filter-state="all">All</button>
+                        <button class="btn btn-sm btn-secondary cut-preview-filter-btn" data-filter-state="kept">Kept</button>
+                        <button class="btn btn-sm btn-secondary cut-preview-filter-btn" data-filter-state="near_miss">Near Miss</button>
+                        <button class="btn btn-sm btn-secondary cut-preview-filter-btn" data-filter-state="suppressed">Suppressed</button>
+                    </div>
+                    <div class="cut-preview-control-row">
+                        <label class="cut-preview-control-label" for="cutPreviewTrackFilter">Track</label>
+                        <select id="cutPreviewTrackFilter" class="cut-preview-select"></select>
+                    </div>
+                    <div class="cut-preview-control-row">
+                        <label class="cut-preview-control-label" for="cutPreviewSort">Sort</label>
+                        <select id="cutPreviewSort" class="cut-preview-select">
+                            <option value="time">Time</option>
+                            <option value="score">Score</option>
+                        </select>
+                    </div>
+                    <div class="cut-preview-control-row cut-preview-zoom-row">
+                        <label class="cut-preview-control-label" for="cutPreviewZoom">Zoom</label>
+                        <input id="cutPreviewZoom" type="range" min="30" max="260" step="10" value="90" class="slider cut-preview-zoom-slider">
+                    </div>
+                </div>
+                <div id="cutPreviewTimeline" class="cut-preview-timeline"></div>
+                <div id="cutPreviewList" class="cut-preview-list"></div>
+            </section>
 
 
 
