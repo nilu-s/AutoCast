@@ -13,7 +13,7 @@ var segmentBuilder = require('./segment_builder');
 function enforceMinimumSegmentDuration(segmentsArray, minSec) {
     var out = [];
     for (var i = 0; i < segmentsArray.length; i++) {
-        var trackSegs = JSON.parse(JSON.stringify(segmentsArray[i]));
+        var trackSegs = cloneSegmentsArray(segmentsArray[i]);
         if (!trackSegs || trackSegs.length === 0) {
             out.push([]);
             continue;
@@ -608,13 +608,23 @@ function computeSegmentRmsStats(seg, rms, frameDurSec) {
 }
 
 function cloneSegment(seg) {
-    var out = {
-        start: seg.start,
-        end: seg.end,
-        trackIndex: seg.trackIndex,
-        state: seg.state
-    };
-    if (seg.durationMs !== undefined) out.durationMs = seg.durationMs;
+    var out = {};
+    for (var key in seg) {
+        if (seg.hasOwnProperty(key)) out[key] = seg[key];
+    }
+    if (out.durationMs === undefined && isFinite(out.start) && isFinite(out.end)) {
+        out.durationMs = Math.round((out.end - out.start) * 1000);
+    }
+    return out;
+}
+
+function cloneSegmentsArray(trackSegs) {
+    if (!trackSegs || !trackSegs.length) return [];
+    var out = [];
+    for (var i = 0; i < trackSegs.length; i++) {
+        if (!trackSegs[i]) continue;
+        out.push(cloneSegment(trackSegs[i]));
+    }
     return out;
 }
 

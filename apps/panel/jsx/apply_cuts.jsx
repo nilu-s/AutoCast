@@ -7,12 +7,16 @@ function applyCuts(data, progressCallback) {
     var progress = progressCallback || function () { };
 
     var segmentsPerTrack = data.segments || [];
+    var fillSegmentsPerTrack = data.fillSegments || [];
     var trackIndices = data.trackIndices || [];
     var ticksPerSecond = data.ticksPerSecond || 254016000000;
+    var fillMarkerPrefix = '[AutoCast Fill]';
 
     var totalClipsCreated = 0;
     var totalClipsTrimmed = 0;
     var totalClipsRemoved = 0;
+    var totalFillMarkersCreated = 0;
+    var totalFillMarkersCleared = 0;
     var errors = [];
 
     function ticksToSec(timeObj) {
@@ -24,6 +28,10 @@ function applyCuts(data, progressCallback) {
 
     function secToTicks(sec) {
         return Math.round(sec * ticksPerSecond).toString();
+    }
+
+    function formatSecLabel(sec) {
+        return (Math.round(sec * 1000) / 1000).toFixed(3) + 's';
     }
 
     function cloneArrayOfTrackClips(track) {
@@ -79,6 +87,88 @@ function applyCuts(data, progressCallback) {
         return merged;
     }
 
+    function getFirstMarker(markers) {
+        if (!markers) return null;
+        try {
+            if (typeof markers.getFirstMarker === 'function') return markers.getFirstMarker();
+        } catch (e1) {}
+        try {
+            if (typeof markers.getFirst === 'function') return markers.getFirst();
+        } catch (e2) {}
+        return null;
+    }
+
+    function getNextMarker(markers, marker) {
+        if (!markers || !marker) return null;
+        try {
+            if (typeof markers.getNextMarker === 'function') return markers.getNextMarker(marker);
+        } catch (e1) {}
+        try {
+            if (typeof markers.getNext === 'function') return markers.getNext(marker);
+        } catch (e2) {}
+        return null;
+    }
+
+    function clearAutoCastFillMarkers(sequence) {
+        if (!sequence || !sequence.markers) return 0;
+        if (typeof sequence.markers.deleteMarker !== 'function') return 0;
+
+        var removed = 0;
+        var cursor = getFirstMarker(sequence.markers);
+        var guard = 0;
+        while (cursor && guard < 10000) {
+            guard++;
+            var nextMarker = getNextMarker(sequence.markers, cursor);
+            var name = '';
+            try { name = String(cursor.name || ''); } catch (eName) {}
+            if (name.indexOf(fillMarkerPrefix) === 0) {
+                try {
+                    sequence.markers.deleteMarker(cursor);
+                    removed++;
+                } catch (eDelete) {}
+            }
+            cursor = nextMarker;
+        }
+        return removed;
+    }
+
+    function createFillMarker(sequence, trackIndex, startSec, endSec) {
+        if (!sequence || !sequence.markers || typeof sequence.markers.createMarker !== 'function') return false;
+        var marker = null;
+        try {
+            marker = sequence.markers.createMarker(startSec);
+        } catch (eSec) {
+            try {
+                marker = sequence.markers.createMarker(secToTicks(startSec));
+            } catch (eTicks) {
+                marker = null;
+            }
+        }
+        if (!marker) return false;
+
+        var safeEnd = (endSec > startSec) ? endSec : (startSec + 0.001);
+        try { marker.name = fillMarkerPrefix + ' T' + (trackIndex + 1); } catch (eName) {}
+        try { marker.comments = 'Dominant continuity fill ' + formatSecLabel(startSec) + ' - ' + formatSecLabel(safeEnd); } catch (eComment) {}
+        try {
+            marker.end = safeEnd;
+        } catch (eEndSec) {
+            try { marker.end = secToTicks(safeEnd); } catch (eEndTicks) {}
+        }
+        return true;
+    }
+
+    function createFillMarkersForTrack(sequence, trackIndex, segments) {
+        if (!segments || segments.length === 0) return 0;
+        var created = 0;
+        for (var i = 0; i < segments.length; i++) {
+            var seg = segments[i];
+            if (!seg) continue;
+            if (!(seg.end > seg.start)) continue;
+            if (createFillMarker(sequence, trackIndex, seg.start, seg.end)) created++;
+        }
+        return created;
+    }
+
     function getOverlaps(clipStart, clipEnd, wantedSegments) {
         var overlaps = [];
         for (var i = 0; i < wantedSegments.length; i++) {
@@ -97,7 +187,7 @@ function applyCuts(data, progressCallback) {
         return overlaps;
     }
 
-    function insertAdditionalClip(track, projectItem, timelineStartSec, sourceInSec, timelineEndSec, state) {
+    function insertAdditionalClip(track, projectItem, timelineStartSec, sourceInSec, timelineEndSec) {
         var insertAtTicks = secToTicks(timelineStartSec);
 
         // Pre-configure the project item so overwriteClip doesn't drop the entire raw file
@@ -135,12 +225,14 @@ function applyCuts(data, progressCallback) {
     }
 
     var doneOriginalClips = 0;
+    totalFillMarkersCleared = clearAutoCastFillMarkers(seq);
     progress(0, 'Preparing cuts...');
 
     for (var t = 0; t < trackIndices.length; t++) {
         var trackIdx = trackIndices[t];
         var track = seq.audioTracks[trackIdx];
         var rawSegments = segmentsPerTrack[t] || [];
+        var rawFillSegments = fillSegmentsPerTrack[t] || [];
 
         if (!track) {
             errors.push('Audio track not found: ' + trackIdx);
@@ -154,6 +246,8 @@ function applyCuts(data, progressCallback) {
 
         var wantedSegments = filterWantedSegments(rawSegments);
         wantedSegments = mergeTouchingSegments(wantedSegments, 0.0005);
+        var wantedFillSegments = filterWantedSegments(rawFillSegments);
+        wantedFillSegments = mergeTouchingSegments(wantedFillSegments, 0.0005);
 
         var originalClips = cloneArrayOfTrackClips(track);
 
@@ -185,6 +279,7 @@ function applyCuts(data, progressCallback) {
 
             // Save project item reference and remove the original clip completely
             var pItem = clip.projectItem;
+            totalClipsTrimmed++;
             try {
                 clip.remove(0, 0); // 0 = no ripple delete
                 totalClipsRemoved++;
@@ -203,8 +298,7 @@ function applyCuts(data, progressCallback) {
                     pItem,
                     ov.start,
                     ovSourceInSec,
-                    ov.end,
-                    ov.state
+                    ov.end
                 );
 
                 if (insertResult.error) {
@@ -217,6 +311,10 @@ function applyCuts(data, progressCallback) {
             doneOriginalClips++;
             progress(totalOriginalClips > 0 ? Math.round((doneOriginalClips / totalOriginalClips) * 100) : 100, 'Cutting clip...');
         }
+
+        if (wantedFillSegments.length > 0) {
+            totalFillMarkersCreated += createFillMarkersForTrack(seq, trackIdx, wantedFillSegments);
+        }
     }
 
     progress(100, 'Cutting complete.');
@@ -226,6 +324,8 @@ function applyCuts(data, progressCallback) {
         clipsCreated: totalClipsCreated,
         clipsTrimmed: totalClipsTrimmed,
         clipsRemoved: totalClipsRemoved,
+        fillMarkersCreated: totalFillMarkersCreated,
+        fillMarkersCleared: totalFillMarkersCleared,
         errors: errors
     };
 }

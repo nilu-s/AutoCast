@@ -50,10 +50,13 @@ rsync -a \
     --exclude='scripts/' \
     --exclude='.git/' \
     --exclude='node_modules/' \
+    --exclude='_tmp_case_*/' \
     --exclude='*.md' \
     --exclude='.gitignore' \
     --exclude='_tmp_*.json' \
+    --exclude='analysis_debug.json' \
     --exclude='temp_analyzer_debug.js' \
+    --exclude='*.wav' \
     "$SOURCE_DIR/" "$TARGET_DIR/"
 
 cp "$SOURCE_DIR/.debug" "$TARGET_DIR/.debug" 2>/dev/null || true

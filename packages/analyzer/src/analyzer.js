@@ -23,6 +23,7 @@ var gainNormalizer = require('./gain_normalizer');
 var spectralVad = require('./spectral_vad');
 var laughterDetector = require('./laughter_detector');
 var analyzerDefaults = require('./analyzer_defaults');
+var analyzerParams = require('./analyzer_params');
 var analyzerPostprocess = require('./analyzer_postprocess');
 var analyzerExtensions = require('./analyzer_extensions');
 var cutPreviewBuilder = require('./cut_preview_builder');
@@ -38,7 +39,7 @@ var ANALYSIS_DEFAULTS = analyzerDefaults.ANALYSIS_DEFAULTS;
  */
 function analyze(trackPaths, userParams, progressCallback) {
     var params = analyzerDefaults.mergeWithDefaults(userParams);
-    params = enforceSingleModeParams(params);
+    params = analyzerParams.enforceSingleModeParams(params);
     var extensions = analyzerExtensions.loadExtensions(params.extensions);
     var progress = progressCallback || function () { };
 
@@ -891,6 +892,27 @@ function analyze(trackPaths, userParams, progressCallback) {
         }, trackInfos);
     }
 
+    // Final safety net: ensure at least one dominant speaker track remains active
+    // even after late postprocess passes potentially created global silent gaps.
+    if (params.enforceAlwaysOneTrackOpen) {
+        var finalAlwaysOpen = enforceAlwaysOneTrackOnResolvedSegments(resolvedSegments, rmsProfiles, {
+            frameDurationMs: params.frameDurationMs,
+            dominanceWindowMs: params.alwaysOpenDominanceWindowMs,
+            stickinessDb: params.alwaysOpenStickinessDb
+        });
+        resolvedSegments = finalAlwaysOpen.resolvedSegments;
+
+        for (i = 0; i < trackCount; i++) {
+            if (trackInfos[i]) {
+                trackInfos[i].alwaysOpenFilledFramesPost = finalAlwaysOpen.perTrackFilledFrames[i] || 0;
+            }
+        }
+    } else {
+        for (i = 0; i < trackCount; i++) {
+            if (trackInfos[i]) trackInfos[i].alwaysOpenFilledFramesPost = 0;
+        }
+    }
+
     for (i = 0; i < trackCount; i++) {
         var finalStats = computeStatsFromResolvedSegments(resolvedSegments[i], totalDurationSec);
         trackInfos[i].segmentCount = finalStats.segmentCount;
@@ -927,6 +949,7 @@ function analyze(trackPaths, userParams, progressCallback) {
         tracks: trackInfos,
         segments: resolvedSegments,
         cutPreview: cutPreview,
+        trackStateTimeline: cutPreview && cutPreview.stateTimelineByTrack ? cutPreview.stateTimelineByTrack : [],
         waveform: waveform,
         alignment: alignment,
         gainMatching: gainInfo,
@@ -960,6 +983,7 @@ function generateWaveformPreview(rmsProfiles, totalDurationSec, params) {
     var resolution = params.waveformResolution || 500;
     var trackCount = rmsProfiles.length;
     var waveform = [];
+    var maxPointCount = 0;
 
     for (var t = 0; t < trackCount; t++) {
         var rms = rmsProfiles[t];
@@ -976,11 +1000,12 @@ function generateWaveformPreview(rmsProfiles, totalDurationSec, params) {
         }
 
         waveform.push(points);
+        if (points.length > maxPointCount) maxPointCount = points.length;
     }
 
     return {
         pointsPerTrack: waveform,
-        timeStep: totalDurationSec / (waveform[0] ? waveform[0].length : 1),
+        timeStep: maxPointCount > 0 ? (totalDurationSec / maxPointCount) : 0,
         totalDurationSec: totalDurationSec
     };
 }
@@ -998,63 +1023,6 @@ function saveAnalysis(result, filePath) {
 function loadAnalysis(filePath) {
     var json = fs.readFileSync(filePath, 'utf8');
     return JSON.parse(json);
-}
-
-function enforceSingleModeParams(params) {
-    if (!params) params = {};
-    // Keep UI/user intent intact. This function only normalizes unsafe values
-    // and must not hard-override explicit settings.
-    params.snippetPadBeforeMs = clampNumber(parseOrFallback(params.snippetPadBeforeMs, 0), 0, 10000);
-    params.snippetPadAfterMs = clampNumber(parseOrFallback(params.snippetPadAfterMs, 0), 0, 10000);
-    params.minSegmentMs = clampNumber(parseOrFallback(params.minSegmentMs, 0), 0, 10000);
-    params.postOverlapMinSegmentMs = clampNumber(parseOrFallback(params.postOverlapMinSegmentMs, 0), 0, 10000);
-    params.minGapMs = clampNumber(parseOrFallback(params.minGapMs, 0), 0, 10000);
-    params.primaryTrackGapFillMaxMs = clampNumber(parseOrFallback(params.primaryTrackGapFillMaxMs, 0), 0, 10000);
-    params.sameTrackGapMergeMaxMs = clampNumber(parseOrFallback(params.sameTrackGapMergeMaxMs, 0), 0, 15000);
-    params.previewSegmentMergeGapMs = clampNumber(parseOrFallback(params.previewSegmentMergeGapMs, 1000), 0, 20000);
-    params.preTriggerJoinGapMs = clampNumber(parseOrFallback(params.preTriggerJoinGapMs, 0), 0, 15000);
-    params.preTriggerAbsorbGapMs = clampNumber(parseOrFallback(params.preTriggerAbsorbGapMs, 0), 0, 5000);
-    params.dominantTrackHoldMs = clampNumber(parseOrFallback(params.dominantTrackHoldMs, 0), 0, 15000);
-    params.dominantTrackReturnWindowMs = clampNumber(parseOrFallback(params.dominantTrackReturnWindowMs, 0), 0, 30000);
-    params.handoverMaxStartDelayMs = clampNumber(parseOrFallback(params.handoverMaxStartDelayMs, 3000), 0, 10000);
-    params.handoverLeadMs = clampNumber(parseOrFallback(params.handoverLeadMs, 220), 0, 3000);
-    params.handoverWeakOnsetProbeMs = clampNumber(parseOrFallback(params.handoverWeakOnsetProbeMs, 260), 40, 3000);
-    params.handoverMaxWeakOverlapLeadMs = clampNumber(parseOrFallback(params.handoverMaxWeakOverlapLeadMs, 700), 80, 6000);
-    params.handoverOnsetPeakMinDb = clampNumber(parseOrFallback(params.handoverOnsetPeakMinDb, 2.0), -12, 20);
-    params.handoverOnsetMeanMinDb = clampNumber(parseOrFallback(params.handoverOnsetMeanMinDb, 0.3), -12, 20);
-    params.handoverMinSegmentMs = clampNumber(parseOrFallback(params.handoverMinSegmentMs, 120), 40, 5000);
-    params.handoffHeadLeadMs = clampNumber(parseOrFallback(params.handoffHeadLeadMs, 220), 0, 3000);
-    params.handoffHeadWindowMs = clampNumber(parseOrFallback(params.handoffHeadWindowMs, 1400), 0, 6000);
-    params.residualSnippetMaxDurationMs = clampNumber(parseOrFallback(params.residualSnippetMaxDurationMs, 220), 60, 1000);
-    params.residualSnippetMaxPeakDbFs = clampNumber(parseOrFallback(params.residualSnippetMaxPeakDbFs, -53.0), -90, -20);
-    params.residualSnippetMaxMeanDbFs = clampNumber(parseOrFallback(params.residualSnippetMaxMeanDbFs, -57.0), -90, -20);
-    params.residualSnippetProtectGapMs = clampNumber(parseOrFallback(params.residualSnippetProtectGapMs, 240), 60, 1200);
-    params.residualSnippetProtectOtherOverlapRatio = clampNumber(
-        parseOrFallback(params.residualSnippetProtectOtherOverlapRatio, 0.12),
-        0,
-        1
-    );
-    params.laughterRecoveryMaxGapMs = clampNumber(parseOrFallback(params.laughterRecoveryMaxGapMs, 180), 0, 2000);
-    params.laughterRecoveryLongGapMaxMs = clampNumber(parseOrFallback(params.laughterRecoveryLongGapMaxMs, 750), 0, 4000);
-    params.laughterRecoveryLongGapMinCoverage = clampNumber(parseOrFallback(params.laughterRecoveryLongGapMinCoverage, 0.60), 0, 1);
-    params.laughterRecoveryLongGapMinConfidence = clampNumber(parseOrFallback(params.laughterRecoveryLongGapMinConfidence, 0.24), 0, 1);
-    params.laughterRecoveryLongGapEdgeMinConfidence = clampNumber(parseOrFallback(params.laughterRecoveryLongGapEdgeMinConfidence, 0.44), 0, 1);
-    params.laughterRecoveryMaxEdgeExtendMs = clampNumber(parseOrFallback(params.laughterRecoveryMaxEdgeExtendMs, 240), 0, 3000);
-    params.laughterRecoveryBaseSupportWindowMs = clampNumber(parseOrFallback(params.laughterRecoveryBaseSupportWindowMs, 900), 20, 5000);
-    params.laughterRecoveryMinBaseSupportFrames = clampNumber(parseOrFallback(params.laughterRecoveryMinBaseSupportFrames, 1), 1, 200);
-    params.laughterBurstMinKeepMs = clampNumber(parseOrFallback(params.laughterBurstMinKeepMs, 260), 20, 3000);
-    params.laughterBurstMaxGapMs = clampNumber(parseOrFallback(params.laughterBurstMaxGapMs, 100), 0, 1000);
-    params.laughterBurstMaxSideExtendMs = clampNumber(parseOrFallback(params.laughterBurstMaxSideExtendMs, 220), 0, 3000);
-    params.laughterBurstRelativeWindowMs = clampNumber(parseOrFallback(params.laughterBurstRelativeWindowMs, 450), 20, 5000);
-    params.laughterBurstRelativeSeedDelta = clampNumber(parseOrFallback(params.laughterBurstRelativeSeedDelta, 0.08), 0, 1);
-    params.laughterBurstRelativeSeedMinConfidence = clampNumber(parseOrFallback(params.laughterBurstRelativeSeedMinConfidence, 0.24), 0, 1);
-    params.laughterBurstRelativeExtendDelta = clampNumber(parseOrFallback(params.laughterBurstRelativeExtendDelta, 0.04), 0, 1);
-    params.laughterBurstRelativeExtendMinConfidence = clampNumber(parseOrFallback(params.laughterBurstRelativeExtendMinConfidence, 0.18), 0, 1);
-    params.laughterBurstAbsoluteFloorDb = clampNumber(parseOrFallback(params.laughterBurstAbsoluteFloorDb, -64), -90, -20);
-    params.laughterBurstBaseSupportWindowMs = clampNumber(parseOrFallback(params.laughterBurstBaseSupportWindowMs, 900), 20, 5000);
-    params.laughterBurstMinBaseSupportFrames = clampNumber(parseOrFallback(params.laughterBurstMinBaseSupportFrames, 1), 1, 200);
-    params.finalMinPeakDbFs = clampNumber(parseOrFallback(params.finalMinPeakDbFs, -52.0), -90, -20);
-    return params;
 }
 
 function applySegmentPadding(allSegments, totalDurationSec, beforeMs, afterMs, options) {
@@ -1205,6 +1173,7 @@ function cloneSegmentsArray(segmentsByTrack) {
                 end: seg.end,
                 trackIndex: seg.trackIndex,
                 state: seg.state,
+                origin: seg.origin,
                 durationMs: seg.durationMs
             });
         }
@@ -1225,11 +1194,6 @@ function computeStatsFromResolvedSegments(trackSegments, totalDurationSec) {
 
 function clampNumber(v, min, max) {
     return Math.max(min, Math.min(max, v));
-}
-
-function parseOrFallback(v, fallback) {
-    var n = parseFloat(v);
-    return isFinite(n) ? n : fallback;
 }
 
 function getTrackOffsetSec(trackOffsets, trackIndex) {
@@ -1391,6 +1355,130 @@ function enforceAtLeastOneOpenTrack(vadResults, rmsProfiles, options) {
         filledFrames: filledFrames,
         perTrackFilledFrames: perTrackFilledFrames
     };
+}
+
+function enforceAlwaysOneTrackOnResolvedSegments(resolvedSegments, rmsProfiles, options) {
+    options = options || {};
+    var frameDurationMs = options.frameDurationMs || 10;
+    var frameDurSec = frameDurationMs / 1000;
+    var trackCount = resolvedSegments ? resolvedSegments.length : 0;
+    var maxFrames = 0;
+
+    for (var t = 0; t < rmsProfiles.length; t++) {
+        if (rmsProfiles[t] && rmsProfiles[t].length > maxFrames) maxFrames = rmsProfiles[t].length;
+    }
+
+    if (trackCount === 0 || maxFrames === 0) {
+        return {
+            resolvedSegments: resolvedSegments || [],
+            filledFrames: 0,
+            perTrackFilledFrames: []
+        };
+    }
+
+    var originalGates = [];
+    var filledWrappers = [];
+    for (t = 0; t < trackCount; t++) {
+        var gate = new Uint8Array(maxFrames);
+        var segs = resolvedSegments[t] || [];
+
+        for (var s = 0; s < segs.length; s++) {
+            var seg = segs[s];
+            if (!seg || seg.state === 'suppressed') continue;
+            var stFrame = Math.max(0, Math.floor(seg.start / frameDurSec));
+            var enFrame = Math.min(maxFrames, Math.ceil(seg.end / frameDurSec));
+            for (var f = stFrame; f < enFrame; f++) gate[f] = 1;
+        }
+
+        originalGates.push(gate);
+
+        var filledGate = new Uint8Array(maxFrames);
+        filledGate.set(gate);
+        filledWrappers.push({ gateOpen: filledGate });
+    }
+
+    var fillStats = enforceAtLeastOneOpenTrack(filledWrappers, rmsProfiles, {
+        frameDurationMs: frameDurationMs,
+        dominanceWindowMs: options.dominanceWindowMs,
+        stickinessDb: options.stickinessDb
+    });
+
+    var out = [];
+    for (t = 0; t < trackCount; t++) {
+        out.push(buildSegmentsFromGateDiff(
+            filledWrappers[t].gateOpen,
+            originalGates[t],
+            t,
+            frameDurationMs
+        ));
+    }
+
+    return {
+        resolvedSegments: out,
+        filledFrames: fillStats.filledFrames,
+        perTrackFilledFrames: fillStats.perTrackFilledFrames
+    };
+}
+
+function buildSegmentsFromGateDiff(filledGate, originalGate, trackIndex, frameDurationMs) {
+    var out = [];
+    if (!filledGate || filledGate.length === 0) return out;
+
+    var frameDurSec = (frameDurationMs || 10) / 1000;
+    var inSeg = false;
+    var segStart = 0;
+    var segOrigin = 'analysis_active';
+
+    function pushSeg(endFrame) {
+        if (!inSeg) return;
+        var startSec = segStart * frameDurSec;
+        var endSec = endFrame * frameDurSec;
+        if (endSec <= startSec + 1e-6) {
+            inSeg = false;
+            return;
+        }
+        out.push({
+            start: startSec,
+            end: endSec,
+            trackIndex: trackIndex,
+            state: 'active',
+            origin: segOrigin,
+            durationMs: Math.round((endSec - startSec) * 1000)
+        });
+        inSeg = false;
+    }
+
+    for (var f = 0; f <= filledGate.length; f++) {
+        var active = (f < filledGate.length) ? (filledGate[f] > 0) : false;
+        var origin = 'analysis_active';
+        if (active) {
+            var wasOriginal = originalGate && f < originalGate.length && originalGate[f] > 0;
+            origin = wasOriginal ? 'analysis_active' : 'always_open_fill';
+        }
+
+        if (!inSeg) {
+            if (active) {
+                inSeg = true;
+                segStart = f;
+                segOrigin = origin;
+            }
+            continue;
+        }
+
+        if (!active) {
+            pushSeg(f);
+            continue;
+        }
+
+        if (origin !== segOrigin) {
+            pushSeg(f);
+            inSeg = true;
+            segStart = f;
+            segOrigin = origin;
+        }
+    }
+
+    return out;
 }
 
 function cloneUint8Array(arr) {

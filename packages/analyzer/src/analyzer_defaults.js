@@ -37,6 +37,10 @@ var ANALYSIS_DEFAULTS = {
     enforceAlwaysOneTrackOpen: true,
     alwaysOpenDominanceWindowMs: 2500,
     alwaysOpenStickinessDb: 2.5,
+    alwaysOpenFillAutoKeepBleedMaxConfidence: 0.76,
+    alwaysOpenFillAutoKeepMinSpeechEvidence: 0.46,
+    alwaysOpenFillAutoKeepMinKeepLikelihood: 0.60,
+    alwaysOpenFillPromoteSuppressed: false,
 
     // Per-track sensitivity overrides (array, one per track, or null for global)
     perTrackThresholdDb: null,

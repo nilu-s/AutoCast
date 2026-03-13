@@ -12,166 +12,16 @@
 (function () {
     AutoCastBridge.init();
 
-    // Initialize Analyzer via Node.js worker_threads if running in Premiere
-    if (typeof require !== 'undefined') {
+    if (window.AutoCastAnalyzerClient && typeof window.AutoCastAnalyzerClient.create === 'function') {
         try {
-            var path = require('path');
-            var childProcess = require('child_process');
-
-            window.AutoCastAnalyzer = {
-                analyze: function (trackPaths, params, progressCallback) {
-                    return new Promise(function (resolve, reject) {
-                        var extensionPath = AutoCastBridge.getExtensionPath();
-                        if (!extensionPath || extensionPath === '.') {
-                            var pathname = window.location.pathname;
-                            if (window.navigator.platform.indexOf('Win') > -1 && pathname.charAt(0) === '/') {
-                                pathname = pathname.substring(1);
-                            }
-                            extensionPath = path.dirname(pathname).replace(/%20/g, ' ');
-                            if (path.basename(extensionPath) === 'panel' &&
-                                path.basename(path.dirname(extensionPath)) === 'apps') {
-                                extensionPath = path.resolve(extensionPath, '..', '..');
-                            }
-                        }
-
-                        var workerPath = path.join(
-                            extensionPath,
-                            'packages',
-                            'analyzer',
-                            'src',
-                            'analyzer_worker_stdio.js'
-                        );
-
-                        var proc = childProcess.spawn('node', [workerPath], {
-                            cwd: extensionPath
-                        });
-
-                        var stdoutData = '';
-                        var stderrData = '';
-
-                        proc.stdout.on('data', function (data) {
-                            var str = data.toString();
-                            stdoutData += str;
-
-                            // Try to parse line by line
-                            var lines = stdoutData.split('\n');
-                            stdoutData = lines.pop(); // Keep incomplete line
-
-                            for (var i = 0; i < lines.length; i++) {
-                                var line = lines[i].trim();
-                                if (!line) continue;
-                                try {
-                                    var msg = JSON.parse(line);
-                                    if (msg.type === 'progress') {
-                                        if (progressCallback) progressCallback(msg.percent, msg.message);
-                                    } else if (msg.type === 'done') {
-                                        resolve(msg.result);
-                                    } else if (msg.type === 'error') {
-                                        reject(new Error(msg.error));
-                                    }
-                                } catch (e) { }
-                            }
-                        });
-
-                        proc.stderr.on('data', function (data) {
-                            stderrData += data.toString();
-                        });
-
-                        proc.on('error', function (err) {
-                            reject(err);
-                        });
-
-                        proc.on('close', function (code) {
-                            if (code !== 0 && code !== null) {
-                                reject(new Error('Process exited (' + code + '): ' + stderrData.substring(0, 100)));
-                            }
-                        });
-
-                        // Send data
-                        proc.stdin.write(JSON.stringify({ trackPaths: trackPaths, params: params }) + '\n');
-                        proc.stdin.end();
-                    });
-                },
-
-                /**
-                 * Lightweight gain scan: only computes RMS + gain matching per track.
-                 * Much faster than the full analysis Ã¢â‚¬â€œ used for the startup preset.
-                 */
-                quickGainScan: function (trackPaths, progressCallback) {
-                    return new Promise(function (resolve, reject) {
-                        var extensionPath = AutoCastBridge.getExtensionPath();
-                        if (!extensionPath || extensionPath === '.') {
-                            var pathname = window.location.pathname;
-                            if (window.navigator.platform.indexOf('Win') > -1 && pathname.charAt(0) === '/') {
-                                pathname = pathname.substring(1);
-                            }
-                            extensionPath = path.dirname(pathname).replace(/%20/g, ' ');
-                            if (path.basename(extensionPath) === 'panel' &&
-                                path.basename(path.dirname(extensionPath)) === 'apps') {
-                                extensionPath = path.resolve(extensionPath, '..', '..');
-                            }
-                        }
-
-                        var workerPath = path.join(
-                            extensionPath,
-                            'packages',
-                            'analyzer',
-                            'src',
-                            'quick_gain_scan.js'
-                        );
-
-                        var proc = childProcess.spawn('node', [workerPath], {
-                            cwd: extensionPath
-                        });
-
-                        var stdoutData = '';
-                        var stderrData = '';
-
-                        proc.stdout.on('data', function (data) {
-                            var str = data.toString();
-                            stdoutData += str;
-
-                            var lines = stdoutData.split('\n');
-                            stdoutData = lines.pop();
-
-                            for (var i = 0; i < lines.length; i++) {
-                                var line = lines[i].trim();
-                                if (!line) continue;
-                                try {
-                                    var msg = JSON.parse(line);
-                                    if (msg.type === 'progress') {
-                                        if (progressCallback) progressCallback(msg.percent, msg.message);
-                                    } else if (msg.type === 'done') {
-                                        resolve(msg.result);
-                                    } else if (msg.type === 'error') {
-                                        reject(new Error(msg.error));
-                                    }
-                                } catch (e) { }
-                            }
-                        });
-
-                        proc.stderr.on('data', function (data) {
-                            stderrData += data.toString();
-                        });
-
-                        proc.on('error', function (err) {
-                            reject(err);
-                        });
-
-                        proc.on('close', function (code) {
-                            if (code !== 0 && code !== null) {
-                                reject(new Error('Quick scan exited (' + code + '): ' + stderrData.substring(0, 100)));
-                            }
-                        });
-
-                        proc.stdin.write(JSON.stringify({ trackPaths: trackPaths }) + '\n');
-                        proc.stdin.end();
-                    });
+            window.AutoCastAnalyzer = window.AutoCastAnalyzerClient.create({
+                getExtensionPath: function () {
+                    return AutoCastBridge.getExtensionPath();
                 }
-            };
+            });
         } catch (e) {
             window.NODE_INIT_ERROR = e.toString();
-            console.error('[AutoCast] Failed to initialize worker_threads analyzer:', e);
+            console.error('[AutoCast] Failed to initialize analyzer client:', e);
         }
     }
 
@@ -181,19 +31,21 @@
         cutPreview: null,
         isAnalyzing: false,
         perTrackSensitivity: {},
-        mockSamples: null,
         currentAudio: null,
-        currentPlayingTrack: -1,
         currentPlayingPreviewId: null,
         analysisRunId: 0,
         activeSnippetId: null,
         previewMasterGain: 1,
         previewTrackGain: {},
         previewAudioContext: null,
+        currentPreviewInfo: null,
+        panelPageMode: 'setup',
         cutPreviewZoom: 0,
         cutPreviewPixelsPerSec: 0,
         cutPreviewViewStartSec: 0,
-        navigatorDrag: null
+        navigatorDrag: null,
+        cutPreviewRenderPending: false,
+        cutPreviewRenderHandle: null
     };
 
     var TRACK_COLORS = [
@@ -204,6 +56,16 @@
     var AUDIO_PREVIEW_PREROLL_SEC = 0.2;
     var AUDIO_PREVIEW_POSTROLL_SEC = 0.2;
 
+    function getApplyHelper() {
+        if (window.AutoCastCutPreviewApply) return window.AutoCastCutPreviewApply;
+        if (typeof require !== 'undefined') {
+            try {
+                return require('./cut_preview_apply');
+            } catch (e) { }
+        }
+        return null;
+    }
+
     function $(id) {
         return document.getElementById(id);
     }
@@ -212,9 +74,11 @@
         statusBar: $('statusBar'),
         statusText: $('statusText'),
         statusIcon: $('statusIcon'),
+        panelRoot: document.querySelector('.panel'),
+        tracksSection: $('tracksSection'),
+        paramsSection: $('paramsSection'),
+        footerActions: $('footerActions'),
         trackList: $('trackList'),
-        resultsSection: null,
-        resultsContent: null,
         progressContainer: $('progressContainer'),
         progressFill: $('progressFill'),
         progressText: $('progressText'),
@@ -224,13 +88,13 @@
         cutPreviewTimeline: $('cutPreviewTimeline'),
         cutPreviewNavigator: $('cutPreviewNavigator'),
         cutPreviewInspector: $('cutPreviewInspector'),
+        cutPreviewBackBtn: $('cutPreviewBackBtn'),
+        cutPreviewApplyBtn: $('cutPreviewApplyBtn'),
         cutPreviewZoom: $('cutPreviewZoom'),
         cutPreviewFitBtn: $('cutPreviewFitBtn'),
         cutPreviewZoomLabel: $('cutPreviewZoomLabel'),
         cutPreviewVolumeMaster: $('cutPreviewVolumeMaster'),
         cutPreviewVolumeMasterLabel: $('cutPreviewVolumeMasterLabel'),
-        waveformSection: null,
-        waveformContainer: null,
         btnLoadTracks: $('btnLoadTracks'),
         btnAnalyze: $('btnAnalyze'),
         btnApply: $('btnApply'),
@@ -252,6 +116,36 @@
     bindSlider(els.paramThreshold, els.valThreshold, '');
     bindSlider(els.paramMinPeak, els.valMinPeak, 'dB');
 
+    var analyzerDefaultsCache = null;
+
+    function cloneFlatObject(obj) {
+        var out = {};
+        if (!obj) return out;
+        for (var key in obj) {
+            if (obj.hasOwnProperty(key)) out[key] = obj[key];
+        }
+        return out;
+    }
+
+    function resolveAnalyzerDefaults() {
+        if (analyzerDefaultsCache) {
+            return cloneFlatObject(analyzerDefaultsCache);
+        }
+
+        if (typeof require !== 'undefined') {
+            try {
+                var defaultsModule = require('../../packages/analyzer/src/analyzer_defaults.js');
+                if (defaultsModule && defaultsModule.ANALYSIS_DEFAULTS) {
+                    analyzerDefaultsCache = defaultsModule.ANALYSIS_DEFAULTS;
+                    return cloneFlatObject(analyzerDefaultsCache);
+                }
+            } catch (e) { }
+        }
+
+        analyzerDefaultsCache = {};
+        return {};
+    }
+
     function getParams() {
         var debugMode = false;
         try {
@@ -259,64 +153,11 @@
                 (window.localStorage && window.localStorage.getItem('autocast.debug') === '1');
         } catch (e) { }
 
-        var params = {
-            thresholdAboveFloorDb: parseInt(els.paramThreshold.value, 10),
-            absoluteThresholdDb: -64,
-            attackFrames: 1,
-            releaseFrames: 6,
-            holdFrames: 24,
-            minSegmentMs: 260,
-            postOverlapMinSegmentMs: 160,
-            minGapMs: 180,
-            independentTrackAnalysis: true,
-            snippetPadBeforeMs: 1200,
-            snippetPadAfterMs: 1200,
-            crossTrackTailTrimInIndependentMode: true,
-            overlapTailAllowanceMs: 180,
-            enablePrimaryTrackGapFill: true,
-            primaryTrackGapFillMaxMs: 1800,
-            primaryTrackGapFillQuietDb: -50,
-            overlapPolicy: 'dominant_wins',
-            bleedMarginDb: 15,
-            overlapMarginDb: 8,
-            suppressionScoreThreshold: 0.65,
-            fillGaps: false,
-            finalMinPeakDbFs: parseFloat(els.paramMinPeak.value),
-            autoGain: true,
-            useSpectralVAD: true,
-            spectralMinConfidence: 0.18,
-            spectralSoftMargin: 0.18,
-            spectralScoreOpen: 0.50,
-            spectralScoreClose: 0.35,
-            spectralRmsWeight: 0.75,
-            spectralHoldFrames: 4,
-            primarySpeakerLock: true,
-            speakerProfileMinConfidence: 0.30,
-            speakerProfileMinFrames: 24,
-            speakerMatchThreshold: 0.56,
-            speakerMatchSoftMargin: 0.12,
-            speakerMatchHoldFrames: 4,
-            adaptiveNoiseFloor: true,
-            localNoiseWindowMs: 1500,
-            noiseFloorUpdateMs: 500,
-            localNoisePercentile: 0.15,
-            maxAdaptiveFloorRiseDb: 8,
-            localNoiseSampleStride: 2,
-            enableHardSilenceCut: true,
-            hardSilenceCutDb: -51,
-            hardSilenceLookaroundMs: 220,
-            hardSilencePeakDeltaDb: 8,
-            enableBleedHandling: false,
-            bleedSuppressionDb: 0,
-            bleedSuppressionSimilarityThreshold: 0.90,
-            bleedSuppressionProtectConfidence: 0.34,
-            perTrackThresholdDb: getPerTrackSensitivity(),
-            enableTrackLoudnessBias: true,
-            trackLoudnessBiasStrength: 0.35,
-            debugMode: debugMode,
-            debugMaxFrames: 4000
-        };
-
+        var params = resolveAnalyzerDefaults();
+        params.thresholdAboveFloorDb = parseInt(els.paramThreshold.value, 10);
+        params.finalMinPeakDbFs = parseFloat(els.paramMinPeak.value);
+        params.perTrackThresholdDb = getPerTrackSensitivity();
+        params.debugMode = debugMode;
         return params;
     }
 
@@ -368,16 +209,23 @@
         if (els.btnApply) els.btnApply.disabled = disabled;
         if (els.btnAnalyze) els.btnAnalyze.disabled = disabled;
         if (els.btnReset) els.btnReset.disabled = disabled;
+        if (els.cutPreviewApplyBtn) els.cutPreviewApplyBtn.disabled = disabled;
     }
 
-    function hideSummary() {
-        // Summary panel removed in timeline-first UX.
+    function setPanelPageMode(mode) {
+        var reviewMode = mode === 'review';
+        state.panelPageMode = reviewMode ? 'review' : 'setup';
+        if (els.panelRoot && els.panelRoot.classList) {
+            els.panelRoot.classList.toggle('is-review-mode', reviewMode);
+        }
+        if (els.cutPreviewSection) {
+            els.cutPreviewSection.style.display = reviewMode ? 'block' : 'none';
+        }
     }
 
     function hideCutPreview() {
-        if (els.cutPreviewSection) {
-            els.cutPreviewSection.style.display = 'none';
-        }
+        setPanelPageMode('setup');
+        cancelPendingCutPreviewRender();
         state.navigatorDrag = null;
         if (els.cutPreviewMeta) els.cutPreviewMeta.textContent = '';
         if (els.cutPreviewAnalysisMini) els.cutPreviewAnalysisMini.innerHTML = '';
@@ -553,7 +401,6 @@
                         state.isAnalyzing = false;
                         hideProgress();
                         setButtonsDisabled(false);
-                        hideSummary();
                         hideCutPreview();
                         setStatus('error', err && err.message ? err.message : 'Analysis failed');
                         console.error(err);
@@ -566,7 +413,6 @@
                     state.isAnalyzing = false;
                     hideProgress();
                     setButtonsDisabled(false);
-                    hideSummary();
                     hideCutPreview();
                     setStatus('error', e && e.message ? e.message : 'Analysis failed');
                     console.error(e);
@@ -600,7 +446,6 @@
                         state.isAnalyzing = false;
                         hideProgress();
                         setButtonsDisabled(false);
-                        hideSummary();
                         hideCutPreview();
                         setStatus('error', err && err.message ? err.message : 'Analysis failed');
                         console.error(err);
@@ -613,7 +458,6 @@
                     state.isAnalyzing = false;
                     hideProgress();
                     setButtonsDisabled(false);
-                    hideSummary();
                     hideCutPreview();
                     setStatus('error', e2 && e2.message ? e2.message : 'Analysis failed');
                     console.error(e2);
@@ -624,7 +468,6 @@
             state.isAnalyzing = false;
             hideProgress();
             setButtonsDisabled(false);
-            hideSummary();
             hideCutPreview();
             var errMsg = window.NODE_INIT_ERROR ? 'Node init failed: ' + window.NODE_INIT_ERROR : 'No analyzer bridge available';
             setStatus('error', errMsg);
@@ -633,7 +476,6 @@
         state.analysisRunId++;
         state.isAnalyzing = true;
         setButtonsDisabled(true);
-        hideSummary();
         hideCutPreview();
         state.activeSnippetId = null;
         state.cutPreviewPixelsPerSec = 0;
@@ -674,7 +516,7 @@
 
         var applyPayload = buildApplyCutsPayload();
         if (!applyPayload || !applyPayload.trackIndices || applyPayload.trackIndices.length === 0) {
-            setStatus('error', 'No tracks selected for apply');
+            setStatus('error', 'Apply payload unavailable (helper missing or no tracks selected).');
             return;
         }
 
@@ -708,6 +550,7 @@
         AutoCastBridge.addCutProgressListener(cutProgressHandler);
         AutoCastBridge.applyCuts({
             segments: applyPayload.segments,
+            fillSegments: applyPayload.fillSegments || [],
             trackIndices: applyPayload.trackIndices,
             ticksPerSecond: TICKS_PER_SECOND
         }, function (result) {
@@ -722,7 +565,9 @@
                     'Clips cut successfully (' +
                     (result.clipsTrimmed || 0) + ' trimmed, ' +
                     (result.clipsCreated || 0) + ' created, ' +
-                    (result.clipsRemoved || 0) + ' removed)'
+                    (result.clipsRemoved || 0) + ' removed' +
+                    (result.fillMarkersCreated ? ', ' + result.fillMarkersCreated + ' fill markers' : '') +
+                    ')'
                 );
             } else {
                 var errMsg = 'Cut error';
@@ -760,7 +605,6 @@
         state.navigatorDrag = null;
         stopCurrentPreviewAudio();
         hideProgress();
-        hideSummary();
         hideCutPreview();
         if (els.btnApply) els.btnApply.disabled = true;
         if (els.btnReset) els.btnReset.disabled = true;
@@ -812,10 +656,6 @@
             }
             setStatus('success', state.tracks.length + ' track(s) loaded');
         });
-    }
-
-    function safeNum(value) {
-        return (typeof value === 'number' && isFinite(value)) ? value : '-';
     }
 
     function escapeHtml(str) {
@@ -920,6 +760,25 @@
 
         var trackIndex = parseInt(raw && raw.trackIndex, 10);
         if (!isFinite(trackIndex)) trackIndex = fallbackTrackIndex;
+        var rawMetrics = (raw && raw.metrics) ? raw.metrics : null;
+        var rawDecisionStage = raw && raw.decisionStage ? String(raw.decisionStage) : 'legacy_result';
+        var rawOrigin = raw && raw.origin ? String(raw.origin) : 'analysis_active';
+        var rawTypeLabel = raw && raw.typeLabel ? String(raw.typeLabel) : (stateValue === 'suppressed' ? 'suppressed_bleed' : 'unknown');
+        var rawAlwaysOpenFill = !!(
+            (raw && raw.alwaysOpenFill === true) ||
+            rawOrigin === 'always_open_fill' ||
+            parseNum(rawMetrics && rawMetrics.alwaysOpenFill, 0) >= 0.5 ||
+            rawDecisionStage.indexOf('always_open_fill') === 0
+        );
+        var rawUninteresting = !!(
+            (raw && raw.isUninteresting === true) ||
+            rawOrigin === 'timeline_gap' ||
+            rawTypeLabel === 'uninteresting_gap' ||
+            parseNum(rawMetrics && rawMetrics.uninterestingGap, 0) >= 0.5
+        );
+        var rawSelectable = (raw && typeof raw.selectable === 'boolean')
+            ? raw.selectable
+            : !rawUninteresting;
 
         var item = {
             id: raw && raw.id ? String(raw.id) : ('cp_ui_' + trackIndex + '_' + Math.round(start * 1000) + '_' + Math.round(end * 1000) + '_' + counter),
@@ -931,19 +790,24 @@
             end: round(end, 4),
             durationMs: Math.max(1, Math.round((end - start) * 1000)),
             state: stateValue,
-            selected: (raw && typeof raw.selected === 'boolean') ? raw.selected : (stateValue === 'kept'),
+            selected: rawSelectable && ((raw && typeof raw.selected === 'boolean') ? raw.selected : (stateValue === 'kept')),
+            selectable: !!rawSelectable,
+            isUninteresting: rawUninteresting,
             score: Math.max(0, Math.min(100, Math.round(parseNum(raw && raw.score, stateValue === 'kept' ? 70 : 35)))),
             scoreLabel: raw && raw.scoreLabel ? String(raw.scoreLabel) : 'weak',
             reasons: (raw && raw.reasons && raw.reasons.length) ? raw.reasons.slice(0) : ['No detailed analyzer reason available'],
-            typeLabel: raw && raw.typeLabel ? String(raw.typeLabel) : (stateValue === 'suppressed' ? 'suppressed_bleed' : 'unknown'),
+            typeLabel: rawTypeLabel,
             typeConfidence: Math.max(0, Math.min(100, round(parseNum(raw && raw.typeConfidence, stateValue === 'kept' ? 70 : 35), 1))),
             sourceClipIndex: (raw && raw.sourceClipIndex !== undefined && raw.sourceClipIndex !== null) ? parseInt(raw.sourceClipIndex, 10) : null,
             mediaPath: raw && raw.mediaPath ? String(raw.mediaPath) : '',
             sourceStartSec: parseNum(raw && raw.sourceStartSec, start),
             sourceEndSec: parseNum(raw && raw.sourceEndSec, end),
-            decisionStage: raw && raw.decisionStage ? String(raw.decisionStage) : 'legacy_result',
+            previewParts: [],
+            decisionStage: rawDecisionStage,
+            origin: rawAlwaysOpenFill ? 'always_open_fill' : rawOrigin,
+            alwaysOpenFill: rawAlwaysOpenFill,
             overlapInfo: raw && raw.overlapInfo ? raw.overlapInfo : null,
-            metrics: raw && raw.metrics ? raw.metrics : {
+            metrics: rawMetrics ? rawMetrics : {
                 meanOverThreshold: 0,
                 peakOverThreshold: 0,
                 spectralConfidence: 0,
@@ -957,10 +821,55 @@
                 bleedConfidence: 0,
                 noiseEvidence: 0,
                 classMargin: 0,
+                keptSourceRatio: 0,
+                keepLikelihood: 0,
+                suppressLikelihood: 0,
+                decisionMargin: 0,
+                bleedHighConfidence: 0,
+                alwaysOpenFill: 0,
                 mergedSegmentCount: 1,
-                maxMergedGapMs: 0
+                maxMergedGapMs: 0,
+                uninterestingGap: 0
             }
         };
+
+        if (item.isUninteresting && item.metrics) {
+            item.metrics.uninterestingGap = 1;
+            item.selected = false;
+            item.selectable = false;
+            item.score = 0;
+            item.scoreLabel = 'weak';
+            if (item.state !== 'suppressed') item.state = 'suppressed';
+            if (item.typeLabel !== 'uninteresting_gap') item.typeLabel = 'uninteresting_gap';
+        }
+
+        if (item.alwaysOpenFill && item.metrics) {
+            item.metrics.alwaysOpenFill = 1;
+            if (!isFinite(parseNum(item.metrics.alwaysOpenFillRatio, NaN))) {
+                item.metrics.alwaysOpenFillRatio = 1;
+            }
+        }
+
+        if (raw && raw.previewParts && raw.previewParts.length) {
+            for (var pi = 0; pi < raw.previewParts.length; pi++) {
+                var part = raw.previewParts[pi];
+                if (!part || !part.mediaPath) continue;
+                var partStart = parseNum(part.sourceStartSec, item.sourceStartSec);
+                var partEnd = parseNum(part.sourceEndSec, item.sourceEndSec);
+                if (partEnd <= partStart) continue;
+                item.previewParts.push({
+                    mediaPath: String(part.mediaPath),
+                    sourceStartSec: round(partStart, 4),
+                    sourceEndSec: round(partEnd, 4),
+                    sourceClipIndex: (part.sourceClipIndex !== undefined && part.sourceClipIndex !== null)
+                        ? parseInt(part.sourceClipIndex, 10)
+                        : null,
+                    timelineStartSec: round(parseNum(part.timelineStartSec, item.start), 4),
+                    timelineEndSec: round(parseNum(part.timelineEndSec, item.end), 4),
+                    coverageSec: round(Math.max(0, partEnd - partStart), 4)
+                });
+            }
+        }
 
         if (!item.reasons || item.reasons.length === 0) {
             item.reasons = ['Heuristic ranking applied'];
@@ -1001,7 +910,9 @@
                     mediaPath: (state.tracks[t] && state.tracks[t].path) ? state.tracks[t].path : '',
                     sourceStartSec: st,
                     sourceEndSec: en,
-                    decisionStage: 'legacy_fallback'
+                    decisionStage: seg.origin === 'always_open_fill' ? 'always_open_fill' : 'legacy_fallback',
+                    origin: seg.origin || 'analysis_active',
+                    alwaysOpenFill: seg.origin === 'always_open_fill'
                 }, t, idCounter));
             }
         }
@@ -1039,6 +950,7 @@
         var ticksRate = track.ticksPerSecond || TICKS_PER_SECOND;
         var best = null;
         var bestCoverage = 0;
+        var parts = [];
 
         for (var c = 0; c < track.clips.length; c++) {
             var clip = track.clips[c];
@@ -1051,15 +963,41 @@
             if (coverage <= 0) continue;
             if (!clip.mediaPath || String(clip.mediaPath).charAt(0) === '[') continue;
 
+            var clipIn = ticksToSec(clip.inPointTicks, ticksRate);
+            var mappedPart = {
+                sourceClipIndex: clip.clipIndex !== undefined ? clip.clipIndex : c,
+                mediaPath: clip.mediaPath,
+                sourceStartSec: clipIn + (overlapStart - clipStart),
+                sourceEndSec: clipIn + (overlapEnd - clipStart),
+                timelineStartSec: overlapStart,
+                timelineEndSec: overlapEnd,
+                coverageSec: coverage
+            };
+            parts.push(mappedPart);
+
             if (coverage > bestCoverage) {
-                var clipIn = ticksToSec(clip.inPointTicks, ticksRate);
                 bestCoverage = coverage;
-                best = {
-                    sourceClipIndex: clip.clipIndex !== undefined ? clip.clipIndex : c,
-                    mediaPath: clip.mediaPath,
-                    sourceStartSec: clipIn + (overlapStart - clipStart),
-                    sourceEndSec: clipIn + (overlapEnd - clipStart)
-                };
+                best = mappedPart;
+            }
+        }
+
+        if (parts.length) {
+            parts.sort(function (a, b) {
+                if (a.timelineStartSec !== b.timelineStartSec) return a.timelineStartSec - b.timelineStartSec;
+                return a.timelineEndSec - b.timelineEndSec;
+            });
+
+            item.previewParts = [];
+            for (var p = 0; p < parts.length; p++) {
+                item.previewParts.push({
+                    sourceClipIndex: parts[p].sourceClipIndex,
+                    mediaPath: parts[p].mediaPath,
+                    sourceStartSec: round(parts[p].sourceStartSec, 4),
+                    sourceEndSec: round(parts[p].sourceEndSec, 4),
+                    timelineStartSec: round(parts[p].timelineStartSec, 4),
+                    timelineEndSec: round(parts[p].timelineEndSec, 4),
+                    coverageSec: round(parts[p].coverageSec, 4)
+                });
             }
         }
 
@@ -1078,20 +1016,26 @@
             keptCount: 0,
             nearMissCount: 0,
             suppressedCount: 0,
+            uninterestingCount: 0,
             selectedCount: 0,
             avgScore: 0
         };
         var scoreSum = 0;
+        var scoreCount = 0;
 
         for (var i = 0; i < items.length; i++) {
             var item = items[i];
-            if (item.state === 'kept') summary.keptCount++;
+            if (isUninterestingSnippet(item)) summary.uninterestingCount++;
+            else if (item.state === 'kept') summary.keptCount++;
             else if (item.state === 'near_miss') summary.nearMissCount++;
             else summary.suppressedCount++;
             if (item.selected) summary.selectedCount++;
-            scoreSum += parseNum(item.score, 0);
+            if (!isUninterestingSnippet(item)) {
+                scoreSum += parseNum(item.score, 0);
+                scoreCount++;
+            }
         }
-        summary.avgScore = items.length > 0 ? round(scoreSum / items.length, 1) : 0;
+        summary.avgScore = scoreCount > 0 ? round(scoreSum / scoreCount, 1) : 0;
         return summary;
     }
 
@@ -1101,6 +1045,141 @@
             if (items[i].trackIndex > maxIdx) maxIdx = items[i].trackIndex;
         }
         return maxIdx;
+    }
+
+    function normalizeTimelineStateLabel(stateLabel) {
+        if (stateLabel === 'kept' || stateLabel === 'near_miss' || stateLabel === 'suppressed' || stateLabel === 'uninteresting') {
+            return stateLabel;
+        }
+        if (stateLabel === 'active') return 'kept';
+        return 'suppressed';
+    }
+
+    function normalizeStateTimelineByTrack(rawTimelineByTrack, laneCount, totalDurationSec) {
+        var out = [];
+        var epsilon = 0.0001;
+        var duration = Math.max(0, parseNum(totalDurationSec, 0));
+
+        for (var t = 0; t < laneCount; t++) {
+            var rawTrack = rawTimelineByTrack && rawTimelineByTrack[t] ? rawTimelineByTrack[t] : [];
+            var normalizedTrack = [];
+
+            for (var i = 0; i < rawTrack.length; i++) {
+                var seg = rawTrack[i];
+                if (!seg) continue;
+                var st = clamp(parseNum(seg.start, 0), 0, duration);
+                var en = clamp(parseNum(seg.end, st), 0, duration);
+                if (!(en > st + epsilon)) continue;
+                var stateLabel = normalizeTimelineStateLabel(seg.state || 'suppressed');
+
+                if (!normalizedTrack.length || normalizedTrack[normalizedTrack.length - 1].state !== stateLabel) {
+                    normalizedTrack.push({
+                        start: round(st, 4),
+                        end: round(en, 4),
+                        trackIndex: t,
+                        state: stateLabel
+                    });
+                } else {
+                    normalizedTrack[normalizedTrack.length - 1].end = round(en, 4);
+                }
+            }
+
+            if (!normalizedTrack.length && duration > epsilon) {
+                normalizedTrack.push({
+                    start: 0,
+                    end: round(duration, 4),
+                    trackIndex: t,
+                    state: 'uninteresting'
+                });
+            }
+
+            out.push(normalizedTrack);
+        }
+
+        return out;
+    }
+
+    function buildStateTimelineFromItems(items, laneCount, totalDurationSec) {
+        var duration = Math.max(0, parseNum(totalDurationSec, 0));
+        var epsilon = 0.0001;
+        var priority = {
+            kept: 3,
+            near_miss: 2,
+            suppressed: 1,
+            uninteresting: 0
+        };
+        var out = [];
+
+        for (var t = 0; t < laneCount; t++) {
+            var points = [0, duration];
+            var trackItems = [];
+
+            for (var i = 0; i < items.length; i++) {
+                var item = items[i];
+                if (!item || item.trackIndex !== t) continue;
+                var st = clamp(parseNum(item.start, 0), 0, duration);
+                var en = clamp(parseNum(item.end, st), 0, duration);
+                if (!(en > st + epsilon)) continue;
+                trackItems.push({
+                    start: st,
+                    end: en,
+                    state: isUninterestingSnippet(item) ? 'uninteresting' : normalizeTimelineStateLabel(item.state)
+                });
+                points.push(st, en);
+            }
+
+            points.sort(function (a, b) { return a - b; });
+            var uniq = [];
+            for (i = 0; i < points.length; i++) {
+                if (!uniq.length || Math.abs(points[i] - uniq[uniq.length - 1]) > epsilon) {
+                    uniq.push(points[i]);
+                }
+            }
+
+            var trackTimeline = [];
+            for (i = 0; i < uniq.length - 1; i++) {
+                var segStart = uniq[i];
+                var segEnd = uniq[i + 1];
+                if (!(segEnd > segStart + epsilon)) continue;
+
+                var bestState = 'uninteresting';
+                var bestRank = 0;
+                for (var j = 0; j < trackItems.length; j++) {
+                    var trItem = trackItems[j];
+                    if (trItem.end <= segStart + epsilon || trItem.start >= segEnd - epsilon) continue;
+                    var label = normalizeTimelineStateLabel(trItem.state);
+                    var rank = priority.hasOwnProperty(label) ? priority[label] : 1;
+                    if (rank > bestRank) {
+                        bestRank = rank;
+                        bestState = label;
+                    }
+                }
+
+                if (!trackTimeline.length || trackTimeline[trackTimeline.length - 1].state !== bestState) {
+                    trackTimeline.push({
+                        start: round(segStart, 4),
+                        end: round(segEnd, 4),
+                        trackIndex: t,
+                        state: bestState
+                    });
+                } else {
+                    trackTimeline[trackTimeline.length - 1].end = round(segEnd, 4);
+                }
+            }
+
+            if (!trackTimeline.length && duration > epsilon) {
+                trackTimeline.push({
+                    start: 0,
+                    end: round(duration, 4),
+                    trackIndex: t,
+                    state: 'uninteresting'
+                });
+            }
+
+            out.push(trackTimeline);
+        }
+
+        return out;
     }
 
     function buildCutPreviewState(result) {
@@ -1169,10 +1248,23 @@
             }
         }
 
+        var totalDuration = parseNum((result && result.totalDurationSec), NaN);
+        if (!isFinite(totalDuration)) {
+            totalDuration = 0;
+            for (i = 0; i < normalizedItems.length; i++) {
+                if (normalizedItems[i].end > totalDuration) totalDuration = normalizedItems[i].end;
+            }
+        }
+        var hasRawTimeline = !!(base && base.stateTimelineByTrack && base.stateTimelineByTrack.length);
+        var stateTimelineByTrack = hasRawTimeline
+            ? normalizeStateTimelineByTrack(base.stateTimelineByTrack, laneCount, totalDuration)
+            : buildStateTimelineFromItems(normalizedItems, laneCount, totalDuration);
+
         return {
             items: normalizedItems,
             lanes: lanes,
-            summary: computeCutPreviewSummary(normalizedItems)
+            summary: computeCutPreviewSummary(normalizedItems),
+            stateTimelineByTrack: stateTimelineByTrack
         };
     }
 
@@ -1310,12 +1402,54 @@
         if (typeLabel === 'overlap_candidate') return 'overlap';
         if (typeLabel === 'suppressed_bleed') return 'bleed';
         if (typeLabel === 'weak_voice') return 'weak';
+        if (typeLabel === 'uninteresting_gap') return 'idle';
         return typeLabel;
     }
 
-    function compactReasonText(item, maxChars) {
+    function getTypeCssClass(typeLabel) {
+        var key = typeLabel ? String(typeLabel).toLowerCase() : 'unknown';
+        key = key.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+        if (!key) key = 'unknown';
+        return 'cp-type-' + key;
+    }
+
+    function isAlwaysOpenFillSnippet(item) {
+        if (!item) return false;
+        if (item.alwaysOpenFill) return true;
+        if (item.origin === 'always_open_fill') return true;
+        return !!(item.metrics && parseNum(item.metrics.alwaysOpenFill, 0) >= 0.5);
+    }
+
+    function isUninterestingSnippet(item) {
+        if (!item) return false;
+        if (item.isUninteresting) return true;
+        if (item.origin === 'timeline_gap') return true;
+        if (item.typeLabel === 'uninteresting_gap') return true;
+        return !!(item.metrics && parseNum(item.metrics.uninterestingGap, 0) >= 0.5);
+    }
+
+    function isGenericDecisionReasonText(text) {
+        var t = String(text || '').toLowerCase();
+        return t === 'kept in final decision' ||
+            t === 'pruned in postprocess pass' ||
+            t === 'suppressed in overlap resolution' ||
+            t === 'kept in legacy segment output' ||
+            t === 'suppressed by legacy overlap result';
+    }
+
+    function firstInformativeReason(item) {
         if (!item || !item.reasons || !item.reasons.length) return '';
-        var text = String(item.reasons[0] || '').replace(/\s+/g, ' ').trim();
+        for (var i = 0; i < item.reasons.length; i++) {
+            var reasonText = String(item.reasons[i] || '').replace(/\s+/g, ' ').trim();
+            if (!reasonText) continue;
+            if (isGenericDecisionReasonText(reasonText)) continue;
+            return reasonText;
+        }
+        return '';
+    }
+
+    function compactReasonText(item, maxChars) {
+        var text = firstInformativeReason(item);
         if (!text) return '';
         var len = parseInt(maxChars, 10);
         if (!isFinite(len) || len < 8) len = 28;
@@ -1324,17 +1458,20 @@
     }
 
     function buildSnippetInlineLabel(item, widthPx) {
-        var stateText = shortStateLabel(item.state);
+        var stateText = isUninterestingSnippet(item) ? 'idle' : shortStateLabel(item.state);
         var typeText = shortTypeLabel(item.typeLabel);
         var reason = compactReasonText(item, widthPx >= 260 ? 34 : 20);
+        var fillHint = isAlwaysOpenFillSnippet(item) ? 'main-fill' : '';
         if (widthPx >= 260) {
-            return stateText + ' | ' + typeText + ' | ' + item.score + ' ' + item.scoreLabel + (reason ? ' | ' + reason : '');
+            return stateText + ' | ' + typeText + ' | ' + item.score + ' ' + item.scoreLabel +
+                (fillHint ? ' | ' + fillHint : '') +
+                (reason ? ' | ' + reason : '');
         }
         if (widthPx >= 190) {
-            return stateText + ' | ' + typeText + ' | ' + item.score;
+            return stateText + ' | ' + typeText + ' | ' + item.score + (fillHint ? ' | ' + fillHint : '');
         }
         if (widthPx >= 120) {
-            return stateText + ' | ' + item.score;
+            return stateText + ' | ' + item.score + (fillHint ? ' | ' + fillHint : '');
         }
         if (widthPx >= 74) {
             return stateText;
@@ -1342,15 +1479,58 @@
         return '';
     }
 
+    function isOverviewZoom(viewport) {
+        if (!viewport) return false;
+        return viewport.pixelsPerSec <= (viewport.fitPixelsPerSec * 1.45);
+    }
+
+    function cancelPendingCutPreviewRender() {
+        if (!state.cutPreviewRenderPending) return;
+        state.cutPreviewRenderPending = false;
+        if (state.cutPreviewRenderHandle === null || state.cutPreviewRenderHandle === undefined) return;
+
+        try {
+            if (window.cancelAnimationFrame) {
+                window.cancelAnimationFrame(state.cutPreviewRenderHandle);
+            } else {
+                clearTimeout(state.cutPreviewRenderHandle);
+            }
+        } catch (e) { }
+        state.cutPreviewRenderHandle = null;
+    }
+
+    function requestCutPreviewRender(immediate) {
+        if (immediate) {
+            cancelPendingCutPreviewRender();
+            renderCutPreviewNow();
+            return;
+        }
+
+        if (state.cutPreviewRenderPending) return;
+        state.cutPreviewRenderPending = true;
+
+        var raf = window.requestAnimationFrame || function (cb) {
+            return setTimeout(cb, 16);
+        };
+
+        state.cutPreviewRenderHandle = raf(function () {
+            state.cutPreviewRenderPending = false;
+            state.cutPreviewRenderHandle = null;
+            renderCutPreviewNow();
+        });
+    }
+
     function renderCutPreview() {
+        requestCutPreviewRender(false);
+    }
+
+    function renderCutPreviewNow() {
         if (!state.cutPreview || !state.cutPreview.items || state.cutPreview.items.length === 0) {
             hideCutPreview();
             return;
         }
 
-        if (els.cutPreviewSection) {
-            els.cutPreviewSection.style.display = 'block';
-        }
+        setPanelPageMode('review');
         state.cutPreview.summary = computeCutPreviewSummary(state.cutPreview.items);
 
         var items = getVisibleCutPreviewItems();
@@ -1359,7 +1539,14 @@
             return;
         }
         if (!state.activeSnippetId || !getCutPreviewItemById(state.activeSnippetId)) {
-            state.activeSnippetId = items[0].id;
+            var preferred = null;
+            for (var ii = 0; ii < items.length; ii++) {
+                if (!isUninterestingSnippet(items[ii])) {
+                    preferred = items[ii];
+                    break;
+                }
+            }
+            state.activeSnippetId = (preferred || items[0]).id;
         }
 
         ensureCutPreviewViewport(false);
@@ -1376,12 +1563,15 @@
 
         if (els.cutPreviewMeta) {
             var sum = state.cutPreview.summary;
+            var viewModeText = isOverviewZoom(viewport) ? 'overview' : 'detail';
             els.cutPreviewMeta.textContent =
                 sum.totalItems + ' snippets | selected ' + sum.selectedCount +
                 ' | kept ' + sum.keptCount +
                 ' | near miss ' + sum.nearMissCount +
                 ' | suppressed ' + sum.suppressedCount +
-                ' | avg score ' + sum.avgScore;
+                ' | uninteresting ' + (sum.uninterestingCount || 0) +
+                ' | avg score ' + sum.avgScore +
+                ' | view ' + viewModeText;
         }
         if (els.cutPreviewAnalysisMini) {
             var tracksInfo = (state.analysisResult && state.analysisResult.tracks) ? state.analysisResult.tracks : [];
@@ -1437,6 +1627,7 @@
             return;
         }
 
+        var overviewMode = isOverviewZoom(viewport);
         var lanes = state.cutPreview.lanes.slice().sort(function (a, b) {
             return a.laneIndex - b.laneIndex;
         });
@@ -1495,12 +1686,20 @@
                 if (visEnd <= visStart) continue;
 
                 var leftPx = Math.max(0, Math.round((visStart - viewport.viewStartSec) * viewport.pixelsPerSec));
-                var widthPx = Math.max(4, Math.round((visEnd - visStart) * viewport.pixelsPerSec));
-                var compact = widthPx < 78;
+                var widthRaw = Math.round((visEnd - visStart) * viewport.pixelsPerSec);
+                if (!isFinite(widthRaw) || widthRaw < 0) widthRaw = 0;
+                var widthPx = Math.max(overviewMode ? 1 : 4, widthRaw);
+                var minimalMode = overviewMode || widthPx < 34;
+                var compact = minimalMode || widthPx < 78;
                 var snippetClass = 'cp-snippet cp-state-' + snippet.state;
+                snippetClass += ' ' + getTypeCssClass(snippet.typeLabel);
                 if (snippet.selected) snippetClass += ' cp-selected';
                 else snippetClass += ' cp-unselected';
                 if (compact) snippetClass += ' cp-snippet-compact';
+                if (overviewMode) snippetClass += ' cp-snippet-overview';
+                if (minimalMode) snippetClass += ' cp-snippet-minimal';
+                if (isAlwaysOpenFillSnippet(snippet)) snippetClass += ' cp-snippet-always-open';
+                if (isUninterestingSnippet(snippet)) snippetClass += ' cp-snippet-uninteresting';
                 if (state.activeSnippetId === snippet.id) snippetClass += ' cp-focused';
                 if (state.currentPlayingPreviewId === snippet.id) snippetClass += ' cp-playing';
                 var inlineLabel = buildSnippetInlineLabel(snippet, widthPx);
@@ -1509,18 +1708,20 @@
                 var playClass = 'cp-snippet-play';
                 if (state.currentPlayingPreviewId === snippet.id) playClass += ' is-playing';
                 var playSymbol = state.currentPlayingPreviewId === snippet.id ? '■' : '▶';
-                var selectHtml = '  <button type="button" class="' + selectClass + '" data-item-select="' + escapeHtml(snippet.id) + '" title="Toggle selection">' + (snippet.selected ? '✓' : '') + '</button>';
-                var playHtml = widthPx >= 46
+                var selectHtml = (snippet.selectable && !minimalMode && widthPx >= 38)
+                    ? ('  <button type="button" class="' + selectClass + '" data-item-select="' + escapeHtml(snippet.id) + '" title="Toggle selection">' + (snippet.selected ? '✓' : '') + '</button>')
+                    : '';
+                var playHtml = (!minimalMode && widthPx >= 62)
                     ? ('  <button type="button" class="' + playClass + '" data-item-play="' + escapeHtml(snippet.id) + '" title="Preview snippet">' + playSymbol + '</button>')
                     : '';
-                var labelHtml = widthPx >= 74
+                var labelHtml = (!overviewMode && widthPx >= 74)
                     ? ('  <span class="cp-snippet-label">' + escapeHtml(inlineLabel) + '</span>')
                     : '';
 
                 html += ''
                     + '<div class="' + snippetClass + '"'
                     + ' data-item-id="' + escapeHtml(snippet.id) + '"'
-                    + ' title="' + escapeHtml('State ' + snippet.state + ' | Score ' + snippet.score + ' | ' + shortTypeLabel(snippet.typeLabel) + ' | ' + compactReasonText(snippet, 42) + ' | ' + formatClock(snippet.start) + '-' + formatClock(snippet.end)) + '"'
+                    + ' title="' + escapeHtml('State ' + (isUninterestingSnippet(snippet) ? 'uninteresting' : snippet.state) + ' | Score ' + snippet.score + ' | ' + shortTypeLabel(snippet.typeLabel) + (isAlwaysOpenFillSnippet(snippet) ? ' | dominant continuity fill' : '') + ' | ' + compactReasonText(snippet, 42) + ' | ' + formatClock(snippet.start) + '-' + formatClock(snippet.end)) + '"'
                     + ' style="left:' + leftPx + 'px;width:' + widthPx + 'px;">'
                     + selectHtml
                     + playHtml
@@ -1552,7 +1753,11 @@
             var item = items[i];
             var leftPct = clamp((item.start / viewport.totalDurationSec) * 100, 0, 100);
             var widthPct = clamp(((item.end - item.start) / viewport.totalDurationSec) * 100, 0.1, 100);
-            html += '<div class="cp-nav-snippet cp-state-' + item.state + '" style="left:' + leftPct + '%;width:' + widthPct + '%;"></div>';
+            var navClass = 'cp-nav-snippet cp-state-' + item.state;
+            navClass += ' ' + getTypeCssClass(item.typeLabel);
+            if (isAlwaysOpenFillSnippet(item)) navClass += ' cp-nav-always-open-fill';
+            if (isUninterestingSnippet(item)) navClass += ' cp-nav-uninteresting';
+            html += '<div class="' + navClass + '" style="left:' + leftPct + '%;width:' + widthPct + '%;"></div>';
         }
         var windowLeftPct = clamp((viewport.viewStartSec / viewport.totalDurationSec) * 100, 0, 100);
         var windowWidthPct = clamp((viewport.visibleDurationSec / viewport.totalDurationSec) * 100, 1, 100);
@@ -1576,36 +1781,51 @@
         var metrics = item.metrics || {};
         var reasons = item.reasons || [];
         var isPlaying = state.currentPlayingPreviewId === item.id;
+        var previewPlan = buildPreviewPlaybackPlan(item);
+        var isAlwaysOpenFill = isAlwaysOpenFillSnippet(item);
+        var isUninteresting = isUninterestingSnippet(item);
         var statePillClass = 'cp-pill cp-pill-' + item.state;
-        var selectedLabel = item.selected ? 'Selected' : 'Unselected';
+        var selectedLabel = item.selectable ? (item.selected ? 'Selected' : 'Unselected') : 'Locked';
         var inspectorPlayLabel = isPlaying ? 'Stop Preview' : 'Play Preview';
 
         var html = '';
         html += '<div class="cp-inspector-head">';
         html += '  <div class="cp-inspector-title">' + escapeHtml(getTrackDisplayName(item.trackIndex) + ' | ' + formatClock(item.start) + ' - ' + formatClock(item.end)) + '</div>';
         html += '  <div class="cp-inspector-actions">';
-        html += '    <button type="button" class="btn btn-secondary cp-inspector-btn" data-inspector-toggle="' + escapeHtml(item.id) + '">' + escapeHtml(item.selected ? 'Deselect' : 'Select') + '</button>';
+        if (item.selectable) {
+            html += '    <button type="button" class="btn btn-secondary cp-inspector-btn" data-inspector-toggle="' + escapeHtml(item.id) + '">' + escapeHtml(item.selected ? 'Deselect' : 'Select') + '</button>';
+        } else {
+            html += '    <button type="button" class="btn btn-secondary cp-inspector-btn" disabled>' + escapeHtml('Uninteresting') + '</button>';
+        }
         html += '    <button type="button" class="btn btn-secondary cp-inspector-btn" data-item-play="' + escapeHtml(item.id) + '">' + escapeHtml(inspectorPlayLabel) + '</button>';
         html += '  </div>';
         html += '</div>';
 
         html += '<div class="cp-inspector-pills">';
         html += '  <span class="cp-pill ' + (item.selected ? 'cp-pill-kept' : '') + '">' + escapeHtml(selectedLabel) + '</span>';
-        html += '  <span class="' + statePillClass + '">' + escapeHtml('state: ' + item.state) + '</span>';
+        html += '  <span class="' + statePillClass + '">' + escapeHtml('state: ' + (isUninteresting ? 'uninteresting' : item.state)) + '</span>';
         html += '  <span class="cp-pill">' + escapeHtml('score: ' + item.score + ' (' + item.scoreLabel + ')') + '</span>';
         html += '  <span class="cp-pill">' + escapeHtml('type: ' + item.typeLabel + ' (' + round(item.typeConfidence, 1) + '%)') + '</span>';
+        if (isAlwaysOpenFill) html += '  <span class="cp-pill cp-pill-always-open">dominant continuity fill</span>';
+        if (isUninteresting) html += '  <span class="cp-pill">timeline gap</span>';
+        if (previewPlan && previewPlan.approximate) {
+            html += '  <span class="cp-pill">' + escapeHtml('preview: approx (' + previewPlan.usedParts + '/' + previewPlan.totalParts + ' parts)') + '</span>';
+        } else {
+            html += '  <span class="cp-pill">' + escapeHtml('preview: exact') + '</span>';
+        }
         if (isPlaying) html += '  <span class="cp-pill cp-pill-playing">preview active</span>';
         html += '</div>';
 
         html += '<div class="cp-inspector-grid">';
-        html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Selected</span><span class="cp-inspector-value">' + escapeHtml(item.selected ? 'yes' : 'no') + '</span></div>';
-        html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">State</span><span class="cp-inspector-value">' + escapeHtml(item.state) + '</span></div>';
+        html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Selected</span><span class="cp-inspector-value">' + escapeHtml(item.selectable ? (item.selected ? 'yes' : 'no') : 'locked') + '</span></div>';
+        html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">State</span><span class="cp-inspector-value">' + escapeHtml(isUninteresting ? 'uninteresting' : item.state) + '</span></div>';
         html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Score</span><span class="cp-inspector-value">' + escapeHtml(String(item.score) + ' (' + item.scoreLabel + ')') + '</span></div>';
         html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Type Label</span><span class="cp-inspector-value">' + escapeHtml(item.typeLabel) + '</span></div>';
         html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Type Confidence</span><span class="cp-inspector-value">' + escapeHtml(round(item.typeConfidence, 1) + '%') + '</span></div>';
         html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Duration</span><span class="cp-inspector-value">' + escapeHtml(formatDurationMs(item.durationMs)) + '</span></div>';
         html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Decision Stage</span><span class="cp-inspector-value">' + escapeHtml(item.decisionStage || '-') + '</span></div>';
         html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Track</span><span class="cp-inspector-value">' + escapeHtml(getTrackDisplayName(item.trackIndex)) + '</span></div>';
+        html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Preview Source</span><span class="cp-inspector-value">' + escapeHtml((previewPlan && previewPlan.approximate ? 'Approximate' : 'Exact') + (previewPlan && previewPlan.totalParts > 1 ? (' (' + previewPlan.usedParts + '/' + previewPlan.totalParts + ' parts)') : '')) + '</span></div>';
         html += '</div>';
 
         html += '<details class="cp-inspector-extra" open>';
@@ -1617,6 +1837,12 @@
         html += buildMetricCard('Noise', round(parseNum(metrics.noiseEvidence, 0), 3));
         html += buildMetricCard('Bleed Conf', round(parseNum(metrics.bleedConfidence, 0), 3));
         html += buildMetricCard('Margin', round(parseNum(metrics.classMargin, 0), 3));
+        html += buildMetricCard('Kept Src', round(parseNum(metrics.keptSourceRatio, 0), 3));
+        html += buildMetricCard('Keep Likelihood', round(parseNum(metrics.keepLikelihood, 0), 3));
+        html += buildMetricCard('Suppress Likelihood', round(parseNum(metrics.suppressLikelihood, 0), 3));
+        html += buildMetricCard('Decision Margin', round(parseNum(metrics.decisionMargin, 0), 3));
+        html += buildMetricCard('Bleed Safety Gate', parseNum(metrics.bleedHighConfidence, 0) >= 0.5 ? 'on' : 'off');
+        html += buildMetricCard('Always-Open Fill', parseNum(metrics.alwaysOpenFill, 0) >= 0.5 ? 'yes' : 'no');
         html += '  </div>';
         html += '</details>';
 
@@ -1637,6 +1863,9 @@
 
         html += '<details class="cp-inspector-extra">';
         html += '  <summary>Reasons</summary>';
+        if (previewPlan && previewPlan.note) {
+            html += '  <div class="cp-inspector-value" style="margin:4px 0 6px 0;">' + escapeHtml(previewPlan.note) + '</div>';
+        }
         html += '  <ul class="cp-reasons-list">';
         if (!reasons.length) {
             html += '    <li>' + escapeHtml('No reasons available.') + '</li>';
@@ -1666,6 +1895,7 @@
     function setCutPreviewItemSelected(itemId, selected) {
         var item = getCutPreviewItemById(itemId);
         if (!item) return;
+        if (!item.selectable) return;
         item.selected = !!selected;
         renderCutPreview();
     }
@@ -1727,6 +1957,132 @@
         return text;
     }
 
+    function getValidPreviewParts(item) {
+        if (!item || !item.previewParts || !item.previewParts.length) return [];
+        var out = [];
+        for (var i = 0; i < item.previewParts.length; i++) {
+            var part = item.previewParts[i];
+            if (!part || !part.mediaPath) continue;
+            var st = parseNum(part.sourceStartSec, NaN);
+            var en = parseNum(part.sourceEndSec, NaN);
+            if (!isFinite(st) || !isFinite(en) || en <= st) continue;
+            out.push({
+                mediaPath: String(part.mediaPath),
+                sourceStartSec: st,
+                sourceEndSec: en,
+                durationSec: en - st
+            });
+        }
+        return out;
+    }
+
+    function buildPreviewPlaybackPlan(item) {
+        if (!item) return null;
+
+        var fallbackStart = parseNum(item.sourceStartSec, item.start);
+        var fallbackEnd = parseNum(item.sourceEndSec, item.end);
+        if (fallbackEnd <= fallbackStart) fallbackEnd = fallbackStart + 0.08;
+        var fallbackMediaPath = item.mediaPath ? String(item.mediaPath) : '';
+
+        var parts = getValidPreviewParts(item);
+        if (!parts.length) {
+            return {
+                mediaPath: fallbackMediaPath,
+                sourceStartSec: fallbackStart,
+                sourceEndSec: fallbackEnd,
+                mode: 'single',
+                approximate: false,
+                totalParts: 1,
+                usedParts: 1,
+                note: ''
+            };
+        }
+
+        if (parts.length === 1) {
+            return {
+                mediaPath: parts[0].mediaPath,
+                sourceStartSec: parts[0].sourceStartSec,
+                sourceEndSec: parts[0].sourceEndSec,
+                mode: 'single',
+                approximate: false,
+                totalParts: 1,
+                usedParts: 1,
+                note: ''
+            };
+        }
+
+        var pathBuckets = {};
+        var bestPath = '';
+        var bestDur = -1;
+
+        for (var i = 0; i < parts.length; i++) {
+            var p = parts[i];
+            if (!pathBuckets[p.mediaPath]) {
+                pathBuckets[p.mediaPath] = {
+                    mediaPath: p.mediaPath,
+                    totalDur: 0,
+                    minStart: p.sourceStartSec,
+                    maxEnd: p.sourceEndSec,
+                    longestPart: p,
+                    parts: []
+                };
+            }
+            var bucket = pathBuckets[p.mediaPath];
+            bucket.totalDur += p.durationSec;
+            if (p.sourceStartSec < bucket.minStart) bucket.minStart = p.sourceStartSec;
+            if (p.sourceEndSec > bucket.maxEnd) bucket.maxEnd = p.sourceEndSec;
+            if (!bucket.longestPart || p.durationSec > bucket.longestPart.durationSec) {
+                bucket.longestPart = p;
+            }
+            bucket.parts.push(p);
+            if (bucket.totalDur > bestDur) {
+                bestDur = bucket.totalDur;
+                bestPath = p.mediaPath;
+            }
+        }
+
+        var bestBucket = pathBuckets[bestPath];
+        if (!bestBucket) {
+            return {
+                mediaPath: fallbackMediaPath,
+                sourceStartSec: fallbackStart,
+                sourceEndSec: fallbackEnd,
+                mode: 'single',
+                approximate: false,
+                totalParts: 1,
+                usedParts: 1,
+                note: ''
+            };
+        }
+
+        var span = Math.max(0.0001, bestBucket.maxEnd - bestBucket.minStart);
+        var fillRatio = clamp(bestBucket.totalDur / span, 0, 1);
+        if (fillRatio >= 0.86) {
+            return {
+                mediaPath: bestBucket.mediaPath,
+                sourceStartSec: bestBucket.minStart,
+                sourceEndSec: bestBucket.maxEnd,
+                mode: 'same_source_combined',
+                approximate: true,
+                totalParts: parts.length,
+                usedParts: bestBucket.parts.length,
+                note: 'Combined nearby parts from the same source file'
+            };
+        }
+
+        var longest = bestBucket.longestPart;
+        return {
+            mediaPath: longest.mediaPath,
+            sourceStartSec: longest.sourceStartSec,
+            sourceEndSec: longest.sourceEndSec,
+            mode: 'largest_part',
+            approximate: true,
+            totalParts: parts.length,
+            usedParts: 1,
+            note: 'Previewing largest source part of a multi-clip snippet'
+        };
+    }
+
     function stopCurrentPreviewAudio(skipRender) {
         if (state.currentAudio && state.currentAudio.disconnect) {
             try {
@@ -1740,6 +2096,7 @@
         }
         state.currentAudio = null;
         state.currentPlayingPreviewId = null;
+        state.currentPreviewInfo = null;
         if (!skipRender) renderCutPreview();
     }
 
@@ -1808,7 +2165,8 @@
             return;
         }
 
-        var mediaUrl = resolveMediaPathToAudioUrl(item.mediaPath);
+        var playbackPlan = buildPreviewPlaybackPlan(item);
+        var mediaUrl = resolveMediaPathToAudioUrl(playbackPlan && playbackPlan.mediaPath);
         if (!mediaUrl) {
             setStatus('error', 'Snippet preview unavailable (no playable media path)');
             return;
@@ -1816,8 +2174,8 @@
 
         stopCurrentPreviewAudio(true);
 
-        var snippetStart = parseNum(item.sourceStartSec, item.start);
-        var snippetEnd = parseNum(item.sourceEndSec, item.end);
+        var snippetStart = parseNum(playbackPlan && playbackPlan.sourceStartSec, parseNum(item.sourceStartSec, item.start));
+        var snippetEnd = parseNum(playbackPlan && playbackPlan.sourceEndSec, parseNum(item.sourceEndSec, item.end));
         if (snippetEnd <= snippetStart) snippetEnd = snippetStart + 0.08;
 
         var startAt = Math.max(0, snippetStart - AUDIO_PREVIEW_PREROLL_SEC);
@@ -1836,6 +2194,7 @@
             disconnect: gainCtrl.disconnect
         };
         state.currentPlayingPreviewId = itemId;
+        state.currentPreviewInfo = playbackPlan || null;
         renderCutPreview();
 
         audio.addEventListener('loadedmetadata', function () {
@@ -1872,89 +2231,20 @@
             setStatus('error', 'Could not play snippet preview');
         });
 
-        setStatus('analyzing', 'Previewing snippet...');
-    }
-
-    function mergeSegmentsForApply(segments) {
-        if (!segments || segments.length === 0) return [];
-
-        var cleaned = [];
-        for (var i = 0; i < segments.length; i++) {
-            var seg = segments[i];
-            if (!seg) continue;
-            var st = parseNum(seg.start, 0);
-            var en = parseNum(seg.end, st);
-            if (!(en > st)) continue;
-            cleaned.push({ start: st, end: en, state: 'active' });
+        if (playbackPlan && playbackPlan.approximate) {
+            setStatus('analyzing', 'Previewing snippet (approx source mapping)...');
+        } else {
+            setStatus('analyzing', 'Previewing snippet...');
         }
-
-        cleaned.sort(function (a, b) {
-            if (a.start !== b.start) return a.start - b.start;
-            return a.end - b.end;
-        });
-
-        var merged = [];
-        for (i = 0; i < cleaned.length; i++) {
-            var cur = cleaned[i];
-            if (!merged.length) {
-                merged.push({ start: cur.start, end: cur.end, state: 'active' });
-                continue;
-            }
-            var prev = merged[merged.length - 1];
-            if (cur.start <= prev.end + 0.0005) {
-                if (cur.end > prev.end) prev.end = cur.end;
-            } else {
-                merged.push({ start: cur.start, end: cur.end, state: 'active' });
-            }
-        }
-
-        return merged;
     }
 
     function buildApplyCutsPayload() {
-        if (!state.analysisResult) return null;
-
-        var trackIndices = [];
-        var segments = [];
-
-        for (var i = 0; i < state.tracks.length; i++) {
-            if (state.tracks[i].selected === false) continue;
-            trackIndices.push(state.tracks[i].index !== undefined ? state.tracks[i].index : i);
-
-            if (state.cutPreview && state.cutPreview.items && state.cutPreview.items.length > 0) {
-                var selectedSegments = [];
-                for (var j = 0; j < state.cutPreview.items.length; j++) {
-                    var item = state.cutPreview.items[j];
-                    if (item.trackIndex !== i || !item.selected) continue;
-                    selectedSegments.push({
-                        start: item.start,
-                        end: item.end,
-                        state: 'active'
-                    });
-                }
-                segments.push(mergeSegmentsForApply(selectedSegments));
-            } else {
-                var legacySegs = (state.analysisResult.segments && state.analysisResult.segments[i])
-                    ? state.analysisResult.segments[i]
-                    : [];
-                var activeLegacy = [];
-                for (var k = 0; k < legacySegs.length; k++) {
-                    var lseg = legacySegs[k];
-                    if (!lseg || lseg.state === 'suppressed') continue;
-                    activeLegacy.push({
-                        start: lseg.start,
-                        end: lseg.end,
-                        state: 'active'
-                    });
-                }
-                segments.push(mergeSegmentsForApply(activeLegacy));
-            }
+        var applyHelper = getApplyHelper();
+        if (applyHelper && typeof applyHelper.buildApplyCutsPayloadFromState === 'function') {
+            return applyHelper.buildApplyCutsPayloadFromState(state.tracks, state.cutPreview, state.analysisResult);
         }
-
-        return {
-            segments: segments,
-            trackIndices: trackIndices
-        };
+        console.error('[AutoCast] cut_preview_apply helper missing; cannot build apply payload.');
+        return null;
     }
 
     function beginNavigatorDrag(mode, clientX) {
@@ -2154,6 +2444,7 @@
 
         window.addEventListener('resize', function () {
             if (!state.cutPreview || !state.cutPreview.items || !state.cutPreview.items.length) return;
+            if (state.panelPageMode !== 'review') return;
             renderCutPreview();
         });
     }
@@ -2185,6 +2476,18 @@
         els.btnApply.addEventListener('click', applyEdits);
     }
 
+    if (els.cutPreviewApplyBtn) {
+        els.cutPreviewApplyBtn.addEventListener('click', applyEdits);
+    }
+
+    if (els.cutPreviewBackBtn) {
+        els.cutPreviewBackBtn.addEventListener('click', function () {
+            cancelPendingCutPreviewRender();
+            setPanelPageMode('setup');
+            setStatus('idle', 'Review closed');
+        });
+    }
+
     if (els.btnReset) {
         els.btnReset.addEventListener('click', resetUI);
     }
@@ -2197,6 +2500,7 @@
     hideCutPreview();
     renderTracks();
     if (els.btnApply) els.btnApply.disabled = true;
+    if (els.cutPreviewApplyBtn) els.cutPreviewApplyBtn.disabled = true;
     if (els.btnReset) els.btnReset.disabled = true;
     setStatus('idle', 'Ready');
 

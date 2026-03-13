@@ -17,7 +17,11 @@ var testFiles = [
     'test_spectral_bleed.js',
     'test_laughter_detector.js',
     'test_laughter_postprocess_protection.js',
-    'test_handover_smoothing.js'
+    'test_handover_smoothing.js',
+    'test_overlap_fill_gaps.js',
+    'test_waveform_preview.js',
+    'test_cut_preview_builder.js',
+    'test_cut_preview_apply_payload.js'
 ];
 
 // Simple test framework

@@ -58,8 +58,8 @@ $robocopyArgs = @(
     $sourceDir,
     $targetDir,
     "/E",
-    "/XD", "test", "scripts", ".git", "node_modules", "test_data", "packages\analyzer\test",
-    "/XF", "*.md", ".gitignore", ".debug", "_tmp_*.json", "temp_analyzer_debug.js",
+    "/XD", "test", "scripts", ".git", "node_modules", "test_data", "packages\analyzer\test", "_tmp_case_*",
+    "/XF", "*.md", ".gitignore", ".debug", "_tmp_*.json", "temp_analyzer_debug.js", "analysis_debug.json", "*.wav",
     "/NFL", "/NDL", "/NJH", "/NJS"
 )
 

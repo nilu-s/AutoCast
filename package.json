@@ -5,6 +5,8 @@
     "main":  "apps/panel/index.html",
     "scripts":  {
                     "test":  "node packages/analyzer/test/run_all_tests.js",
+                    "check:syntax":  "node scripts/check_syntax.js",
+                    "check":  "npm run check:syntax && npm test",
                     "test:wav":  "node packages/analyzer/test/test_wav_reader.js",
                     "test:rms":  "node packages/analyzer/test/test_rms.js",
                     "test:segments":  "node packages/analyzer/test/test_segmentation.js",

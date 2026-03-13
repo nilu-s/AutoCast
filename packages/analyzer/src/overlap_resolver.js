@@ -287,7 +287,7 @@ function fillGaps(formattedSegments, trackCount) {
     });
 
     var activeCount = 0;
-    var lastActiveTrack = 0;
+    var lastActiveTrack = -1;
     var gapStart = 0;
     var additionalSegments = [];
     for (var i = 0; i < trackCount; i++) additionalSegments[i] = [];
@@ -296,10 +296,11 @@ function fillGaps(formattedSegments, trackCount) {
         var evt = activeEvents[e];
 
         if (activeCount === 0 && evt.time > gapStart + 0.001) {
-            additionalSegments[lastActiveTrack].push({
+            var gapTrack = (lastActiveTrack >= 0) ? lastActiveTrack : evt.trackIndex;
+            additionalSegments[gapTrack].push({
                 start: gapStart,
                 end: evt.time,
-                trackIndex: lastActiveTrack,
+                trackIndex: gapTrack,
                 state: 'active'
             });
         }

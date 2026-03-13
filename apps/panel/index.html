@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AutoCast</title>
-    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/styles.css?v=2">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 
@@ -30,7 +30,7 @@
 
         <!-- Status Bar -->
         <div id="statusBar" class="status-bar status-idle">
-            <span id="statusIcon" class="status-icon">â—</span>
+            <span id="statusIcon" class="status-icon">&#9679;</span>
             <span id="statusText">Ready</span>
         </div>
 
@@ -38,7 +38,7 @@
         <div class="content-wrapper">
 
             <!-- Tracks -->
-            <section class="section">
+            <section id="tracksSection" class="section">
                 <div class="section-header">
                     <h2 class="section-title">Tracks</h2>
                     <button id="btnLoadTracks" class="btn btn-icon btn-secondary" title="Load Tracks">
@@ -63,7 +63,7 @@
             </section>
 
             <!-- Parameters -->
-            <section class="section params-section">
+            <section id="paramsSection" class="section params-section">
                 <h2 class="section-title">Settings</h2>
                 <div class="param-card">
                     <div class="param-group">
@@ -102,7 +102,13 @@
             <section id="cutPreviewSection" class="section cut-preview" style="display: none;">
                 <div class="section-header">
                     <h2 class="section-title">Cut Preview</h2>
-                    <div id="cutPreviewMeta" class="cut-preview-meta"></div>
+                    <div class="cut-preview-head-right">
+                        <div id="cutPreviewMeta" class="cut-preview-meta"></div>
+                        <div class="cut-preview-page-actions">
+                            <button id="cutPreviewBackBtn" class="btn btn-secondary btn-sm" type="button">Zurück zu Setup</button>
+                            <button id="cutPreviewApplyBtn" class="btn btn-accent btn-sm" type="button">Apply Edits</button>
+                        </div>
+                    </div>
                 </div>
                 <div id="cutPreviewAnalysisMini" class="cut-preview-analysis-mini"></div>
                 <div class="cut-preview-toolbar">
@@ -118,9 +124,15 @@
                         <span id="cutPreviewVolumeMasterLabel" class="cut-preview-zoom-label">100%</span>
                     </div>
                 </div>
-                <div id="cutPreviewTimeline" class="cut-preview-timeline"></div>
-                <div id="cutPreviewNavigator" class="cut-preview-navigator"></div>
-                <div id="cutPreviewInspector" class="cut-preview-inspector"></div>
+                <div class="cut-preview-layout">
+                    <div class="cut-preview-main">
+                        <div id="cutPreviewTimeline" class="cut-preview-timeline"></div>
+                        <div id="cutPreviewNavigator" class="cut-preview-navigator"></div>
+                    </div>
+                    <aside class="cut-preview-side">
+                        <div id="cutPreviewInspector" class="cut-preview-inspector"></div>
+                    </aside>
+                </div>
             </section>
 
 
@@ -130,7 +142,7 @@
         </div>
 
         <!-- Footer Actions -->
-        <footer class="footer-actions">
+        <footer id="footerActions" class="footer-actions">
             <div class="action-row primary-actions">
                 <button id="btnAnalyze" class="btn btn-primary">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -162,7 +174,10 @@
     <script src="js/CSInterface.js?v=2"></script>
     <script src="js/mock_csi.js?v=2"></script>
     <script src="js/csi_bridge.js?v=2"></script>
-    <script src="js/main.js?v=2"></script>
+    <script src="js/analyzer_client.js?v=4"></script>
+    <script src="js/cut_preview_apply.js?v=2"></script>
+    <script src="js/main.js?v=5"></script>
 </body>
 
 </html>
+
