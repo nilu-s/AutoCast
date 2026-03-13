@@ -67,6 +67,9 @@ var ANALYSIS_DEFAULTS = {
     sameTrackGapMergeMaxMs: 1400,
     sameTrackGapMergeMaxOtherOverlapRatio: 0.20,
     sameTrackGapMergeMinPeakAboveThresholdDb: 3.0,
+    // Cut preview consolidation: merge overlapping / short-gap snippets and classify merged span.
+    previewSegmentMergeEnabled: true,
+    previewSegmentMergeGapMs: 1000,
     enableDominantTrackStickiness: true,
     dominantTrackHoldMs: 2000,
     dominantTrackReturnWindowMs: 5000,

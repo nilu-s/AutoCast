@@ -85,6 +85,38 @@ var AutoCastBridge = (function () {
         return isMockMode;
     }
 
+    function resizePanel(width, height) {
+        if (!csInterface || isMockMode) return false;
+        try {
+            var w = Math.max(320, Math.round(width || 0));
+            var h = Math.max(260, Math.round(height || 0));
+            var resized = false;
+
+            // Official API (limited reliability for PPro docked panels).
+            try {
+                csInterface.resizeContent(w, h);
+                resized = true;
+            } catch (e1) { }
+
+            // Best-effort CEP window APIs (host/version dependent).
+            if (window.__adobe_cep__ && typeof window.__adobe_cep__.invokeSync === 'function') {
+                try {
+                    window.__adobe_cep__.invokeSync('setWindowSize', JSON.stringify({ width: w, height: h }));
+                    resized = true;
+                } catch (e2) { }
+                try {
+                    window.__adobe_cep__.invokeSync('setWindowBounds', JSON.stringify({ left: 40, top: 40, right: 40 + w, bottom: 40 + h }));
+                    resized = true;
+                } catch (e3) { }
+            }
+
+            return resized;
+        } catch (e) {
+            console.warn('[Bridge] resizePanel failed:', e);
+            return false;
+        }
+    }
+
     return {
         init: init,
         ping: ping,
@@ -94,6 +126,7 @@ var AutoCastBridge = (function () {
         removeCutProgressListener: removeCutProgressListener,
         getCutProgressEventName: getCutProgressEventName,
         getExtensionPath: getExtensionPath,
-        isInMockMode: isInMockMode
+        isInMockMode: isInMockMode,
+        resizePanel: resizePanel
     };
 })();

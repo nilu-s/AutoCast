@@ -11,10 +11,13 @@ function buildCutPreview(ctx) {
     var finalSegments = cloneSegmentsByTrack(ctx.finalSegments);
     var rmsProfiles = Array.isArray(ctx.rmsProfiles) ? ctx.rmsProfiles : [];
     var spectralResults = Array.isArray(ctx.spectralResults) ? ctx.spectralResults : [];
+    var laughterResults = Array.isArray(ctx.laughterResults) ? ctx.laughterResults : [];
     var gateSnapshots = Array.isArray(ctx.gateSnapshots) ? ctx.gateSnapshots : [];
     var params = ctx.params || {};
     var frameDurationMs = isFiniteNumber(ctx.frameDurationMs) ? ctx.frameDurationMs : 10;
     var frameDurSec = frameDurationMs / 1000;
+    var previewMergeEnabled = params.previewSegmentMergeEnabled !== false;
+    var previewMergeGapSec = Math.max(0, parseNum(params.previewSegmentMergeGapMs, 1000) / 1000);
     var totalDurationSec = isFiniteNumber(ctx.totalDurationSec)
         ? Math.max(0, ctx.totalDurationSec)
         : computeMaxEnd(finalSegments);
@@ -55,23 +58,32 @@ function buildCutPreview(ctx) {
 
     for (t = 0; t < trackCount; t++) {
         var overlapTrackSegs = overlapSegments[t] || [];
-        for (var s = 0; s < overlapTrackSegs.length; s++) {
-            var overlapSeg = overlapTrackSegs[s];
-            if (!overlapSeg) continue;
-
-            var span = normalizeSegmentSpan(overlapSeg);
-            if (!span) continue;
-
+        var overlapSpans = buildConsolidatedPreviewSpans(overlapTrackSegs, {
+            enabled: previewMergeEnabled,
+            mergeGapSec: previewMergeGapSec
+        });
+        for (var s = 0; s < overlapSpans.length; s++) {
+            var overlapSpan = overlapSpans[s];
+            var span = {
+                start: overlapSpan.start,
+                end: overlapSpan.end,
+                durationSec: overlapSpan.durationSec
+            };
             var keepCoverage = computeCoverageByState(finalSegments[t], span.start, span.end, 'active');
+            var sourceSuppressedCoverage = computeCoverageByState(overlapSpan.sourceSegments, span.start, span.end, 'suppressed');
+            var sourceActiveCoverage = computeCoverageByState(overlapSpan.sourceSegments, span.start, span.end, 'active');
             var decisionState = 'near_miss';
             var decisionStage = 'postprocess_pruned';
 
-            if (overlapSeg.state === 'suppressed') {
-                decisionState = 'suppressed';
-                decisionStage = 'overlap_resolve';
-            } else if (keepCoverage > 0.55) {
+            if (keepCoverage > 0.55) {
                 decisionState = 'kept';
                 decisionStage = 'final_kept';
+            } else if (sourceSuppressedCoverage >= 0.60 && keepCoverage < 0.25) {
+                decisionState = 'suppressed';
+                decisionStage = 'overlap_resolve';
+            } else if (sourceActiveCoverage < 0.20 && sourceSuppressedCoverage >= 0.45) {
+                decisionState = 'suppressed';
+                decisionStage = 'overlap_resolve';
             }
 
             var metrics = computeMetrics({
@@ -82,9 +94,12 @@ function buildCutPreview(ctx) {
                 thresholdDb: getTrackThresholdDb(trackInfos, t),
                 rmsProfiles: rmsProfiles,
                 spectralResults: spectralResults,
+                laughterResults: laughterResults,
                 gateSnapshots: gateSnapshots,
                 overlapActiveMaps: overlapActiveMaps,
                 finalActiveMaps: finalActiveMaps,
+                mergedSegmentCount: overlapSpan.mergedCount,
+                maxMergedGapSec: overlapSpan.maxGapSec,
                 state: decisionState
             });
 
@@ -125,8 +140,12 @@ function buildCutPreview(ctx) {
 
     for (t = 0; t < trackCount; t++) {
         var finalActiveSegs = filterSegmentsByState(finalSegments[t], 'active');
-        for (var j = 0; j < finalActiveSegs.length; j++) {
-            var finalSeg = normalizeSegmentSpan(finalActiveSegs[j]);
+        var finalSpans = buildConsolidatedPreviewSpans(finalActiveSegs, {
+            enabled: previewMergeEnabled,
+            mergeGapSec: previewMergeGapSec
+        });
+        for (var j = 0; j < finalSpans.length; j++) {
+            var finalSeg = finalSpans[j];
             if (!finalSeg) continue;
             if (hasMatchingItem(items, t, finalSeg.start, finalSeg.end)) continue;
 
@@ -138,9 +157,12 @@ function buildCutPreview(ctx) {
                 thresholdDb: getTrackThresholdDb(trackInfos, t),
                 rmsProfiles: rmsProfiles,
                 spectralResults: spectralResults,
+                laughterResults: laughterResults,
                 gateSnapshots: gateSnapshots,
                 overlapActiveMaps: overlapActiveMaps,
                 finalActiveMaps: finalActiveMaps,
+                mergedSegmentCount: finalSeg.mergedCount,
+                maxMergedGapSec: finalSeg.maxGapSec,
                 state: 'kept'
             });
             var finalScoreInfo = computeScore('kept', finalSeg.durationSec, finalMetrics);
@@ -210,12 +232,103 @@ function normalizeTrackArrays(trackCount, sourceSegments, overlapSegments, final
     }
 }
 
+function buildConsolidatedPreviewSpans(trackSegs, options) {
+    options = options || {};
+    var enabled = options.enabled !== false;
+    var mergeGapSec = Math.max(0, parseNum(options.mergeGapSec, 0));
+    var normalized = [];
+
+    if (!Array.isArray(trackSegs) || trackSegs.length === 0) return normalized;
+
+    for (var i = 0; i < trackSegs.length; i++) {
+        var seg = trackSegs[i];
+        if (!seg) continue;
+        var span = normalizeSegmentSpan(seg);
+        if (!span) continue;
+        normalized.push({
+            start: span.start,
+            end: span.end,
+            durationSec: span.durationSec,
+            trackIndex: isFiniteNumber(seg.trackIndex) ? seg.trackIndex : 0,
+            state: seg.state || 'active'
+        });
+    }
+
+    if (!normalized.length) return normalized;
+
+    normalized.sort(function (a, b) {
+        if (a.start !== b.start) return a.start - b.start;
+        return a.end - b.end;
+    });
+
+    if (!enabled || mergeGapSec <= 0) {
+        var passthrough = [];
+        for (i = 0; i < normalized.length; i++) {
+            passthrough.push({
+                start: normalized[i].start,
+                end: normalized[i].end,
+                durationSec: normalized[i].durationSec,
+                mergedCount: 1,
+                maxGapSec: 0,
+                sourceSegments: [normalized[i]]
+            });
+        }
+        return passthrough;
+    }
+
+    var out = [];
+    var cur = null;
+    for (i = 0; i < normalized.length; i++) {
+        var it = normalized[i];
+        if (!cur) {
+            cur = {
+                start: it.start,
+                end: it.end,
+                mergedCount: 1,
+                maxGapSec: 0,
+                sourceSegments: [it]
+            };
+            continue;
+        }
+
+        var gapSec = it.start - cur.end;
+        if (it.start <= cur.end + mergeGapSec) {
+            if (gapSec > cur.maxGapSec) cur.maxGapSec = gapSec;
+            if (it.end > cur.end) cur.end = it.end;
+            cur.mergedCount++;
+            cur.sourceSegments.push(it);
+        } else {
+            cur.durationSec = cur.end - cur.start;
+            if (cur.maxGapSec < 0) cur.maxGapSec = 0;
+            out.push(cur);
+            cur = {
+                start: it.start,
+                end: it.end,
+                mergedCount: 1,
+                maxGapSec: 0,
+                sourceSegments: [it]
+            };
+        }
+    }
+
+    if (cur) {
+        cur.durationSec = cur.end - cur.start;
+        if (cur.maxGapSec < 0) cur.maxGapSec = 0;
+        out.push(cur);
+    }
+
+    return out;
+}
+
 function computeMetrics(ctx) {
     var startFrame = Math.max(0, Math.floor(ctx.start / ctx.frameDurSec));
     var endFrame = Math.max(startFrame + 1, Math.ceil(ctx.end / ctx.frameDurSec));
     var rmsTrack = ctx.rmsProfiles[ctx.trackIndex] || [];
     var spectralTrack = (ctx.spectralResults[ctx.trackIndex] && ctx.spectralResults[ctx.trackIndex].confidence)
         ? ctx.spectralResults[ctx.trackIndex].confidence
+        : null;
+    var laughterTrack = (ctx.laughterResults[ctx.trackIndex] && ctx.laughterResults[ctx.trackIndex].confidence)
+        ? ctx.laughterResults[ctx.trackIndex].confidence
         : null;
     var speakerSimilarity = (ctx.gateSnapshots[ctx.trackIndex] &&
         ctx.gateSnapshots[ctx.trackIndex].speakerDebug &&
@@ -230,6 +343,8 @@ function computeMetrics(ctx) {
     var thresholdDb = isFiniteNumber(ctx.thresholdDb) ? ctx.thresholdDb : -60;
 
     var spectralConfidence = clamp(averageRange(spectralTrack, startFrame, endFrame, 0), 0, 1);
+    var laughterConfidence = clamp(averageRange(laughterTrack, startFrame, endFrame, 0), 0, 1);
+    var laughterPeakConfidence = clamp(maxRange(laughterTrack, startFrame, endFrame, laughterConfidence), 0, 1);
     var speakerLockScore = clamp(averageRange(speakerSimilarity, startFrame, endFrame, spectralConfidence), 0, 1);
 
     var overlapStats = computeOverlapStats(
@@ -239,6 +354,8 @@ function computeMetrics(ctx) {
         ctx.overlapActiveMaps,
         ctx.rmsProfiles
     );
+    var mergedSegmentCount = Math.max(1, Math.round(parseNum(ctx.mergedSegmentCount, 1)));
+    var maxMergedGapSec = Math.max(0, parseNum(ctx.maxMergedGapSec, 0));
 
     var postprocessPenalty = computePostprocessPenalty(ctx.state, {
         peakOverThreshold: peakDb - thresholdDb,
@@ -246,16 +363,46 @@ function computeMetrics(ctx) {
         spectralConfidence: spectralConfidence,
         overlapPenalty: overlapStats.penalty
     });
+    var classEvidence = computeClassEvidence({
+        state: ctx.state,
+        peakOverThreshold: peakDb - thresholdDb,
+        meanOverThreshold: meanDb - thresholdDb,
+        spectralConfidence: spectralConfidence,
+        laughterConfidence: laughterConfidence,
+        laughterPeakConfidence: laughterPeakConfidence,
+        speakerLockScore: speakerLockScore,
+        overlapPenalty: overlapStats.penalty,
+        overlapRatio: overlapStats.overlapRatio,
+        strongerRatio: overlapStats.strongerRatio,
+        postprocessPenalty: postprocessPenalty
+    });
+    var bleedConfidence = clamp(
+        classEvidence.bleed * 0.68 +
+        clamp(overlapStats.strongerRatio, 0, 1) * 0.22 +
+        clamp(overlapStats.overlapRatio, 0, 1) * 0.10,
+        0,
+        1
+    );
 
     return {
         values: {
             meanOverThreshold: round(meanDb - thresholdDb, 2),
             peakOverThreshold: round(peakDb - thresholdDb, 2),
             spectralConfidence: round(spectralConfidence, 3),
+            laughterConfidence: round(laughterConfidence, 3),
             overlapPenalty: round(overlapStats.penalty, 3),
             speakerLockScore: round(speakerLockScore, 3),
-            postprocessPenalty: round(postprocessPenalty, 3)
+            postprocessPenalty: round(postprocessPenalty, 3),
+            speechEvidence: round(classEvidence.speech, 3),
+            laughterEvidence: round(classEvidence.laughter, 3),
+            bleedEvidence: round(classEvidence.bleed, 3),
+            bleedConfidence: round(bleedConfidence, 3),
+            noiseEvidence: round(classEvidence.noise, 3),
+            classMargin: round(classEvidence.margin, 3),
+            mergedSegmentCount: mergedSegmentCount,
+            maxMergedGapMs: round(maxMergedGapSec * 1000, 1)
         },
+        classEvidence: classEvidence,
         overlapInfo: {
             overlapRatio: round(overlapStats.overlapRatio, 3),
             strongerOverlapRatio: round(overlapStats.strongerRatio, 3),
@@ -377,25 +524,157 @@ function computeScore(state, durationSec, metrics) {
     };
 }
 
+function rankClassEvidence(scores) {
+    var firstLabel = 'unknown';
+    var secondLabel = 'unknown';
+    var firstScore = -Infinity;
+    var secondScore = -Infinity;
+
+    for (var key in scores) {
+        if (!scores.hasOwnProperty(key)) continue;
+        var value = clamp(parseNum(scores[key], 0), 0, 1);
+        if (value > firstScore) {
+            secondScore = firstScore;
+            secondLabel = firstLabel;
+            firstScore = value;
+            firstLabel = key;
+        } else if (value > secondScore) {
+            secondScore = value;
+            secondLabel = key;
+        }
+    }
+
+    if (!isFiniteNumber(firstScore)) firstScore = 0;
+    if (!isFiniteNumber(secondScore)) secondScore = 0;
+
+    return {
+        firstLabel: firstLabel,
+        firstScore: firstScore,
+        secondLabel: secondLabel,
+        secondScore: secondScore,
+        margin: clamp(firstScore - secondScore, 0, 1)
+    };
+}
+
+function evidenceConfidence(primaryScore, margin, bias) {
+    var norm = clamp(primaryScore * 0.78 + margin * 0.22 + (bias || 0), 0, 1);
+    return clamp(Math.round(norm * 100), 0, 100);
+}
+
+function computeClassEvidence(ctx) {
+    var peakNorm = clamp((ctx.peakOverThreshold + 1.5) / 12, 0, 1);
+    var meanNorm = clamp((ctx.meanOverThreshold + 2.0) / 9, 0, 1);
+    var energyNorm = clamp(peakNorm * 0.60 + meanNorm * 0.40, 0, 1);
+    var spectral = clamp(ctx.spectralConfidence, 0, 1);
+    var laughter = clamp(ctx.laughterConfidence, 0, 1);
+    var laughterPeak = clamp(ctx.laughterPeakConfidence, 0, 1);
+    var speaker = clamp(ctx.speakerLockScore, 0, 1);
+    var overlapPenalty = clamp(ctx.overlapPenalty, 0, 1);
+    var overlapRatio = clamp(ctx.overlapRatio, 0, 1);
+    var strongerRatio = clamp(ctx.strongerRatio, 0, 1);
+    var postPenalty = clamp(ctx.postprocessPenalty, 0, 1);
+
+    var speechScore = clamp(
+        spectral * 0.38 +
+        speaker * 0.20 +
+        energyNorm * 0.26 +
+        (1 - overlapPenalty) * 0.08 +
+        (1 - laughter) * 0.08,
+        0,
+        1
+    );
+    var laughterScore = clamp(
+        laughter * 0.48 +
+        laughterPeak * 0.20 +
+        energyNorm * 0.14 +
+        (1 - speaker) * 0.08 +
+        (1 - overlapPenalty) * 0.10,
+        0,
+        1
+    );
+    var bleedScore = clamp(
+        overlapPenalty * 0.40 +
+        strongerRatio * 0.28 +
+        overlapRatio * 0.18 +
+        (1 - speaker) * 0.07 +
+        (1 - spectral) * 0.07,
+        0,
+        1
+    );
+    var noiseScore = clamp(
+        (1 - spectral) * 0.28 +
+        postPenalty * 0.26 +
+        clamp((0 - ctx.meanOverThreshold) / 8, 0, 1) * 0.20 +
+        clamp((0 - ctx.peakOverThreshold) / 8, 0, 1) * 0.12 +
+        (1 - energyNorm) * 0.14,
+        0,
+        1
+    );
+
+    if (ctx.state === 'suppressed') {
+        bleedScore = clamp(bleedScore + 0.14, 0, 1);
+    }
+
+    var ranked = rankClassEvidence({
+        speech: speechScore,
+        laughter: laughterScore,
+        bleed: bleedScore,
+        noise: noiseScore
+    });
+
+    return {
+        speech: speechScore,
+        laughter: laughterScore,
+        bleed: bleedScore,
+        noise: noiseScore,
+        dominant: ranked.firstLabel,
+        secondary: ranked.secondLabel,
+        margin: ranked.margin
+    };
+}
+
 function classifyType(state, score, metrics, params) {
     var minSpectral = isFiniteNumber(params.spectralMinConfidence) ? params.spectralMinConfidence : 0.18;
-    var peak = metrics.values.peakOverThreshold;
-    var mean = metrics.values.meanOverThreshold;
-    var spectral = metrics.values.spectralConfidence;
-    var overlapPenalty = metrics.values.overlapPenalty;
-    var postPenalty = metrics.values.postprocessPenalty;
-    var speaker = metrics.values.speakerLockScore;
+    var values = metrics.values || {};
+    var spectral = clamp(parseNum(values.spectralConfidence, 0), 0, 1);
+    var overlapPenalty = clamp(parseNum(values.overlapPenalty, 0), 0, 1);
+    var postPenalty = clamp(parseNum(values.postprocessPenalty, 0), 0, 1);
+    var speechEvidence = clamp(parseNum(values.speechEvidence, 0), 0, 1);
+    var laughterEvidence = clamp(parseNum(values.laughterEvidence, 0), 0, 1);
+    var bleedEvidence = clamp(parseNum(values.bleedEvidence, 0), 0, 1);
+    var noiseEvidence = clamp(parseNum(values.noiseEvidence, 0), 0, 1);
+
+    var evidence = metrics.classEvidence;
+    if (!evidence) {
+        var ranked = rankClassEvidence({
+            speech: speechEvidence,
+            laughter: laughterEvidence,
+            bleed: bleedEvidence,
+            noise: noiseEvidence
+        });
+        evidence = {
+            speech: speechEvidence,
+            laughter: laughterEvidence,
+            bleed: bleedEvidence,
+            noise: noiseEvidence,
+            dominant: ranked.firstLabel,
+            secondary: ranked.secondLabel,
+            margin: ranked.margin
+        };
+    }
 
     var label = 'unknown';
     var confidence = 35;
-
     if (state === 'suppressed') {
-        if (overlapPenalty >= 0.55) {
+        if (evidence.bleed >= 0.48 || evidence.dominant === 'bleed') {
             label = 'suppressed_bleed';
-            confidence = 60 + Math.round(overlapPenalty * 35);
+            confidence = evidenceConfidence(evidence.bleed, evidence.margin, 0.08);
+        } else if (evidence.laughter >= 0.54 && evidence.laughter > evidence.speech + 0.08) {
+            label = 'laughter_candidate';
+            confidence = evidenceConfidence(evidence.laughter, evidence.margin, 0.02);
         } else {
             label = 'overlap_candidate';
-            confidence = 45 + Math.round(overlapPenalty * 45);
+            confidence = evidenceConfidence(Math.max(evidence.bleed, overlapPenalty), evidence.margin, -0.05);
         }
         return {
             label: label,
@@ -403,35 +682,40 @@ function classifyType(state, score, metrics, params) {
         };
     }
 
-    if (state === 'near_miss') {
-        if (score >= 45 || spectral >= (minSpectral - 0.05)) {
-            label = 'borderline_speech';
-            confidence = 48 + Math.round((score / 100) * 28);
-        } else {
-            label = 'weak_voice';
-            confidence = 40 + Math.round((1 - postPenalty) * 18);
-        }
-        return {
-            label: label,
-            confidence: clamp(Math.round(confidence), 0, 100)
-        };
-    }
+    var mixedSpeechLaughter = evidence.speech >= 0.42 &&
+        evidence.laughter >= 0.42 &&
+        Math.abs(evidence.speech - evidence.laughter) <= 0.14;
 
-    if (overlapPenalty >= 0.5) {
+    if (mixedSpeechLaughter) {
+        label = 'mixed_speech_laughter';
+        confidence = evidenceConfidence(
+            Math.min(evidence.speech, evidence.laughter),
+            1 - Math.abs(evidence.speech - evidence.laughter),
+            0.05
+        );
+    } else if (evidence.bleed >= 0.56 && (evidence.bleed >= evidence.speech + 0.10)) {
+        label = 'bleed_candidate';
+        confidence = evidenceConfidence(evidence.bleed, evidence.margin, 0.04);
+    } else if (evidence.dominant === 'laughter' && evidence.laughter >= 0.46) {
+        label = 'laughter_candidate';
+        confidence = evidenceConfidence(evidence.laughter, evidence.margin, 0.02);
+    } else if (overlapPenalty >= 0.5 || (evidence.dominant === 'bleed' && evidence.bleed >= 0.46)) {
         label = 'overlap_candidate';
-        confidence = 50 + Math.round(overlapPenalty * 30);
-    } else if (score >= 70 && spectral >= Math.max(minSpectral, 0.30) && (peak > 0 || mean > -0.5)) {
+        confidence = evidenceConfidence(Math.max(evidence.bleed, overlapPenalty), evidence.margin, -0.02);
+    } else if (score >= 70 && spectral >= Math.max(minSpectral, 0.30) && evidence.speech >= 0.58) {
         label = 'primary_speech';
-        confidence = Math.round((clamp(peak / 12, 0, 1) * 0.35 +
-            clamp(mean / 8, 0, 1) * 0.20 +
-            clamp(spectral, 0, 1) * 0.30 +
-            clamp(speaker, 0, 1) * 0.15) * 100);
-    } else if (score >= 45) {
+        confidence = evidenceConfidence(evidence.speech, evidence.margin, 0.08);
+    } else if (evidence.speech >= 0.40 || score >= 45 || spectral >= (minSpectral - 0.04)) {
         label = 'borderline_speech';
-        confidence = 50 + Math.round((score / 100) * 24);
+        confidence = evidenceConfidence(Math.max(evidence.speech, score / 100), evidence.margin, 0.01);
     } else {
         label = 'weak_voice';
-        confidence = 35 + Math.round((1 - postPenalty) * 20);
+        confidence = evidenceConfidence(Math.max(noiseEvidence, 1 - postPenalty), evidence.margin, -0.08);
+    }
+
+    if (state === 'near_miss' && label === 'primary_speech') {
+        label = 'borderline_speech';
+        confidence = clamp(confidence - 8, 0, 100);
     }
 
     return {
@@ -447,6 +731,9 @@ function buildReasons(state, metrics, scoreInfo, typeInfo) {
     if (state === 'kept') out.push('Kept in final decision');
     if (state === 'near_miss') out.push('Pruned in postprocess pass');
     if (state === 'suppressed') out.push('Suppressed in overlap resolution');
+    if (vals.mergedSegmentCount > 1) {
+        out.push('Merged ' + vals.mergedSegmentCount + ' nearby snippets (max gap ' + round(parseNum(vals.maxMergedGapMs, 0), 0) + ' ms)');
+    }
 
     if (vals.peakOverThreshold >= 4) out.push('Peak is clearly above gate threshold');
     else if (vals.peakOverThreshold >= 0) out.push('Peak is just above threshold');
@@ -458,12 +745,27 @@ function buildReasons(state, metrics, scoreInfo, typeInfo) {
 
     if (vals.overlapPenalty >= 0.55) out.push('Strong overlap/bleed pressure');
     else if (vals.overlapPenalty >= 0.25) out.push('Some overlap competition');
+    if (vals.bleedConfidence >= 0.60) out.push('High bleed confidence');
+    else if (vals.bleedConfidence >= 0.42) out.push('Moderate bleed confidence');
 
     if (vals.speakerLockScore >= 0.62) out.push('Speaker-lock similarity is strong');
     else if (vals.speakerLockScore < 0.35) out.push('Weak speaker-lock similarity');
+    if (vals.laughterConfidence >= 0.55) out.push('Strong laughter confidence');
+    else if (vals.laughterConfidence >= 0.35) out.push('Moderate laughter confidence');
+
+    if (vals.laughterEvidence >= vals.speechEvidence + 0.08) {
+        out.push('Laughter evidence outweighs speech evidence');
+    } else if (vals.speechEvidence >= vals.laughterEvidence + 0.08) {
+        out.push('Speech evidence outweighs laughter evidence');
+    } else {
+        out.push('Speech and laughter evidence are close');
+    }
 
     if (scoreInfo.label === 'borderline') out.push('Ranked as borderline confidence');
     if (typeInfo.label === 'suppressed_bleed') out.push('Pattern matches likely bleed');
+    if (typeInfo.label === 'bleed_candidate') out.push('Likely bleed-dominant segment');
+    if (typeInfo.label === 'laughter_candidate') out.push('Segment pattern matches likely laughter');
+    if (typeInfo.label === 'mixed_speech_laughter') out.push('Mixed speech and laughter profile detected');
 
     var deduped = [];
     var seen = {};

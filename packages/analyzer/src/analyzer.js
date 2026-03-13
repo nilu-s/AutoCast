@@ -915,6 +915,7 @@ function analyze(trackPaths, userParams, progressCallback) {
         frameDurationMs: params.frameDurationMs,
         rmsProfiles: rmsProfiles,
         spectralResults: spectralResults,
+        laughterResults: laughterResults,
         gateSnapshots: gateSnapshots,
         params: params
     });
@@ -1010,6 +1011,7 @@ function enforceSingleModeParams(params) {
     params.minGapMs = clampNumber(parseOrFallback(params.minGapMs, 0), 0, 10000);
     params.primaryTrackGapFillMaxMs = clampNumber(parseOrFallback(params.primaryTrackGapFillMaxMs, 0), 0, 10000);
     params.sameTrackGapMergeMaxMs = clampNumber(parseOrFallback(params.sameTrackGapMergeMaxMs, 0), 0, 15000);
+    params.previewSegmentMergeGapMs = clampNumber(parseOrFallback(params.previewSegmentMergeGapMs, 1000), 0, 20000);
     params.preTriggerJoinGapMs = clampNumber(parseOrFallback(params.preTriggerJoinGapMs, 0), 0, 15000);
     params.preTriggerAbsorbGapMs = clampNumber(parseOrFallback(params.preTriggerAbsorbGapMs, 0), 0, 5000);
     params.dominantTrackHoldMs = clampNumber(parseOrFallback(params.dominantTrackHoldMs, 0), 0, 15000);

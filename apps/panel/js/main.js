@@ -186,10 +186,14 @@
         currentPlayingTrack: -1,
         currentPlayingPreviewId: null,
         analysisRunId: 0,
-        cutPreviewFilterState: 'all',
-        cutPreviewTrackFilter: 'all',
-        cutPreviewSort: 'time',
-        cutPreviewZoom: 90
+        activeSnippetId: null,
+        previewMasterGain: 1,
+        previewTrackGain: {},
+        previewAudioContext: null,
+        cutPreviewZoom: 0,
+        cutPreviewPixelsPerSec: 0,
+        cutPreviewViewStartSec: 0,
+        navigatorDrag: null
     };
 
     var TRACK_COLORS = [
@@ -214,16 +218,17 @@
         progressContainer: $('progressContainer'),
         progressFill: $('progressFill'),
         progressText: $('progressText'),
-        analysisSummary: $('analysisSummary'),
-        summaryPrimary: $('summaryPrimary'),
-        summaryDetail: $('summaryDetail'),
         cutPreviewSection: $('cutPreviewSection'),
         cutPreviewMeta: $('cutPreviewMeta'),
+        cutPreviewAnalysisMini: $('cutPreviewAnalysisMini'),
         cutPreviewTimeline: $('cutPreviewTimeline'),
-        cutPreviewList: $('cutPreviewList'),
-        cutPreviewTrackFilter: $('cutPreviewTrackFilter'),
-        cutPreviewSort: $('cutPreviewSort'),
+        cutPreviewNavigator: $('cutPreviewNavigator'),
+        cutPreviewInspector: $('cutPreviewInspector'),
         cutPreviewZoom: $('cutPreviewZoom'),
+        cutPreviewFitBtn: $('cutPreviewFitBtn'),
+        cutPreviewZoomLabel: $('cutPreviewZoomLabel'),
+        cutPreviewVolumeMaster: $('cutPreviewVolumeMaster'),
+        cutPreviewVolumeMasterLabel: $('cutPreviewVolumeMasterLabel'),
         waveformSection: null,
         waveformContainer: null,
         btnLoadTracks: $('btnLoadTracks'),
@@ -366,59 +371,19 @@
     }
 
     function hideSummary() {
-        if (els.analysisSummary) {
-            els.analysisSummary.style.display = 'none';
-        }
-        if (els.summaryPrimary) els.summaryPrimary.textContent = '';
-        if (els.summaryDetail) els.summaryDetail.textContent = '';
+        // Summary panel removed in timeline-first UX.
     }
 
     function hideCutPreview() {
         if (els.cutPreviewSection) {
             els.cutPreviewSection.style.display = 'none';
         }
+        state.navigatorDrag = null;
         if (els.cutPreviewMeta) els.cutPreviewMeta.textContent = '';
+        if (els.cutPreviewAnalysisMini) els.cutPreviewAnalysisMini.innerHTML = '';
         if (els.cutPreviewTimeline) els.cutPreviewTimeline.innerHTML = '';
-        if (els.cutPreviewList) els.cutPreviewList.innerHTML = '';
-    }
-
-    function formatPercent(value) {
-        return Math.round(value * 10) / 10;
-    }
-
-    function computeSegmentStats(result) {
-        var tracks = (result && result.segments) ? result.segments : [];
-        var totalSegments = 0;
-        var totalDurationSec = 0;
-        var activePercentSum = 0;
-        var activeTrackCount = 0;
-
-        for (var t = 0; t < tracks.length; t++) {
-            var segs = tracks[t] || [];
-            for (var s = 0; s < segs.length; s++) {
-                var seg = segs[s];
-                if (!seg || seg.state === 'suppressed') continue;
-                totalSegments++;
-                totalDurationSec += Math.max(0, (seg.end || 0) - (seg.start || 0));
-            }
-            if (result.tracks && result.tracks[t] && typeof result.tracks[t].activePercent === 'number') {
-                activePercentSum += result.tracks[t].activePercent;
-                activeTrackCount++;
-            }
-        }
-
-        return {
-            totalSegments: totalSegments,
-            avgSegmentSec: totalSegments > 0 ? (totalDurationSec / totalSegments) : 0,
-            avgActivePercent: activeTrackCount > 0 ? (activePercentSum / activeTrackCount) : 0
-        };
-    }
-
-    function renderSummary(primaryText, detailText) {
-        if (!els.analysisSummary) return;
-        els.analysisSummary.style.display = 'block';
-        if (els.summaryPrimary) els.summaryPrimary.textContent = primaryText || '';
-        if (els.summaryDetail) els.summaryDetail.textContent = detailText || '';
+        if (els.cutPreviewNavigator) els.cutPreviewNavigator.innerHTML = '';
+        if (els.cutPreviewInspector) els.cutPreviewInspector.innerHTML = '';
     }
 
     function runMockCutting(done) {
@@ -495,7 +460,7 @@
 
     function updateModeIndicator() {
         if (!els.modeIndicator) return;
-        els.modeIndicator.textContent = 'Mode: Smooth Blocks';
+        els.modeIndicator.textContent = 'Mode: Cut Preview';
     }
 
     function analyzeTracks() {
@@ -514,10 +479,13 @@
             
             // Only include track if checked by user
             if (track.selected !== false) {
-                if (p && !p.startsWith('[')) {
+                if (p && p.charAt(0) !== '[') {
                     trackPaths.push(p);
-                } else if (p && !firstError) {
-                    firstError = p;
+                } else {
+                    trackPaths.push(null);
+                    if (p && !firstError) {
+                        firstError = p;
+                    }
                 }
             } else {
                 // If it is deselected, we push null to maintain the array index alignment
@@ -567,21 +535,20 @@
                         if (runId !== state.analysisRunId) return;
                         state.analysisResult = result;
                         state.cutPreview = buildCutPreviewState(result);
+                        state.activeSnippetId = null;
+                        state.cutPreviewPixelsPerSec = 0;
+                        state.cutPreviewViewStartSec = 0;
+                        state.cutPreviewZoom = 0;
                         stopCurrentPreviewAudio();
                         state.isAnalyzing = false;
                         hideProgress();
                         setButtonsDisabled(false);
                         setStatus('success', 'Analysis complete');
-                        var smoothLabel = 'Smooth Blocks';
-                        var smoothStats = computeSegmentStats(result);
-                        renderSummary(
-                            'Mode ' + smoothLabel + ': ' + smoothStats.totalSegments + ' active segments',
-                            'Avg segment ' + formatPercent(smoothStats.avgSegmentSec) + ' s, avg active ' + formatPercent(smoothStats.avgActivePercent) + '%'
-                        );
                         renderCutPreview();
                     }).catch(function (err) {
                         if (runId !== state.analysisRunId) return;
                         state.cutPreview = null;
+                        state.activeSnippetId = null;
                         stopCurrentPreviewAudio();
                         state.isAnalyzing = false;
                         hideProgress();
@@ -594,6 +561,7 @@
                 } catch (e) {
                     if (runId !== state.analysisRunId) return;
                     state.cutPreview = null;
+                    state.activeSnippetId = null;
                     stopCurrentPreviewAudio();
                     state.isAnalyzing = false;
                     hideProgress();
@@ -614,20 +582,20 @@
                         if (runId !== state.analysisRunId) return;
                         state.analysisResult = result;
                         state.cutPreview = buildCutPreviewState(result);
+                        state.activeSnippetId = null;
+                        state.cutPreviewPixelsPerSec = 0;
+                        state.cutPreviewViewStartSec = 0;
+                        state.cutPreviewZoom = 0;
                         stopCurrentPreviewAudio();
                         state.isAnalyzing = false;
                         hideProgress();
                         setButtonsDisabled(false);
                         setStatus('success', 'Analysis complete');
-                        var fallbackStats = computeSegmentStats(result);
-                        renderSummary(
-                            'Analysis complete: ' + fallbackStats.totalSegments + ' active segments',
-                            'Avg segment ' + formatPercent(fallbackStats.avgSegmentSec) + ' s, avg active ' + formatPercent(fallbackStats.avgActivePercent) + '%'
-                        );
                         renderCutPreview();
                     }, function (err) {
                         if (runId !== state.analysisRunId) return;
                         state.cutPreview = null;
+                        state.activeSnippetId = null;
                         stopCurrentPreviewAudio();
                         state.isAnalyzing = false;
                         hideProgress();
@@ -640,6 +608,7 @@
                 } catch (e2) {
                     if (runId !== state.analysisRunId) return;
                     state.cutPreview = null;
+                    state.activeSnippetId = null;
                     stopCurrentPreviewAudio();
                     state.isAnalyzing = false;
                     hideProgress();
@@ -666,6 +635,10 @@
         setButtonsDisabled(true);
         hideSummary();
         hideCutPreview();
+        state.activeSnippetId = null;
+        state.cutPreviewPixelsPerSec = 0;
+        state.cutPreviewViewStartSec = 0;
+        state.cutPreviewZoom = 0;
         stopCurrentPreviewAudio();
         setProgress(0, 'Measuring loudness...');
 
@@ -780,10 +753,11 @@
     function resetUI() {
         state.analysisResult = null;
         state.cutPreview = null;
-        state.cutPreviewFilterState = 'all';
-        state.cutPreviewTrackFilter = 'all';
-        state.cutPreviewSort = 'time';
-        state.cutPreviewZoom = 90;
+        state.activeSnippetId = null;
+        state.cutPreviewZoom = 0;
+        state.cutPreviewPixelsPerSec = 0;
+        state.cutPreviewViewStartSec = 0;
+        state.navigatorDrag = null;
         stopCurrentPreviewAudio();
         hideProgress();
         hideSummary();
@@ -827,7 +801,13 @@
             state.tracks = loadedTracks;
             renderTracks();
             if (state.analysisResult) {
+                var previousActiveId = state.activeSnippetId;
                 state.cutPreview = buildCutPreviewState(state.analysisResult);
+                if (!getCutPreviewItemById(previousActiveId)) {
+                    state.activeSnippetId = null;
+                } else {
+                    state.activeSnippetId = previousActiveId;
+                }
                 renderCutPreview();
             }
             setStatus('success', state.tracks.length + ' track(s) loaded');
@@ -885,6 +865,19 @@
         return round(sec, 2) + 's';
     }
 
+    function formatSummaryDuration(sec) {
+        var total = Math.max(0, parseNum(sec, 0));
+        if (total < 60) return round(total, 1) + 's';
+        var whole = Math.round(total);
+        var h = Math.floor(whole / 3600);
+        var m = Math.floor((whole % 3600) / 60);
+        var s = whole % 60;
+        if (h > 0) {
+            return h + 'h ' + (m < 10 ? '0' + m : m) + 'm';
+        }
+        return m + 'm ' + (s < 10 ? '0' + s : s) + 's';
+    }
+
     function getTrackByIndex(trackIndex) {
         for (var i = 0; i < state.tracks.length; i++) {
             if (state.tracks[i] && state.tracks[i].index === trackIndex) return state.tracks[i];
@@ -896,6 +889,22 @@
         var track = getTrackByIndex(trackIndex);
         if (track && track.name) return track.name;
         return 'Track ' + (trackIndex + 1);
+    }
+
+    function getTrackPreviewGain(trackIndex) {
+        var key = String(trackIndex);
+        var raw = state.previewTrackGain && state.previewTrackGain[key];
+        if (raw === undefined || raw === null || !isFinite(raw)) return 1;
+        return clamp(parseNum(raw, 1), 0, 3);
+    }
+
+    function setTrackPreviewGain(trackIndex, gainValue) {
+        if (!state.previewTrackGain) state.previewTrackGain = {};
+        state.previewTrackGain[String(trackIndex)] = clamp(parseNum(gainValue, 1), 0, 3);
+    }
+
+    function getEffectivePreviewGain(trackIndex) {
+        return clamp(getTrackPreviewGain(trackIndex) * clamp(parseNum(state.previewMasterGain, 1), 0, 3), 0, 3);
     }
 
     function normalizeCutPreviewItem(raw, fallbackTrackIndex, counter) {
@@ -938,9 +947,18 @@
                 meanOverThreshold: 0,
                 peakOverThreshold: 0,
                 spectralConfidence: 0,
+                laughterConfidence: 0,
                 overlapPenalty: 0,
                 speakerLockScore: 0,
-                postprocessPenalty: 0
+                postprocessPenalty: 0,
+                speechEvidence: 0,
+                laughterEvidence: 0,
+                bleedEvidence: 0,
+                bleedConfidence: 0,
+                noiseEvidence: 0,
+                classMargin: 0,
+                mergedSegmentCount: 1,
+                maxMergedGapMs: 0
             }
         };
 
@@ -1085,16 +1103,6 @@
         return maxIdx;
     }
 
-    function isTrackFilterValid(lanes, value) {
-        if (!value || value === 'all') return true;
-        var trackIndex = parseInt(value, 10);
-        if (!isFinite(trackIndex)) return false;
-        for (var i = 0; i < lanes.length; i++) {
-            if (lanes[i].trackIndex === trackIndex) return true;
-        }
-        return false;
-    }
-
     function buildCutPreviewState(result) {
         var base = (result && result.cutPreview && result.cutPreview.items) ? result.cutPreview : null;
         if (!base) {
@@ -1161,10 +1169,6 @@
             }
         }
 
-        if (!isTrackFilterValid(lanes, state.cutPreviewTrackFilter)) {
-            state.cutPreviewTrackFilter = 'all';
-        }
-
         return {
             items: normalizedItems,
             lanes: lanes,
@@ -1174,30 +1178,168 @@
 
     function getVisibleCutPreviewItems() {
         if (!state.cutPreview || !state.cutPreview.items) return [];
-        var out = [];
-
-        for (var i = 0; i < state.cutPreview.items.length; i++) {
-            var item = state.cutPreview.items[i];
-            if (state.cutPreviewFilterState !== 'all' && item.state !== state.cutPreviewFilterState) continue;
-            if (state.cutPreviewTrackFilter !== 'all') {
-                var filterTrack = parseInt(state.cutPreviewTrackFilter, 10);
-                if (isFinite(filterTrack) && item.trackIndex !== filterTrack) continue;
-            }
-            out.push(item);
-        }
-
+        var out = state.cutPreview.items.slice();
         out.sort(function (a, b) {
-            if (state.cutPreviewSort === 'score') {
-                if (a.score !== b.score) return b.score - a.score;
-                if (a.start !== b.start) return a.start - b.start;
-                return a.trackIndex - b.trackIndex;
-            }
             if (a.start !== b.start) return a.start - b.start;
             if (a.trackIndex !== b.trackIndex) return a.trackIndex - b.trackIndex;
             return a.end - b.end;
         });
-
         return out;
+    }
+
+    function getTotalCutPreviewDurationSec() {
+        if (!state.cutPreview || !state.cutPreview.items || state.cutPreview.items.length === 0) return 0;
+        var maxEnd = 0;
+        for (var i = 0; i < state.cutPreview.items.length; i++) {
+            if (state.cutPreview.items[i].end > maxEnd) maxEnd = state.cutPreview.items[i].end;
+        }
+        var totalFromResult = parseNum(state.analysisResult && state.analysisResult.totalDurationSec, maxEnd);
+        return Math.max(maxEnd, totalFromResult, 0.2);
+    }
+
+    function getTimelineTrackWidth() {
+        var full = parseNum(els.cutPreviewTimeline && els.cutPreviewTimeline.clientWidth, 0);
+        var width = full - 170;
+        if (width < 260) width = 780;
+        return width;
+    }
+
+    function getZoomModel() {
+        var totalDurationSec = getTotalCutPreviewDurationSec();
+        var trackWidth = getTimelineTrackWidth();
+        var fitPixelsPerSec = trackWidth / Math.max(totalDurationSec, 0.2);
+        if (!isFinite(fitPixelsPerSec) || fitPixelsPerSec <= 0) fitPixelsPerSec = 10;
+        var maxPixelsPerSec = Math.max(fitPixelsPerSec * 260, fitPixelsPerSec + 120, 260);
+        return {
+            totalDurationSec: totalDurationSec,
+            trackWidth: trackWidth,
+            fitPixelsPerSec: fitPixelsPerSec,
+            maxPixelsPerSec: maxPixelsPerSec
+        };
+    }
+
+    function sliderToPixelsPerSec(sliderValue, zoomModel) {
+        var model = zoomModel || getZoomModel();
+        var norm = clamp(parseNum(sliderValue, 0) / 1000, 0, 1);
+        if (model.maxPixelsPerSec <= model.fitPixelsPerSec + 0.0001) return model.fitPixelsPerSec;
+        return model.fitPixelsPerSec * Math.pow(model.maxPixelsPerSec / model.fitPixelsPerSec, norm);
+    }
+
+    function pixelsPerSecToSlider(pixelsPerSec, zoomModel) {
+        var model = zoomModel || getZoomModel();
+        if (model.maxPixelsPerSec <= model.fitPixelsPerSec + 0.0001) return 0;
+        var ratio = clamp(parseNum(pixelsPerSec, model.fitPixelsPerSec) / model.fitPixelsPerSec, 1, model.maxPixelsPerSec / model.fitPixelsPerSec);
+        var norm = Math.log(ratio) / Math.log(model.maxPixelsPerSec / model.fitPixelsPerSec);
+        return clamp(Math.round(norm * 1000), 0, 1000);
+    }
+
+    function ensureCutPreviewViewport(forceFit) {
+        if (!state.cutPreview || !state.cutPreview.items || !state.cutPreview.items.length) return null;
+        var model = getZoomModel();
+
+        if (forceFit || !isFinite(state.cutPreviewPixelsPerSec) || state.cutPreviewPixelsPerSec <= 0) {
+            state.cutPreviewPixelsPerSec = model.fitPixelsPerSec;
+            state.cutPreviewZoom = 0;
+            state.cutPreviewViewStartSec = 0;
+        } else {
+            state.cutPreviewPixelsPerSec = clamp(state.cutPreviewPixelsPerSec, model.fitPixelsPerSec, model.maxPixelsPerSec);
+            state.cutPreviewZoom = pixelsPerSecToSlider(state.cutPreviewPixelsPerSec, model);
+        }
+
+        var visibleDuration = model.trackWidth / state.cutPreviewPixelsPerSec;
+        var maxStart = Math.max(0, model.totalDurationSec - visibleDuration);
+        state.cutPreviewViewStartSec = clamp(parseNum(state.cutPreviewViewStartSec, 0), 0, maxStart);
+
+        return {
+            totalDurationSec: model.totalDurationSec,
+            trackWidth: model.trackWidth,
+            fitPixelsPerSec: model.fitPixelsPerSec,
+            maxPixelsPerSec: model.maxPixelsPerSec,
+            pixelsPerSec: state.cutPreviewPixelsPerSec,
+            visibleDurationSec: visibleDuration,
+            viewStartSec: state.cutPreviewViewStartSec,
+            viewEndSec: state.cutPreviewViewStartSec + visibleDuration
+        };
+    }
+
+    function getTimelineTickStep(visibleDurationSec) {
+        if (visibleDurationSec <= 6) return 0.5;
+        if (visibleDurationSec <= 14) return 1;
+        if (visibleDurationSec <= 28) return 2;
+        if (visibleDurationSec <= 70) return 5;
+        if (visibleDurationSec <= 160) return 10;
+        if (visibleDurationSec <= 520) return 30;
+        if (visibleDurationSec <= 1800) return 60;
+        return 120;
+    }
+
+    function setActiveSnippet(itemId, ensureVisible) {
+        var item = getCutPreviewItemById(itemId);
+        if (!item) return;
+        state.activeSnippetId = item.id;
+        if (ensureVisible) {
+            var viewport = ensureCutPreviewViewport(false);
+            if (!viewport) return;
+            var margin = Math.min(1.2, viewport.visibleDurationSec * 0.08);
+            var start = viewport.viewStartSec;
+            var end = viewport.viewEndSec;
+            if (item.start < (start + margin)) {
+                state.cutPreviewViewStartSec = Math.max(0, item.start - margin);
+            } else if (item.end > (end - margin)) {
+                state.cutPreviewViewStartSec = item.end + margin - viewport.visibleDurationSec;
+                var maxStart = Math.max(0, viewport.totalDurationSec - viewport.visibleDurationSec);
+                state.cutPreviewViewStartSec = clamp(state.cutPreviewViewStartSec, 0, maxStart);
+            }
+        }
+    }
+
+    function shortStateLabel(stateLabel) {
+        if (stateLabel === 'kept') return 'keep';
+        if (stateLabel === 'near_miss') return 'near';
+        if (stateLabel === 'suppressed') return 'supp';
+        return stateLabel || '';
+    }
+
+    function shortTypeLabel(typeLabel) {
+        if (!typeLabel) return '';
+        if (typeLabel === 'primary_speech') return 'primary';
+        if (typeLabel === 'borderline_speech') return 'borderline';
+        if (typeLabel === 'mixed_speech_laughter') return 'mix';
+        if (typeLabel === 'laughter_candidate') return 'laugh';
+        if (typeLabel === 'bleed_candidate') return 'bleed*';
+        if (typeLabel === 'overlap_candidate') return 'overlap';
+        if (typeLabel === 'suppressed_bleed') return 'bleed';
+        if (typeLabel === 'weak_voice') return 'weak';
+        return typeLabel;
+    }
+
+    function compactReasonText(item, maxChars) {
+        if (!item || !item.reasons || !item.reasons.length) return '';
+        var text = String(item.reasons[0] || '').replace(/\s+/g, ' ').trim();
+        if (!text) return '';
+        var len = parseInt(maxChars, 10);
+        if (!isFinite(len) || len < 8) len = 28;
+        if (text.length <= len) return text;
+        return text.substring(0, len - 3) + '...';
+    }
+
+    function buildSnippetInlineLabel(item, widthPx) {
+        var stateText = shortStateLabel(item.state);
+        var typeText = shortTypeLabel(item.typeLabel);
+        var reason = compactReasonText(item, widthPx >= 260 ? 34 : 20);
+        if (widthPx >= 260) {
+            return stateText + ' | ' + typeText + ' | ' + item.score + ' ' + item.scoreLabel + (reason ? ' | ' + reason : '');
+        }
+        if (widthPx >= 190) {
+            return stateText + ' | ' + typeText + ' | ' + item.score;
+        }
+        if (widthPx >= 120) {
+            return stateText + ' | ' + item.score;
+        }
+        if (widthPx >= 74) {
+            return stateText;
+        }
+        return '';
     }
 
     function renderCutPreview() {
@@ -1211,135 +1353,179 @@
         }
         state.cutPreview.summary = computeCutPreviewSummary(state.cutPreview.items);
 
+        var items = getVisibleCutPreviewItems();
+        if (!items.length) {
+            hideCutPreview();
+            return;
+        }
+        if (!state.activeSnippetId || !getCutPreviewItemById(state.activeSnippetId)) {
+            state.activeSnippetId = items[0].id;
+        }
+
+        ensureCutPreviewViewport(false);
         renderCutPreviewControls();
         renderCutPreviewTimeline();
-        renderCutPreviewList();
+        renderCutPreviewNavigator();
+        renderCutPreviewInspector();
     }
 
     function renderCutPreviewControls() {
         if (!state.cutPreview || !state.cutPreview.summary) return;
+        var viewport = ensureCutPreviewViewport(false);
+        if (!viewport) return;
 
         if (els.cutPreviewMeta) {
             var sum = state.cutPreview.summary;
             els.cutPreviewMeta.textContent =
-                sum.totalItems + ' snippets | kept ' + sum.keptCount +
+                sum.totalItems + ' snippets | selected ' + sum.selectedCount +
+                ' | kept ' + sum.keptCount +
                 ' | near miss ' + sum.nearMissCount +
                 ' | suppressed ' + sum.suppressedCount +
-                ' | selected ' + sum.selectedCount +
                 ' | avg score ' + sum.avgScore;
         }
-
-        var filterBtns = document.querySelectorAll('.cut-preview-filter-btn');
-        for (var i = 0; i < filterBtns.length; i++) {
-            var btn = filterBtns[i];
-            var stateVal = btn.getAttribute('data-filter-state');
-            if (stateVal === state.cutPreviewFilterState) btn.classList.add('is-active');
-            else btn.classList.remove('is-active');
-        }
-
-        if (els.cutPreviewTrackFilter) {
-            var html = '<option value="all">All Tracks</option>';
-            for (i = 0; i < state.cutPreview.lanes.length; i++) {
-                var lane = state.cutPreview.lanes[i];
-                html += '<option value="' + lane.trackIndex + '"' +
-                    (String(lane.trackIndex) === String(state.cutPreviewTrackFilter) ? ' selected' : '') + '>' +
-                    escapeHtml('Track ' + (lane.trackIndex + 1) + ' - ' + lane.trackName) +
-                    '</option>';
+        if (els.cutPreviewAnalysisMini) {
+            var tracksInfo = (state.analysisResult && state.analysisResult.tracks) ? state.analysisResult.tracks : [];
+            var totalTracks = Math.max(tracksInfo.length, state.tracks.length, state.cutPreview.lanes.length);
+            var selectedTracks = 0;
+            for (var ti = 0; ti < state.tracks.length; ti++) {
+                if (state.tracks[ti] && state.tracks[ti].selected !== false) selectedTracks++;
             }
-            els.cutPreviewTrackFilter.innerHTML = html;
-        }
+            if (selectedTracks === 0 && totalTracks > 0) selectedTracks = totalTracks;
 
-        if (els.cutPreviewSort) {
-            els.cutPreviewSort.value = state.cutPreviewSort;
+            var totalSegments = 0;
+            var activePercentSum = 0;
+            var activePercentCount = 0;
+            for (ti = 0; ti < tracksInfo.length; ti++) {
+                totalSegments += Math.max(0, parseNum(tracksInfo[ti] && tracksInfo[ti].segmentCount, 0));
+                if (tracksInfo[ti] && isFinite(parseNum(tracksInfo[ti].activePercent, NaN))) {
+                    activePercentSum += parseNum(tracksInfo[ti].activePercent, 0);
+                    activePercentCount++;
+                }
+            }
+            var avgActive = activePercentCount > 0 ? round(activePercentSum / activePercentCount, 1) : 0;
+            var timelineDuration = getTotalCutPreviewDurationSec();
+
+            els.cutPreviewAnalysisMini.innerHTML = ''
+                + '<span class="cp-summary-chip">Tracks ' + escapeHtml(String(selectedTracks + '/' + totalTracks)) + '</span>'
+                + '<span class="cp-summary-chip">Duration ' + escapeHtml(formatSummaryDuration(timelineDuration)) + '</span>'
+                + '<span class="cp-summary-chip">Final Segments ' + escapeHtml(String(totalSegments)) + '</span>'
+                + '<span class="cp-summary-chip">Avg Active ' + escapeHtml(String(avgActive)) + '%</span>';
         }
         if (els.cutPreviewZoom) {
             els.cutPreviewZoom.value = String(state.cutPreviewZoom);
         }
-    }
-
-    function getTimelineTickStep(durationSec) {
-        if (durationSec <= 20) return 2;
-        if (durationSec <= 60) return 5;
-        if (durationSec <= 180) return 10;
-        if (durationSec <= 600) return 30;
-        if (durationSec <= 1800) return 60;
-        return 120;
+        if (els.cutPreviewZoomLabel) {
+            var zoomPercent = Math.round((viewport.pixelsPerSec / viewport.fitPixelsPerSec) * 100);
+            els.cutPreviewZoomLabel.textContent = zoomPercent + '%';
+        }
+        if (els.cutPreviewVolumeMaster) {
+            els.cutPreviewVolumeMaster.value = String(Math.round(clamp(parseNum(state.previewMasterGain, 1), 0, 3) * 100));
+        }
+        if (els.cutPreviewVolumeMasterLabel) {
+            els.cutPreviewVolumeMasterLabel.textContent = Math.round(clamp(parseNum(state.previewMasterGain, 1), 0, 3) * 100) + '%';
+        }
     }
 
     function renderCutPreviewTimeline() {
         if (!els.cutPreviewTimeline || !state.cutPreview) return;
+        var viewport = ensureCutPreviewViewport(false);
+        if (!viewport) return;
 
         var visibleItems = getVisibleCutPreviewItems();
         if (!visibleItems.length) {
-            els.cutPreviewTimeline.innerHTML = '<div class="cp-empty">No snippets for current filter.</div>';
+            els.cutPreviewTimeline.innerHTML = '<div class="cp-empty">No snippets available.</div>';
             return;
         }
 
-        var lanes = [];
-        for (var i = 0; i < state.cutPreview.lanes.length; i++) {
-            var lane = state.cutPreview.lanes[i];
-            if (state.cutPreviewTrackFilter !== 'all' && String(lane.trackIndex) !== String(state.cutPreviewTrackFilter)) continue;
-            lanes.push(lane);
-        }
+        var lanes = state.cutPreview.lanes.slice().sort(function (a, b) {
+            return a.laneIndex - b.laneIndex;
+        });
 
         if (!lanes.length) {
-            els.cutPreviewTimeline.innerHTML = '<div class="cp-empty">No lanes available for current filter.</div>';
+            els.cutPreviewTimeline.innerHTML = '<div class="cp-empty">No lanes available.</div>';
             return;
         }
 
-        var maxEnd = 0;
-        for (i = 0; i < state.cutPreview.items.length; i++) {
-            if (state.cutPreview.items[i].end > maxEnd) maxEnd = state.cutPreview.items[i].end;
-        }
-        var totalDurationSec = Math.max(parseNum(state.analysisResult && state.analysisResult.totalDurationSec, maxEnd), maxEnd);
-        var pixelsPerSec = parseNum(state.cutPreviewZoom, 90);
-        var timelineWidth = Math.max(860, Math.round(totalDurationSec * pixelsPerSec) + 20);
-
         var byTrack = {};
-        for (i = 0; i < visibleItems.length; i++) {
+        for (var i = 0; i < visibleItems.length; i++) {
             var item = visibleItems[i];
             if (!byTrack[item.trackIndex]) byTrack[item.trackIndex] = [];
             byTrack[item.trackIndex].push(item);
         }
 
-        var tickStep = getTimelineTickStep(totalDurationSec);
+        var tickStep = getTimelineTickStep(viewport.visibleDurationSec);
+        var tickStart = Math.floor(viewport.viewStartSec / tickStep) * tickStep;
+        if (tickStart < 0) tickStart = 0;
         var axisTicks = '';
-        for (var ts = 0; ts <= totalDurationSec + 0.0001; ts += tickStep) {
-            var left = Math.round(ts * pixelsPerSec);
+        for (var ts = tickStart; ts <= viewport.viewEndSec + 0.0001; ts += tickStep) {
+            if (ts < viewport.viewStartSec - 0.0001) continue;
+            var left = Math.round((ts - viewport.viewStartSec) * viewport.pixelsPerSec);
+            if (left < 0 || left > viewport.trackWidth + 2) continue;
             axisTicks += ''
                 + '<div class="cp-axis-tick" style="left:' + left + 'px;">'
                 + '  <span class="cp-axis-tick-label">' + escapeHtml(formatClock(ts)) + '</span>'
                 + '</div>';
         }
 
-        var html = '<div class="cp-timeline-scroll">';
+        var html = '<div class="cp-timeline-viewport">';
         html += '<div class="cp-timeline-row cp-axis-row">';
         html += '<div class="cp-lane-label">Time</div>';
-        html += '<div class="cp-axis-track" style="width:' + timelineWidth + 'px;">' + axisTicks + '</div>';
+        html += '<div class="cp-axis-track" style="width:' + viewport.trackWidth + 'px;">' + axisTicks + '</div>';
         html += '</div>';
 
         for (var l = 0; l < lanes.length; l++) {
             var laneObj = lanes[l];
             var laneItems = byTrack[laneObj.trackIndex] || [];
+            var trackGainPercent = Math.round(getTrackPreviewGain(laneObj.trackIndex) * 100);
             html += '<div class="cp-timeline-row">';
-            html += '<div class="cp-lane-label">' + escapeHtml('T' + (laneObj.trackIndex + 1) + ' ' + laneObj.trackName) + '</div>';
-            html += '<div class="cp-lane-track" style="width:' + timelineWidth + 'px;">';
+            html += '<div class="cp-lane-label">'
+                + '  <div class="cp-lane-label-main"><span class="cp-lane-title">' + escapeHtml('T' + (laneObj.trackIndex + 1) + ' ' + laneObj.trackName) + '</span></div>'
+                + '  <div class="cp-lane-gain-row">'
+                + '    <span class="cp-lane-gain-label">Vol</span>'
+                + '    <input type="range" class="cp-lane-gain-slider" min="0" max="300" step="1" value="' + trackGainPercent + '" data-track-volume="' + laneObj.trackIndex + '">'
+                + '    <span class="cp-lane-gain-value" data-track-volume-label="' + laneObj.trackIndex + '">' + trackGainPercent + '%</span>'
+                + '  </div>'
+                + '</div>';
+            html += '<div class="cp-lane-track" style="width:' + viewport.trackWidth + 'px;">';
 
             for (var si = 0; si < laneItems.length; si++) {
                 var snippet = laneItems[si];
-                var leftPx = Math.max(0, Math.round(snippet.start * pixelsPerSec));
-                var widthPx = Math.max(6, Math.round((snippet.end - snippet.start) * pixelsPerSec));
+                var visStart = Math.max(snippet.start, viewport.viewStartSec);
+                var visEnd = Math.min(snippet.end, viewport.viewEndSec);
+                if (visEnd <= visStart) continue;
+
+                var leftPx = Math.max(0, Math.round((visStart - viewport.viewStartSec) * viewport.pixelsPerSec));
+                var widthPx = Math.max(4, Math.round((visEnd - visStart) * viewport.pixelsPerSec));
+                var compact = widthPx < 78;
                 var snippetClass = 'cp-snippet cp-state-' + snippet.state;
-                if (!snippet.selected) snippetClass += ' cp-unselected';
+                if (snippet.selected) snippetClass += ' cp-selected';
+                else snippetClass += ' cp-unselected';
+                if (compact) snippetClass += ' cp-snippet-compact';
+                if (state.activeSnippetId === snippet.id) snippetClass += ' cp-focused';
                 if (state.currentPlayingPreviewId === snippet.id) snippetClass += ' cp-playing';
+                var inlineLabel = buildSnippetInlineLabel(snippet, widthPx);
+                var selectClass = 'cp-snippet-select';
+                if (snippet.selected) selectClass += ' is-selected';
+                var playClass = 'cp-snippet-play';
+                if (state.currentPlayingPreviewId === snippet.id) playClass += ' is-playing';
+                var playSymbol = state.currentPlayingPreviewId === snippet.id ? '■' : '▶';
+                var selectHtml = '  <button type="button" class="' + selectClass + '" data-item-select="' + escapeHtml(snippet.id) + '" title="Toggle selection">' + (snippet.selected ? '✓' : '') + '</button>';
+                var playHtml = widthPx >= 46
+                    ? ('  <button type="button" class="' + playClass + '" data-item-play="' + escapeHtml(snippet.id) + '" title="Preview snippet">' + playSymbol + '</button>')
+                    : '';
+                var labelHtml = widthPx >= 74
+                    ? ('  <span class="cp-snippet-label">' + escapeHtml(inlineLabel) + '</span>')
+                    : '';
 
                 html += ''
-                    + '<button type="button" class="' + snippetClass + '"'
+                    + '<div class="' + snippetClass + '"'
                     + ' data-item-id="' + escapeHtml(snippet.id) + '"'
-                    + ' title="' + escapeHtml('Score ' + snippet.score + ' | ' + snippet.typeLabel + ' | ' + formatClock(snippet.start) + '-' + formatClock(snippet.end)) + '"'
+                    + ' title="' + escapeHtml('State ' + snippet.state + ' | Score ' + snippet.score + ' | ' + shortTypeLabel(snippet.typeLabel) + ' | ' + compactReasonText(snippet, 42) + ' | ' + formatClock(snippet.start) + '-' + formatClock(snippet.end)) + '"'
                     + ' style="left:' + leftPx + 'px;width:' + widthPx + 'px;">'
-                    + escapeHtml(String(snippet.score))
-                    + '</button>';
+                    + selectHtml
+                    + playHtml
+                    + labelHtml
+                    + '</div>';
             }
 
             html += '</div>';
@@ -1350,64 +1536,123 @@
         els.cutPreviewTimeline.innerHTML = html;
     }
 
-    function renderCutPreviewList() {
-        if (!els.cutPreviewList || !state.cutPreview) return;
-
+    function renderCutPreviewNavigator() {
+        if (!els.cutPreviewNavigator || !state.cutPreview) return;
+        var viewport = ensureCutPreviewViewport(false);
+        if (!viewport) return;
         var items = getVisibleCutPreviewItems();
         if (!items.length) {
-            els.cutPreviewList.innerHTML = '<div class="cp-empty">No snippets for current filter.</div>';
+            els.cutPreviewNavigator.innerHTML = '<div class="cp-empty">No navigator data available.</div>';
             return;
         }
 
         var html = '';
-        html += '<div class="cp-list-head">'
-            + '<div>Pick</div>'
-            + '<div>Track</div>'
-            + '<div>Time</div>'
-            + '<div>State</div>'
-            + '<div>Score / Type</div>'
-            + '<div>Reasons / Metrics</div>'
-            + '</div>';
-        html += '<div class="cp-list-body">';
-
+        html += '<div class="cp-nav-track">';
         for (var i = 0; i < items.length; i++) {
             var item = items[i];
-            var stateBadgeClass = 'cp-badge cp-badge-state-' + item.state;
-            var scoreBadgeClass = 'cp-badge cp-badge-score-' + item.scoreLabel;
-            var playClass = 'cp-play-btn cp-item-play';
-            if (state.currentPlayingPreviewId === item.id) playClass += ' is-playing';
+            var leftPct = clamp((item.start / viewport.totalDurationSec) * 100, 0, 100);
+            var widthPct = clamp(((item.end - item.start) / viewport.totalDurationSec) * 100, 0.1, 100);
+            html += '<div class="cp-nav-snippet cp-state-' + item.state + '" style="left:' + leftPct + '%;width:' + widthPct + '%;"></div>';
+        }
+        var windowLeftPct = clamp((viewport.viewStartSec / viewport.totalDurationSec) * 100, 0, 100);
+        var windowWidthPct = clamp((viewport.visibleDurationSec / viewport.totalDurationSec) * 100, 1, 100);
+        html += '<div class="cp-nav-window" data-nav-drag="move" style="left:' + windowLeftPct + '%;width:' + windowWidthPct + '%;">';
+        html += '  <div class="cp-nav-handle cp-nav-handle-left" data-nav-drag="left"></div>';
+        html += '  <div class="cp-nav-handle cp-nav-handle-right" data-nav-drag="right"></div>';
+        html += '</div>';
+        html += '</div>';
+        html += '<div class="cp-nav-caption">' + escapeHtml(formatClock(viewport.viewStartSec) + ' - ' + formatClock(viewport.viewEndSec) + ' / ' + formatClock(viewport.totalDurationSec)) + '</div>';
+        els.cutPreviewNavigator.innerHTML = html;
+    }
 
-            var reasonsText = item.reasons && item.reasons.length ? item.reasons.join(' • ') : 'No reasons';
-            var metrics = item.metrics || {};
-            var metricsText = 'Pk ' + formatSigned(parseNum(metrics.peakOverThreshold, 0), 1) + 'dB'
-                + ' | Mn ' + formatSigned(parseNum(metrics.meanOverThreshold, 0), 1) + 'dB'
-                + ' | Sp ' + Math.round(parseNum(metrics.spectralConfidence, 0) * 100) + '%'
-                + ' | Ov ' + Math.round(parseNum(metrics.overlapPenalty, 0) * 100) + '%';
-
-            html += '<div class="cp-list-row">';
-            html += '<div class="cp-row-main">';
-            html += '<input type="checkbox" class="cp-checkbox cp-item-select" data-item-id="' + escapeHtml(item.id) + '"' + (item.selected ? ' checked' : '') + '>';
-            html += '<button type="button" class="' + playClass + '" data-item-id="' + escapeHtml(item.id) + '" title="Preview snippet">▶</button>';
-            html += '</div>';
-            html += '<div class="cp-time">' + escapeHtml('T' + (item.trackIndex + 1)) + '</div>';
-            html += '<div class="cp-time">' + escapeHtml(formatClock(item.start) + ' - ' + formatClock(item.end) + ' (' + formatDurationMs(item.durationMs) + ')') + '</div>';
-            html += '<div><span class="' + stateBadgeClass + '">' + escapeHtml(item.state) + '</span></div>';
-            html += '<div class="cp-row-details">';
-            html += '  <div class="cp-row-topline">';
-            html += '    <span class="' + scoreBadgeClass + '">' + escapeHtml(item.score + ' ' + item.scoreLabel) + '</span>';
-            html += '    <span class="cp-badge">' + escapeHtml(item.typeLabel + ' (' + round(item.typeConfidence, 1) + '%)') + '</span>';
-            html += '  </div>';
-            html += '  <div class="cp-row-bottomline cp-metrics">' + escapeHtml(metricsText) + '</div>';
-            html += '</div>';
-            html += '<div class="cp-row-details">';
-            html += '  <div class="cp-reasons">' + escapeHtml(reasonsText) + '</div>';
-            html += '  <div class="cp-metrics">' + escapeHtml('Stage: ' + item.decisionStage) + '</div>';
-            html += '</div>';
-            html += '</div>';
+    function renderCutPreviewInspector() {
+        if (!els.cutPreviewInspector || !state.cutPreview) return;
+        var item = getCutPreviewItemById(state.activeSnippetId);
+        if (!item) {
+            els.cutPreviewInspector.innerHTML = '<div class="cp-inspector-empty">Click a snippet to inspect details.</div>';
+            return;
         }
 
+        var metrics = item.metrics || {};
+        var reasons = item.reasons || [];
+        var isPlaying = state.currentPlayingPreviewId === item.id;
+        var statePillClass = 'cp-pill cp-pill-' + item.state;
+        var selectedLabel = item.selected ? 'Selected' : 'Unselected';
+        var inspectorPlayLabel = isPlaying ? 'Stop Preview' : 'Play Preview';
+
+        var html = '';
+        html += '<div class="cp-inspector-head">';
+        html += '  <div class="cp-inspector-title">' + escapeHtml(getTrackDisplayName(item.trackIndex) + ' | ' + formatClock(item.start) + ' - ' + formatClock(item.end)) + '</div>';
+        html += '  <div class="cp-inspector-actions">';
+        html += '    <button type="button" class="btn btn-secondary cp-inspector-btn" data-inspector-toggle="' + escapeHtml(item.id) + '">' + escapeHtml(item.selected ? 'Deselect' : 'Select') + '</button>';
+        html += '    <button type="button" class="btn btn-secondary cp-inspector-btn" data-item-play="' + escapeHtml(item.id) + '">' + escapeHtml(inspectorPlayLabel) + '</button>';
+        html += '  </div>';
         html += '</div>';
-        els.cutPreviewList.innerHTML = html;
+
+        html += '<div class="cp-inspector-pills">';
+        html += '  <span class="cp-pill ' + (item.selected ? 'cp-pill-kept' : '') + '">' + escapeHtml(selectedLabel) + '</span>';
+        html += '  <span class="' + statePillClass + '">' + escapeHtml('state: ' + item.state) + '</span>';
+        html += '  <span class="cp-pill">' + escapeHtml('score: ' + item.score + ' (' + item.scoreLabel + ')') + '</span>';
+        html += '  <span class="cp-pill">' + escapeHtml('type: ' + item.typeLabel + ' (' + round(item.typeConfidence, 1) + '%)') + '</span>';
+        if (isPlaying) html += '  <span class="cp-pill cp-pill-playing">preview active</span>';
+        html += '</div>';
+
+        html += '<div class="cp-inspector-grid">';
+        html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Selected</span><span class="cp-inspector-value">' + escapeHtml(item.selected ? 'yes' : 'no') + '</span></div>';
+        html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">State</span><span class="cp-inspector-value">' + escapeHtml(item.state) + '</span></div>';
+        html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Score</span><span class="cp-inspector-value">' + escapeHtml(String(item.score) + ' (' + item.scoreLabel + ')') + '</span></div>';
+        html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Type Label</span><span class="cp-inspector-value">' + escapeHtml(item.typeLabel) + '</span></div>';
+        html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Type Confidence</span><span class="cp-inspector-value">' + escapeHtml(round(item.typeConfidence, 1) + '%') + '</span></div>';
+        html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Duration</span><span class="cp-inspector-value">' + escapeHtml(formatDurationMs(item.durationMs)) + '</span></div>';
+        html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Decision Stage</span><span class="cp-inspector-value">' + escapeHtml(item.decisionStage || '-') + '</span></div>';
+        html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Track</span><span class="cp-inspector-value">' + escapeHtml(getTrackDisplayName(item.trackIndex)) + '</span></div>';
+        html += '</div>';
+
+        html += '<details class="cp-inspector-extra" open>';
+        html += '  <summary>Class Signals</summary>';
+        html += '  <div class="cp-metrics-grid cp-metrics-grid-tight">';
+        html += buildMetricCard('Speech', round(parseNum(metrics.speechEvidence, 0), 3));
+        html += buildMetricCard('Laughter', round(parseNum(metrics.laughterEvidence, 0), 3));
+        html += buildMetricCard('Bleed', round(parseNum(metrics.bleedEvidence, 0), 3));
+        html += buildMetricCard('Noise', round(parseNum(metrics.noiseEvidence, 0), 3));
+        html += buildMetricCard('Bleed Conf', round(parseNum(metrics.bleedConfidence, 0), 3));
+        html += buildMetricCard('Margin', round(parseNum(metrics.classMargin, 0), 3));
+        html += '  </div>';
+        html += '</details>';
+
+        html += '<details class="cp-inspector-extra">';
+        html += '  <summary>Audio Metrics</summary>';
+        html += '  <div class="cp-metrics-grid cp-metrics-grid-tight">';
+        html += buildMetricCard('Mean > Thresh', formatSigned(parseNum(metrics.meanOverThreshold, 0), 2) + ' dB');
+        html += buildMetricCard('Peak > Thresh', formatSigned(parseNum(metrics.peakOverThreshold, 0), 2) + ' dB');
+        html += buildMetricCard('Spectral', round(parseNum(metrics.spectralConfidence, 0), 3));
+        html += buildMetricCard('Laughter Conf', round(parseNum(metrics.laughterConfidence, 0), 3));
+        html += buildMetricCard('Overlap', round(parseNum(metrics.overlapPenalty, 0), 3));
+        html += buildMetricCard('Speaker Lock', round(parseNum(metrics.speakerLockScore, 0), 3));
+        html += buildMetricCard('Postprocess', round(parseNum(metrics.postprocessPenalty, 0), 3));
+        html += buildMetricCard('Merged Snippets', Math.max(1, Math.round(parseNum(metrics.mergedSegmentCount, 1))));
+        html += buildMetricCard('Max Merge Gap', round(parseNum(metrics.maxMergedGapMs, 0), 0) + ' ms');
+        html += '  </div>';
+        html += '</details>';
+
+        html += '<details class="cp-inspector-extra">';
+        html += '  <summary>Reasons</summary>';
+        html += '  <ul class="cp-reasons-list">';
+        if (!reasons.length) {
+            html += '    <li>' + escapeHtml('No reasons available.') + '</li>';
+        } else {
+            for (var r = 0; r < reasons.length; r++) {
+                html += '    <li>' + escapeHtml(reasons[r]) + '</li>';
+            }
+        }
+        html += '  </ul>';
+        html += '</details>';
+
+        els.cutPreviewInspector.innerHTML = html;
+    }
+
+    function buildMetricCard(name, value) {
+        return '<div class="cp-metric-card"><div class="cp-metric-name">' + escapeHtml(name) + '</div><div class="cp-metric-value">' + escapeHtml(String(value)) + '</div></div>';
     }
 
     function getCutPreviewItemById(itemId) {
@@ -1483,6 +1728,11 @@
     }
 
     function stopCurrentPreviewAudio(skipRender) {
+        if (state.currentAudio && state.currentAudio.disconnect) {
+            try {
+                state.currentAudio.disconnect();
+            } catch (e0) { }
+        }
         if (state.currentAudio && state.currentAudio.audio) {
             try {
                 state.currentAudio.audio.pause();
@@ -1491,6 +1741,61 @@
         state.currentAudio = null;
         state.currentPlayingPreviewId = null;
         if (!skipRender) renderCutPreview();
+    }
+
+    function updateCurrentPreviewGain() {
+        if (!state.currentAudio || !state.currentAudio.itemId) return;
+        var item = getCutPreviewItemById(state.currentAudio.itemId);
+        if (!item) return;
+        var gainValue = getEffectivePreviewGain(item.trackIndex);
+        if (state.currentAudio.setGain) {
+            state.currentAudio.setGain(gainValue);
+        } else if (state.currentAudio.audio) {
+            state.currentAudio.audio.volume = clamp(gainValue, 0, 1);
+        }
+    }
+
+    function createPreviewGainController(audio, trackIndex) {
+        var targetGain = getEffectivePreviewGain(trackIndex);
+        var out = {
+            setGain: null,
+            disconnect: null
+        };
+
+        try {
+            var Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) throw new Error('AudioContext unavailable');
+
+            if (!state.previewAudioContext) {
+                state.previewAudioContext = new Ctx();
+            }
+            if (state.previewAudioContext.state === 'suspended' &&
+                typeof state.previewAudioContext.resume === 'function') {
+                state.previewAudioContext.resume();
+            }
+
+            var srcNode = state.previewAudioContext.createMediaElementSource(audio);
+            var gainNode = state.previewAudioContext.createGain();
+            srcNode.connect(gainNode);
+            gainNode.connect(state.previewAudioContext.destination);
+            gainNode.gain.value = clamp(targetGain, 0, 3);
+
+            out.setGain = function (gainValue) {
+                gainNode.gain.value = clamp(parseNum(gainValue, 1), 0, 3);
+            };
+            out.disconnect = function () {
+                try { srcNode.disconnect(); } catch (e1) { }
+                try { gainNode.disconnect(); } catch (e2) { }
+            };
+            return out;
+        } catch (err) {
+            audio.volume = clamp(targetGain, 0, 1);
+            out.setGain = function (gainValue) {
+                audio.volume = clamp(parseNum(gainValue, 1), 0, 1);
+            };
+            out.disconnect = function () { };
+            return out;
+        }
     }
 
     function toggleSnippetPreview(itemId) {
@@ -1521,11 +1826,14 @@
         var audio = new Audio();
         audio.preload = 'auto';
         audio.src = mediaUrl;
+        var gainCtrl = createPreviewGainController(audio, item.trackIndex);
 
         state.currentAudio = {
             audio: audio,
             endSec: stopAt,
-            itemId: itemId
+            itemId: itemId,
+            setGain: gainCtrl.setGain,
+            disconnect: gainCtrl.disconnect
         };
         state.currentPlayingPreviewId = itemId;
         renderCutPreview();
@@ -1649,64 +1957,219 @@
         };
     }
 
+    function beginNavigatorDrag(mode, clientX) {
+        if (!els.cutPreviewNavigator) return;
+        var trackEl = els.cutPreviewNavigator.querySelector('.cp-nav-track');
+        if (!trackEl) return;
+        var viewport = ensureCutPreviewViewport(false);
+        if (!viewport) return;
+
+        state.navigatorDrag = {
+            mode: mode,
+            startX: clientX,
+            navWidth: Math.max(1, trackEl.clientWidth),
+            startViewStartSec: viewport.viewStartSec,
+            startViewEndSec: viewport.viewEndSec,
+            totalDurationSec: viewport.totalDurationSec
+        };
+    }
+
+    function updateNavigatorDrag(clientX) {
+        if (!state.navigatorDrag) return;
+        var drag = state.navigatorDrag;
+        var model = getZoomModel();
+        var deltaSec = ((clientX - drag.startX) / drag.navWidth) * drag.totalDurationSec;
+        var minWindowSec = Math.max(0.08, drag.totalDurationSec / 1200);
+        var start = drag.startViewStartSec;
+        var end = drag.startViewEndSec;
+
+        if (drag.mode === 'move') {
+            start += deltaSec;
+            end += deltaSec;
+        } else if (drag.mode === 'left') {
+            start += deltaSec;
+            if (start < 0) start = 0;
+            if (start > end - minWindowSec) start = end - minWindowSec;
+        } else if (drag.mode === 'right') {
+            end += deltaSec;
+            if (end > drag.totalDurationSec) end = drag.totalDurationSec;
+            if (end < start + minWindowSec) end = start + minWindowSec;
+        }
+
+        if (end > drag.totalDurationSec) {
+            var over = end - drag.totalDurationSec;
+            end -= over;
+            start -= over;
+        }
+        if (start < 0) {
+            end += -start;
+            start = 0;
+        }
+
+        var visibleDuration = Math.max(minWindowSec, end - start);
+        var maxVisible = drag.totalDurationSec;
+        if (visibleDuration > maxVisible) visibleDuration = maxVisible;
+
+        state.cutPreviewPixelsPerSec = clamp(model.trackWidth / Math.max(visibleDuration, 0.0001), model.fitPixelsPerSec, model.maxPixelsPerSec);
+        state.cutPreviewZoom = pixelsPerSecToSlider(state.cutPreviewPixelsPerSec, model);
+
+        var maxStart = Math.max(0, drag.totalDurationSec - (model.trackWidth / state.cutPreviewPixelsPerSec));
+        state.cutPreviewViewStartSec = clamp(start, 0, maxStart);
+    }
+
+    function endNavigatorDrag() {
+        state.navigatorDrag = null;
+    }
+
     function bindCutPreviewControls() {
         if (els.cutPreviewSection) {
             els.cutPreviewSection.addEventListener('click', function (evt) {
                 var target = evt.target;
                 if (!target) return;
 
-                var filterBtn = findDataElement(target, 'data-filter-state');
-                if (filterBtn && filterBtn.className.indexOf('cut-preview-filter-btn') !== -1) {
-                    state.cutPreviewFilterState = filterBtn.getAttribute('data-filter-state') || 'all';
-                    renderCutPreview();
+                var selectBtn = findDataElement(target, 'data-item-select');
+                if (selectBtn) {
+                    var selectId = selectBtn.getAttribute('data-item-select');
+                    var selectItem = getCutPreviewItemById(selectId);
+                    if (!selectItem) return;
+                    state.activeSnippetId = selectId;
+                    setCutPreviewItemSelected(selectId, !selectItem.selected);
                     return;
                 }
 
-                var playBtn = findDataElement(target, 'data-item-id');
-                if (playBtn && playBtn.className.indexOf('cp-item-play') !== -1) {
-                    toggleSnippetPreview(playBtn.getAttribute('data-item-id'));
+                var playBtn = findDataElement(target, 'data-item-play');
+                if (playBtn) {
+                    var playId = playBtn.getAttribute('data-item-play');
+                    setActiveSnippet(playId, false);
+                    toggleSnippetPreview(playId);
+                    return;
+                }
+
+                var inspectorToggle = findDataElement(target, 'data-inspector-toggle');
+                if (inspectorToggle) {
+                    var toggleId = inspectorToggle.getAttribute('data-inspector-toggle');
+                    var toggleItem = getCutPreviewItemById(toggleId);
+                    if (!toggleItem) return;
+                    state.activeSnippetId = toggleId;
+                    setCutPreviewItemSelected(toggleId, !toggleItem.selected);
                     return;
                 }
 
                 var snippetBtn = findDataElement(target, 'data-item-id');
                 if (snippetBtn && snippetBtn.className.indexOf('cp-snippet') !== -1) {
                     var itemId = snippetBtn.getAttribute('data-item-id');
-                    var item = getCutPreviewItemById(itemId);
-                    if (!item) return;
-                    item.selected = !item.selected;
+                    setActiveSnippet(itemId, true);
                     renderCutPreview();
                     return;
                 }
             });
 
-            els.cutPreviewSection.addEventListener('change', function (evt) {
+            els.cutPreviewSection.addEventListener('input', function (evt) {
                 var target = evt.target;
-                if (!target) return;
-                if (target.className && target.className.indexOf('cp-item-select') !== -1) {
-                    setCutPreviewItemSelected(target.getAttribute('data-item-id'), target.checked);
-                }
-            });
-        }
+                if (!target || !target.getAttribute) return;
+                var trackVolumeRaw = target.getAttribute('data-track-volume');
+                if (trackVolumeRaw === null || trackVolumeRaw === undefined) return;
 
-        if (els.cutPreviewTrackFilter) {
-            els.cutPreviewTrackFilter.addEventListener('change', function () {
-                state.cutPreviewTrackFilter = this.value || 'all';
-                renderCutPreview();
-            });
-        }
+                var trackIndex = parseInt(trackVolumeRaw, 10);
+                if (!isFinite(trackIndex)) return;
+                var gainPercent = clamp(parseNum(target.value, 100), 0, 300);
+                setTrackPreviewGain(trackIndex, gainPercent / 100);
+                updateCurrentPreviewGain();
 
-        if (els.cutPreviewSort) {
-            els.cutPreviewSort.addEventListener('change', function () {
-                state.cutPreviewSort = this.value || 'time';
-                renderCutPreview();
+                var label = els.cutPreviewSection.querySelector('[data-track-volume-label="' + trackIndex + '"]');
+                if (label) label.textContent = Math.round(gainPercent) + '%';
             });
         }
 
         if (els.cutPreviewZoom) {
             els.cutPreviewZoom.addEventListener('input', function () {
-                state.cutPreviewZoom = clamp(parseNum(this.value, 90), 30, 260);
-                renderCutPreviewTimeline();
+                if (!state.cutPreview || !state.cutPreview.items || !state.cutPreview.items.length) return;
+                var model = getZoomModel();
+                var beforeViewport = ensureCutPreviewViewport(false);
+                if (!beforeViewport) return;
+                var centerSec = beforeViewport.viewStartSec + beforeViewport.visibleDurationSec / 2;
+                state.cutPreviewZoom = clamp(parseNum(this.value, 0), 0, 1000);
+                state.cutPreviewPixelsPerSec = sliderToPixelsPerSec(state.cutPreviewZoom, model);
+
+                var visibleDuration = model.trackWidth / state.cutPreviewPixelsPerSec;
+                var maxStart = Math.max(0, model.totalDurationSec - visibleDuration);
+                state.cutPreviewViewStartSec = clamp(centerSec - visibleDuration / 2, 0, maxStart);
+                renderCutPreview();
             });
+        }
+
+        if (els.cutPreviewFitBtn) {
+            els.cutPreviewFitBtn.addEventListener('click', function () {
+                ensureCutPreviewViewport(true);
+                renderCutPreview();
+            });
+        }
+
+        if (els.cutPreviewVolumeMaster) {
+            els.cutPreviewVolumeMaster.addEventListener('input', function () {
+                var gainPercent = clamp(parseNum(this.value, 100), 0, 300);
+                state.previewMasterGain = gainPercent / 100;
+                if (els.cutPreviewVolumeMasterLabel) {
+                    els.cutPreviewVolumeMasterLabel.textContent = Math.round(gainPercent) + '%';
+                }
+                updateCurrentPreviewGain();
+            });
+        }
+
+        if (els.cutPreviewTimeline) {
+            els.cutPreviewTimeline.addEventListener('wheel', function (evt) {
+                if (!state.cutPreview || !state.cutPreview.items || !state.cutPreview.items.length) return;
+                var viewport = ensureCutPreviewViewport(false);
+                if (!viewport) return;
+
+                var deltaPx = Math.abs(evt.deltaX) > Math.abs(evt.deltaY) ? evt.deltaX : evt.deltaY;
+                var shiftSec = deltaPx / Math.max(20, viewport.pixelsPerSec);
+                var maxStart = Math.max(0, viewport.totalDurationSec - viewport.visibleDurationSec);
+                state.cutPreviewViewStartSec = clamp(state.cutPreviewViewStartSec + shiftSec, 0, maxStart);
+                renderCutPreview();
+                evt.preventDefault();
+            });
+        }
+
+        if (els.cutPreviewNavigator) {
+            els.cutPreviewNavigator.addEventListener('mousedown', function (evt) {
+                var dragNode = findDataElement(evt.target, 'data-nav-drag');
+                if (!dragNode) return;
+                beginNavigatorDrag(dragNode.getAttribute('data-nav-drag'), evt.clientX);
+                evt.preventDefault();
+            });
+        }
+
+        document.addEventListener('mousemove', function (evt) {
+            if (!state.navigatorDrag) return;
+            updateNavigatorDrag(evt.clientX);
+            renderCutPreview();
+            evt.preventDefault();
+        });
+
+        document.addEventListener('mouseup', function () {
+            if (!state.navigatorDrag) return;
+            endNavigatorDrag();
+        });
+
+        window.addEventListener('resize', function () {
+            if (!state.cutPreview || !state.cutPreview.items || !state.cutPreview.items.length) return;
+            renderCutPreview();
+        });
+    }
+
+    function requestLargeStartupPanel() {
+        if (!AutoCastBridge || typeof AutoCastBridge.resizePanel !== 'function') return;
+        if (AutoCastBridge.isInMockMode && AutoCastBridge.isInMockMode()) return;
+        try {
+            var availW = parseNum(window.screen && window.screen.availWidth, 0);
+            var availH = parseNum(window.screen && window.screen.availHeight, 0);
+            if (!availW || !availH) return;
+            var targetW = clamp(Math.round(availW * 0.95), 1200, 3400);
+            var targetH = clamp(Math.round(availH * 0.95), 760, 2200);
+            AutoCastBridge.resizePanel(targetW, targetH);
+        } catch (e) {
+            console.warn('[AutoCast] Could not resize panel at startup:', e);
         }
     }
 
@@ -1736,6 +2199,10 @@
     if (els.btnApply) els.btnApply.disabled = true;
     if (els.btnReset) els.btnReset.disabled = true;
     setStatus('idle', 'Ready');
+
+    setTimeout(requestLargeStartupPanel, 80);
+    setTimeout(requestLargeStartupPanel, 700);
+    setTimeout(requestLargeStartupPanel, 1800);
 
     // Auto-load track metadata, but no loudness scan on startup.
     setTimeout(loadTracksFromHost, 500);

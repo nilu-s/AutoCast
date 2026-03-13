@@ -2,11 +2,11 @@
 <ExtensionManifest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                    Version="11.0"
                    ExtensionBundleId="com.autocast.panel"
-                   ExtensionBundleVersion="2.2.0"
+                   ExtensionBundleVersion="2.2.1"
                    ExtensionBundleName="AutoCast">
 
     <ExtensionList>
-        <Extension Id="com.autocast.panel.main" Version="2.2.0" />
+        <Extension Id="com.autocast.panel.main" Version="2.2.1" />
     </ExtensionList>
 
     <ExecutionEnvironment>
@@ -37,20 +37,20 @@
                     <AutoVisible>true</AutoVisible>
                 </Lifecycle>
                 <UI>
-                    <Type>Panel</Type>
+                    <Type>Modeless</Type>
                     <Menu>AutoCast</Menu>
                     <Geometry>
                         <Size>
-                            <Height>650</Height>
-                            <Width>380</Width>
+                            <Height>1100</Height>
+                            <Width>1800</Width>
                         </Size>
                         <MinSize>
-                            <Height>400</Height>
-                            <Width>320</Width>
+                            <Height>520</Height>
+                            <Width>680</Width>
                         </MinSize>
                         <MaxSize>
-                            <Height>1200</Height>
-                            <Width>600</Width>
+                            <Height>2400</Height>
+                            <Width>3800</Width>
                         </MaxSize>
                     </Geometry>
                 </UI>

@@ -76,7 +76,6 @@
                         </div>
                         <input type="range" id="paramThreshold" class="slider" min="-8" max="8" value="0" step="1">
                         <div class="slider-labels"><span>More Sensitive</span><span>Stricter</span></div>
-                        <div class="param-help">-8 = very sensitive, 0 = neutral, +8 = very strict</div>
                     </div>
                     <div class="param-group">
                         <div class="param-header">
@@ -88,16 +87,6 @@
                         </div>
                         <input type="range" id="paramMinPeak" class="slider" min="-60" max="-45" value="-52" step="1">
                         <div class="slider-labels"><span>Keep more</span><span>Filter more</span></div>
-                        <div class="param-help">Default -52 dBFS. Raise (e.g. -50) to remove more very quiet snippets.</div>
-                    </div>
-                    <div class="param-group">
-                        <div class="param-header">
-                            <label class="param-label">Smooth Blocks
-                                <span class="tooltip"
-                                    data-tip="Merges nearby speech snippets into larger connected blocks. Recommended if output feels too fragmented.">?</span>
-                            </label>
-                        </div>
-                        <div class="param-help">Always active. Preset values: snippet padding 1200 ms + primary gap fill 1800 ms.</div>
                     </div>
 
                 </div>
@@ -110,41 +99,28 @@
                 </div>
                 <span id="progressText" class="progress-text">0%</span>
             </div>
-            <section id="analysisSummary" class="section analysis-summary" style="display: none;">
-                <h2 class="section-title">Analysis Summary</h2>
-                <div id="summaryPrimary" class="summary-primary"></div>
-                <div id="summaryDetail" class="summary-detail"></div>
-            </section>
             <section id="cutPreviewSection" class="section cut-preview" style="display: none;">
                 <div class="section-header">
                     <h2 class="section-title">Cut Preview</h2>
                     <div id="cutPreviewMeta" class="cut-preview-meta"></div>
                 </div>
-                <div class="cut-preview-controls">
-                    <div class="cut-preview-filter-group">
-                        <button class="btn btn-sm btn-secondary cut-preview-filter-btn" data-filter-state="all">All</button>
-                        <button class="btn btn-sm btn-secondary cut-preview-filter-btn" data-filter-state="kept">Kept</button>
-                        <button class="btn btn-sm btn-secondary cut-preview-filter-btn" data-filter-state="near_miss">Near Miss</button>
-                        <button class="btn btn-sm btn-secondary cut-preview-filter-btn" data-filter-state="suppressed">Suppressed</button>
-                    </div>
-                    <div class="cut-preview-control-row">
-                        <label class="cut-preview-control-label" for="cutPreviewTrackFilter">Track</label>
-                        <select id="cutPreviewTrackFilter" class="cut-preview-select"></select>
-                    </div>
-                    <div class="cut-preview-control-row">
-                        <label class="cut-preview-control-label" for="cutPreviewSort">Sort</label>
-                        <select id="cutPreviewSort" class="cut-preview-select">
-                            <option value="time">Time</option>
-                            <option value="score">Score</option>
-                        </select>
-                    </div>
+                <div id="cutPreviewAnalysisMini" class="cut-preview-analysis-mini"></div>
+                <div class="cut-preview-toolbar">
                     <div class="cut-preview-control-row cut-preview-zoom-row">
                         <label class="cut-preview-control-label" for="cutPreviewZoom">Zoom</label>
-                        <input id="cutPreviewZoom" type="range" min="30" max="260" step="10" value="90" class="slider cut-preview-zoom-slider">
+                        <input id="cutPreviewZoom" type="range" min="0" max="1000" step="1" value="0" class="slider cut-preview-zoom-slider">
+                        <button id="cutPreviewFitBtn" class="btn btn-sm btn-secondary" type="button">Fit</button>
+                        <span id="cutPreviewZoomLabel" class="cut-preview-zoom-label">100%</span>
+                    </div>
+                    <div class="cut-preview-control-row cut-preview-volume-row">
+                        <label class="cut-preview-control-label" for="cutPreviewVolumeMaster">Preview</label>
+                        <input id="cutPreviewVolumeMaster" type="range" min="0" max="300" step="1" value="100" class="slider cut-preview-volume-slider">
+                        <span id="cutPreviewVolumeMasterLabel" class="cut-preview-zoom-label">100%</span>
                     </div>
                 </div>
                 <div id="cutPreviewTimeline" class="cut-preview-timeline"></div>
-                <div id="cutPreviewList" class="cut-preview-list"></div>
+                <div id="cutPreviewNavigator" class="cut-preview-navigator"></div>
+                <div id="cutPreviewInspector" class="cut-preview-inspector"></div>
             </section>
 
 
