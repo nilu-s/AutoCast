@@ -1,6 +1,10 @@
 'use strict';
 
 (function (root) {
+    function getAnalysisStatusComponent() {
+        return root.AutoCastPanelAnalysisStatusComponent || null;
+    }
+
     function setStatus(els, type, text) {
         if (els.statusBar) els.statusBar.className = 'status-bar status-' + type;
         if (els.statusText) els.statusText.textContent = text;
@@ -13,7 +17,13 @@
 
         els.progressContainer.style.display = 'flex';
         els.progressFill.style.width = options.percent + '%';
-        els.progressText.textContent = options.percent + '%';
+
+        var component = getAnalysisStatusComponent();
+        if (component && typeof component.formatProgressLabel === 'function') {
+            els.progressText.textContent = component.formatProgressLabel(options.percent, options.message);
+        } else {
+            els.progressText.textContent = options.percent + '%';
+        }
 
         if (options.message && typeof options.setStatus === 'function') {
             options.setStatus('analyzing', options.message);

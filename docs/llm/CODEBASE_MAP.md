@@ -8,7 +8,7 @@ Schneller Datei-Kompass fuer typische Eingriffe.
 - `packages/analyzer`: Audio-Analyse und Segment-Entscheidungen
 - `CSXS/manifest.xml`: CEP-Metadaten und Laufzeitpfade
 - `scripts`: Repo-Checks und Install/Uninstall-Helfer
-- `docs`: Architektur, Migration, LLM-Dokumentation
+- `docs`: Architektur, LLM-Dokumentation und Arbeitsleitlinien
 
 ## Panel (Frontend und Host-Integration)
 
@@ -75,9 +75,21 @@ Schneller Datei-Kompass fuer typische Eingriffe.
 - Unit-Suite: `packages/analyzer/test/unit/suite_manifest.js`
 - Integration-Suite: `packages/analyzer/test/integration/suite_manifest.js`
 - E2E-Suite: `packages/analyzer/test/e2e/suite_manifest.js`
+- Analyzer-Tests ko-lokal:
+  - `packages/analyzer/src/core/**/tests/*.test.js`
+  - `packages/analyzer/src/modules/**/tests/*.test.js`
+  - `packages/analyzer/src/tests/**/*.test.js`
+- Panel-Tests ko-lokal:
+  - `apps/panel/src/app/tests/*.test.js`
+  - `apps/panel/src/adapters/tests/*.test.js`
+  - `apps/panel/src/features/*/tests/*.test.js`
+  - `apps/panel/src/shared/tests/*.test.js`
+- Test-Helper:
+  - `packages/analyzer/src/tests/helpers/*.js`
 
 ## Repo-Checks
 
 - Syntax: `scripts/check_syntax.js` (`npm run check:syntax`)
 - Struktur: `scripts/check_structure.js` (`npm run check:structure`)
+- Architekturgrenzen: `scripts/check_architecture.js` (`npm run check:arch`)
 - Gesamt: `npm run check`

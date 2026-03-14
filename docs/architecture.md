@@ -92,7 +92,7 @@ packages/analyzer/test/
   - `packages/analyzer/test/integration/suite_manifest.js`
   - `packages/analyzer/test/e2e/suite_manifest.js`
 
-## Migrationsprinzipien
+## Engineeringprinzipien
 
 1. Keine Verhaltensaenderung bei Datei-Splits/Refactors.
 2. Erst Helper, dann State/Komponenten, dann Orchestrierung.
@@ -112,8 +112,3 @@ packages/analyzer/test/
 
 - Struktur-Gate: `scripts/check_structure.js`
 - LLM-Onboarding: `CLAUDE.md`, `docs/llm/*`
-
-## Hinweis zur Historie
-
-Die detaillierte Phase-fuer-Phase Historie wurde aus dieser Datei entfernt.
-Historische Detailstaende sind ueber Git-Historie und Commit-Verlauf nachvollziehbar.

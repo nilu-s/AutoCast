@@ -1,6 +1,6 @@
 {
     "name":  "autocast",
-    "version":  "2.2.0",
+    "version":  "2.2.1",
     "description":  "AutoCast - Automatic podcast multi-track cut editing plugin for Adobe Premiere Pro",
     "main":  "apps/panel/index.html",
     "scripts":  {
@@ -10,11 +10,13 @@
                     "test:e2e":  "node packages/analyzer/test/test_runner.js e2e",
                     "check:syntax":  "node scripts/check_syntax.js",
                     "check:structure":  "node scripts/check_structure.js",
-                    "check":  "npm run check:syntax && npm run check:structure && npm test",
-                    "test:wav":  "node packages/analyzer/test/test_wav_reader.js",
-                    "test:rms":  "node packages/analyzer/test/test_rms.js",
-                    "test:segments":  "node packages/analyzer/test/test_segmentation.js",
-                    "test:overlap":  "node packages/analyzer/test/test_overlap.js",
+                    "check:arch":  "node scripts/check_architecture.js",
+                    "check:llm":  "node scripts/check_llm_requirements.js",
+                    "check":  "npm run check:syntax && npm run check:structure && npm run check:arch && npm run check:llm && npm test",
+                    "test:wav":  "node packages/analyzer/test/run_single_test.js packages/analyzer/src/modules/io/tests/wav_reader.test.js",
+                    "test:rms":  "node packages/analyzer/test/run_single_test.js packages/analyzer/src/modules/energy/tests/rms_calculator.test.js",
+                    "test:segments":  "node packages/analyzer/test/run_single_test.js packages/analyzer/src/modules/segmentation/tests/segment_builder_core.test.js",
+                    "test:overlap":  "node packages/analyzer/test/run_single_test.js packages/analyzer/src/modules/overlap/tests/overlap_resolver.test.js",
                     "generate-test-data":  "node packages/analyzer/test/generate_test_wav.js",
                     "analyze":  "node packages/analyzer/src/analyzer.js"
                 },

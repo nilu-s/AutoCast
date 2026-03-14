@@ -66,22 +66,17 @@
         settingsFeature.saveSettings(readPanelSettingsFromElements(els));
     }
 
-    function resolveAnalyzerDefaults(cacheRef, requireFn) {
+    function resolveAnalyzerDefaults(cacheRef, analyzerDefaults) {
         if (cacheRef && cacheRef.value) {
             return cloneFlatObject(cacheRef.value);
         }
 
-        if (typeof requireFn === 'function') {
-            try {
-                var defaultsModule = requireFn('../../packages/analyzer/src/defaults/analyzer_defaults.js');
-                if (defaultsModule && defaultsModule.ANALYSIS_DEFAULTS) {
-                    cacheRef.value = defaultsModule.ANALYSIS_DEFAULTS;
-                    return cloneFlatObject(cacheRef.value);
-                }
-            } catch (e) { }
+        if (analyzerDefaults && typeof analyzerDefaults === 'object') {
+            if (cacheRef) cacheRef.value = analyzerDefaults;
+            return cloneFlatObject(analyzerDefaults);
         }
 
-        cacheRef.value = {};
+        if (cacheRef) cacheRef.value = {};
         return {};
     }
 
@@ -98,7 +93,10 @@
     function getParams(options) {
         options = options || {};
         var analysisFeature = options.analysisFeature;
-        var defaults = resolveAnalyzerDefaults(options.analyzerDefaultsCacheRef, options.requireFn);
+        var defaults = resolveAnalyzerDefaults(
+            options.analyzerDefaultsCacheRef,
+            options.analyzerDefaults
+        );
         var thresholdValue = parseInt(options.thresholdValue, 10);
         var minPeakValue = parseFloat(options.minPeakValue);
         var debugMode = analysisFeature.getDebugMode(options.windowObj);

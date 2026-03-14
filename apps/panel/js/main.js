@@ -1,10 +1,9 @@
 /**
- * AutoCast - Panel UI Controller v2.1
+ * AutoCast - Panel UI Controller v2.2
  *
- * Notes:
- * - This keeps the existing UI structure.
- * - Added live progress support for clip cutting.
- * - Analyzer params now include bleedMarginDb support if the UI exposes it.
+ * Runtime entrypoint:
+ * - keeps bootstrap/host/analyzer wiring stable
+ * - delegates panel state and cut-preview/audio orchestration to runtime modules
  */
 
 'use strict';
@@ -38,8 +37,6 @@
         HostAdapter.init();
     }
 
-    var state = null;
-
     var TRACK_COLORS = [
         '#4ea1f3', '#4caf50', '#ff9800', '#e91e63',
         '#9c27b0', '#00bcd4', '#ffeb3b', '#795548'
@@ -47,11 +44,29 @@
     var TICKS_PER_SECOND = 254016000000;
     var AUDIO_PREVIEW_PREROLL_SEC = 0.2;
     var AUDIO_PREVIEW_POSTROLL_SEC = 0.2;
+
     var PanelContracts = window.AutoCastPanelContracts || null;
     var TracksFeature = window.AutoCastPanelTracksFeature || null;
     var TracksLoaderFeature = window.AutoCastPanelTracksLoaderFeature || null;
     var AnalysisFeature = window.AutoCastPanelAnalysisFeature || null;
     var AnalysisRunFeature = window.AutoCastPanelAnalysisRunFeature || null;
+    var ApplyEditsFeature = window.AutoCastPanelApplyEditsFeature || null;
+    var ApplyEditsRunnerFeature = window.AutoCastPanelApplyEditsRunnerFeature || null;
+    var SettingsFeatureFactory = window.AutoCastPanelSettingsFeature || null;
+    var StorageAdapter = window.AutoCastPanelStorageAdapter || null;
+
+    var PanelInitFeature = window.AutoCastPanelInitFeature || null;
+    var PanelUiRuntimeFeature = window.AutoCastPanelUiRuntimeFeature || null;
+    var PanelFlowRuntimeFeature = window.AutoCastPanelFlowRuntimeFeature || null;
+    var PanelParamsFeature = window.AutoCastPanelParamsFeature || null;
+    var PanelStateRuntimeFeature = window.AutoCastPanelStateRuntimeFeature || null;
+    var PanelPreviewRuntimeFeature = window.AutoCastPanelPreviewRuntimeFeature || null;
+
+    var TracksStateStore = window.AutoCastPanelTracksStore || null;
+    var AnalysisStateStore = window.AutoCastPanelAnalysisStore || null;
+    var CutPreviewStateStore = window.AutoCastPanelCutPreviewStore || null;
+    var AudioPreviewStateStore = window.AutoCastPanelAudioPreviewStore || null;
+
     var CutPreviewFeature = window.AutoCastPanelCutPreviewFeature || null;
     var CutPreviewSourceMapperFeature = window.AutoCastPanelCutPreviewSourceMapperFeature || null;
     var CutPreviewViewportFeature = window.AutoCastPanelCutPreviewViewportFeature || null;
@@ -60,18 +75,7 @@
     var CutPreviewRenderFeature = window.AutoCastPanelCutPreviewRenderFeature || null;
     var AudioPreviewFeature = window.AutoCastPanelAudioPreviewFeature || null;
     var AudioPreviewPlayerFeature = window.AutoCastPanelAudioPreviewPlayerFeature || null;
-    var ApplyEditsFeature = window.AutoCastPanelApplyEditsFeature || null;
-    var ApplyEditsRunnerFeature = window.AutoCastPanelApplyEditsRunnerFeature || null;
-    var SettingsFeatureFactory = window.AutoCastPanelSettingsFeature || null;
-    var StorageAdapter = window.AutoCastPanelStorageAdapter || null;
-    var PanelInitFeature = window.AutoCastPanelInitFeature || null;
-    var PanelUiRuntimeFeature = window.AutoCastPanelUiRuntimeFeature || null;
-    var PanelFlowRuntimeFeature = window.AutoCastPanelFlowRuntimeFeature || null;
-    var PanelParamsFeature = window.AutoCastPanelParamsFeature || null;
-    var TracksStateStore = window.AutoCastPanelTracksStore || null;
-    var AnalysisStateStore = window.AutoCastPanelAnalysisStore || null;
-    var CutPreviewStateStore = window.AutoCastPanelCutPreviewStore || null;
-    var AudioPreviewStateStore = window.AutoCastPanelAudioPreviewStore || null;
+
     var SharedHtml = window.AutoCastPanelHtmlUtils || null;
     var SharedMath = window.AutoCastPanelMathFormatUtils || null;
 
@@ -80,18 +84,6 @@
             throw new Error('[AutoCast] Required feature module missing: ' + featureName);
         }
         return featureRef;
-    }
-
-    function getRenderFeature() {
-        return requireFeature(CutPreviewRenderFeature, 'AutoCastPanelCutPreviewRenderFeature');
-    }
-
-    function getViewportFeature() {
-        return requireFeature(CutPreviewViewportFeature, 'AutoCastPanelCutPreviewViewportFeature');
-    }
-
-    function getCutPreviewRuntimeFeature() {
-        return requireFeature(CutPreviewRuntimeFeature, 'AutoCastPanelCutPreviewRuntimeFeature');
     }
 
     function getPanelUiRuntimeFeature() {
@@ -106,93 +98,13 @@
         return requireFeature(PanelParamsFeature, 'AutoCastPanelParamsFeature');
     }
 
-    function getAudioPreviewPlayerFeature() {
-        return requireFeature(AudioPreviewPlayerFeature, 'AutoCastPanelAudioPreviewPlayerFeature');
-    }
-
-    function requireStateStore(storeRef, storeName) {
-        var storeModule = requireFeature(storeRef, storeName);
-        if (typeof storeModule.createState !== 'function') {
-            throw new Error('[AutoCast] Invalid state store module: ' + storeName);
-        }
-        return storeModule;
-    }
-
-    function defineStateProxyProperty(stateProxy, store, propName) {
-        Object.defineProperty(stateProxy, propName, {
-            enumerable: true,
-            configurable: false,
-            get: function () {
-                return store.getState()[propName];
-            },
-            set: function (value) {
-                var patch = {};
-                patch[propName] = value;
-                store.setState(patch);
-            }
-        });
-    }
-
-    function createPanelState() {
-        var tracksStore = requireStateStore(TracksStateStore, 'AutoCastPanelTracksStore').createState({
-            tracks: [],
-            perTrackSensitivity: {}
-        });
-        var analysisStore = requireStateStore(AnalysisStateStore, 'AutoCastPanelAnalysisStore').createState({
-            analysisResult: null,
-            isAnalyzing: false,
-            analysisRunId: 0
-        });
-        var cutPreviewStore = requireStateStore(CutPreviewStateStore, 'AutoCastPanelCutPreviewStore').createState({
-            cutPreview: null,
-            activeSnippetId: null,
-            panelPageMode: 'setup',
-            cutPreviewZoom: 0,
-            cutPreviewPixelsPerSec: 0,
-            cutPreviewViewStartSec: 0,
-            navigatorDrag: null,
-            cutPreviewRenderPending: false,
-            cutPreviewRenderHandle: null
-        });
-        var audioPreviewStore = requireStateStore(AudioPreviewStateStore, 'AutoCastPanelAudioPreviewStore').createState({
-            currentAudio: null,
-            currentPlayingPreviewId: null,
-            previewMasterGain: 1,
-            previewTrackGain: {},
-            previewAudioContext: null,
-            currentPreviewInfo: null
-        });
-
-        var stateProxy = {};
-
-        defineStateProxyProperty(stateProxy, tracksStore, 'tracks');
-        defineStateProxyProperty(stateProxy, tracksStore, 'perTrackSensitivity');
-
-        defineStateProxyProperty(stateProxy, analysisStore, 'analysisResult');
-        defineStateProxyProperty(stateProxy, analysisStore, 'isAnalyzing');
-        defineStateProxyProperty(stateProxy, analysisStore, 'analysisRunId');
-
-        defineStateProxyProperty(stateProxy, cutPreviewStore, 'cutPreview');
-        defineStateProxyProperty(stateProxy, cutPreviewStore, 'activeSnippetId');
-        defineStateProxyProperty(stateProxy, cutPreviewStore, 'panelPageMode');
-        defineStateProxyProperty(stateProxy, cutPreviewStore, 'cutPreviewZoom');
-        defineStateProxyProperty(stateProxy, cutPreviewStore, 'cutPreviewPixelsPerSec');
-        defineStateProxyProperty(stateProxy, cutPreviewStore, 'cutPreviewViewStartSec');
-        defineStateProxyProperty(stateProxy, cutPreviewStore, 'navigatorDrag');
-        defineStateProxyProperty(stateProxy, cutPreviewStore, 'cutPreviewRenderPending');
-        defineStateProxyProperty(stateProxy, cutPreviewStore, 'cutPreviewRenderHandle');
-
-        defineStateProxyProperty(stateProxy, audioPreviewStore, 'currentAudio');
-        defineStateProxyProperty(stateProxy, audioPreviewStore, 'currentPlayingPreviewId');
-        defineStateProxyProperty(stateProxy, audioPreviewStore, 'previewMasterGain');
-        defineStateProxyProperty(stateProxy, audioPreviewStore, 'previewTrackGain');
-        defineStateProxyProperty(stateProxy, audioPreviewStore, 'previewAudioContext');
-        defineStateProxyProperty(stateProxy, audioPreviewStore, 'currentPreviewInfo');
-
-        return stateProxy;
-    }
-
-    state = createPanelState();
+    var state = requireFeature(PanelStateRuntimeFeature, 'AutoCastPanelStateRuntimeFeature').createPanelState({
+        requireFeature: requireFeature,
+        tracksStateStore: TracksStateStore,
+        analysisStateStore: AnalysisStateStore,
+        cutPreviewStateStore: CutPreviewStateStore,
+        audioPreviewStateStore: AudioPreviewStateStore
+    });
 
     function validateAnalyzeResultPayload(result) {
         if (!PanelContracts || typeof PanelContracts.validateAnalyzeResult !== 'function') {
@@ -252,6 +164,38 @@
     bindSlider(els.paramThreshold, els.valThreshold, '');
     bindSlider(els.paramMinPeak, els.valMinPeak, 'dB');
 
+    function parseNum(v, fallback) {
+        return SharedMath.parseNum(v, fallback);
+    }
+
+    function clamp(v, min, max) {
+        return SharedMath.clamp(v, min, max);
+    }
+
+    function round(v, digits) {
+        return SharedMath.round(v, digits);
+    }
+
+    function formatSigned(v, digits) {
+        return SharedMath.formatSigned(v, digits);
+    }
+
+    function formatClock(sec) {
+        return SharedMath.formatClock(sec);
+    }
+
+    function formatDurationMs(ms) {
+        return SharedMath.formatDurationMs(ms);
+    }
+
+    function formatSummaryDuration(sec) {
+        return SharedMath.formatSummaryDuration(sec);
+    }
+
+    function escapeHtml(str) {
+        return SharedHtml.escapeHtml(str);
+    }
+
     var settingsFeature = (SettingsFeatureFactory && typeof SettingsFeatureFactory.create === 'function')
         ? SettingsFeatureFactory.create(StorageAdapter)
         : null;
@@ -269,24 +213,24 @@
     if (els.paramThreshold) els.paramThreshold.addEventListener('change', savePanelSettings);
     if (els.paramMinPeak) els.paramMinPeak.addEventListener('change', savePanelSettings);
 
-    function getParams() {
-        return getPanelParamsFeature().getParams({
-            analysisFeature: requireFeature(AnalysisFeature, 'AutoCastPanelAnalysisFeature'),
-            analyzerDefaultsCacheRef: analyzerDefaultsCacheRef,
-            requireFn: typeof require === 'function' ? require : null,
-            thresholdValue: els.paramThreshold.value,
-            minPeakValue: els.paramMinPeak.value,
-            perTrackThresholdDb: getPerTrackSensitivity(),
-            windowObj: window
-        });
-    }
-
     function getPerTrackSensitivity() {
         return getPanelParamsFeature().getPerTrackSensitivity({
             analysisFeature: requireFeature(AnalysisFeature, 'AutoCastPanelAnalysisFeature'),
             perTrackSensitivity: state.perTrackSensitivity,
             trackCount: state.tracks.length,
             globalThreshold: parseInt(els.paramThreshold.value, 10)
+        });
+    }
+
+    function getParams() {
+        return getPanelParamsFeature().getParams({
+            analysisFeature: requireFeature(AnalysisFeature, 'AutoCastPanelAnalysisFeature'),
+            analyzerDefaultsCacheRef: analyzerDefaultsCacheRef,
+            analyzerDefaults: window.AutoCastAnalyzerDefaults || null,
+            thresholdValue: els.paramThreshold.value,
+            minPeakValue: els.paramMinPeak.value,
+            perTrackThresholdDb: getPerTrackSensitivity(),
+            windowObj: window
         });
     }
 
@@ -324,6 +268,65 @@
         });
     }
 
+    function updateModeIndicator() {
+        return getPanelUiRuntimeFeature().updateModeIndicator(els);
+    }
+
+    var previewRuntime = requireFeature(
+        PanelPreviewRuntimeFeature,
+        'AutoCastPanelPreviewRuntimeFeature'
+    ).create({
+        state: state,
+        els: els,
+        hostAdapter: HostAdapter,
+        windowObj: window,
+        documentObj: document,
+        consoleObj: console,
+        parseNum: parseNum,
+        clamp: clamp,
+        round: round,
+        formatSigned: formatSigned,
+        formatClock: formatClock,
+        formatDurationMs: formatDurationMs,
+        formatSummaryDuration: formatSummaryDuration,
+        escapeHtml: escapeHtml,
+        trackColors: TRACK_COLORS,
+        ticksPerSecondDefault: TICKS_PER_SECOND,
+        audioPreviewPrerollSec: AUDIO_PREVIEW_PREROLL_SEC,
+        audioPreviewPostrollSec: AUDIO_PREVIEW_POSTROLL_SEC,
+        setPanelPageMode: setPanelPageMode,
+        hideCutPreview: hideCutPreview,
+        setStatus: setStatus,
+        cutPreviewFeature: requireFeature(CutPreviewFeature, 'AutoCastPanelCutPreviewFeature'),
+        cutPreviewSourceMapperFeature: requireFeature(CutPreviewSourceMapperFeature, 'AutoCastPanelCutPreviewSourceMapperFeature'),
+        cutPreviewViewportFeature: requireFeature(CutPreviewViewportFeature, 'AutoCastPanelCutPreviewViewportFeature'),
+        cutPreviewRuntimeFeature: requireFeature(CutPreviewRuntimeFeature, 'AutoCastPanelCutPreviewRuntimeFeature'),
+        cutPreviewInteractionFeature: requireFeature(CutPreviewInteractionFeature, 'AutoCastPanelInteractionFeature'),
+        cutPreviewRenderFeature: requireFeature(CutPreviewRenderFeature, 'AutoCastPanelCutPreviewRenderFeature'),
+        audioPreviewFeature: requireFeature(AudioPreviewFeature, 'AutoCastPanelAudioPreviewFeature'),
+        audioPreviewPlayerFeature: requireFeature(AudioPreviewPlayerFeature, 'AutoCastPanelAudioPreviewPlayerFeature')
+    });
+
+    function buildCutPreviewState(result) {
+        return previewRuntime.buildCutPreviewState(result);
+    }
+
+    function cancelPendingCutPreviewRender() {
+        return previewRuntime.cancelPendingCutPreviewRender();
+    }
+
+    function renderCutPreview() {
+        return previewRuntime.renderCutPreview();
+    }
+
+    function getCutPreviewItemById(itemId) {
+        return previewRuntime.getCutPreviewItemById(itemId);
+    }
+
+    function stopCurrentPreviewAudio(skipRender) {
+        return previewRuntime.stopCurrentPreviewAudio(skipRender);
+    }
+
     function renderTracks() {
         return getPanelFlowRuntimeFeature().renderTracks({
             state: state,
@@ -333,10 +336,6 @@
             parseNum: parseNum,
             renderCutPreview: renderCutPreview
         });
-    }
-
-    function updateModeIndicator() {
-        return getPanelUiRuntimeFeature().updateModeIndicator(els);
     }
 
     function analyzeTracks() {
@@ -377,6 +376,7 @@
             hideProgress: hideProgress
         });
     }
+
     function resetUI() {
         return getPanelFlowRuntimeFeature().resetUI({
             state: state,
@@ -403,264 +403,6 @@
         });
     }
 
-    function escapeHtml(str) {
-        return SharedHtml.escapeHtml(str);
-    }
-
-    function parseNum(v, fallback) {
-        return SharedMath.parseNum(v, fallback);
-    }
-
-    function clamp(v, min, max) {
-        return SharedMath.clamp(v, min, max);
-    }
-
-    function round(v, digits) {
-        return SharedMath.round(v, digits);
-    }
-
-    function formatSigned(v, digits) {
-        return SharedMath.formatSigned(v, digits);
-    }
-
-    function formatClock(sec) {
-        return SharedMath.formatClock(sec);
-    }
-
-    function formatDurationMs(ms) {
-        return SharedMath.formatDurationMs(ms);
-    }
-
-    function formatSummaryDuration(sec) {
-        return SharedMath.formatSummaryDuration(sec);
-    }
-
-    function getTrackByIndex(trackIndex) {
-        for (var i = 0; i < state.tracks.length; i++) {
-            if (state.tracks[i] && state.tracks[i].index === trackIndex) return state.tracks[i];
-        }
-        return state.tracks[trackIndex] || null;
-    }
-
-    function getTrackDisplayName(trackIndex) {
-        var track = getTrackByIndex(trackIndex);
-        if (track && track.name) return track.name;
-        return 'Track ' + (trackIndex + 1);
-    }
-
-    function getTrackPreviewGain(trackIndex) {
-        var key = String(trackIndex);
-        var raw = state.previewTrackGain && state.previewTrackGain[key];
-        if (raw === undefined || raw === null || !isFinite(raw)) return 1;
-        return clamp(parseNum(raw, 1), 0, 3);
-    }
-
-    function setTrackPreviewGain(trackIndex, gainValue) {
-        if (!state.previewTrackGain) state.previewTrackGain = {};
-        state.previewTrackGain[String(trackIndex)] = clamp(parseNum(gainValue, 1), 0, 3);
-    }
-
-    function getEffectivePreviewGain(trackIndex) {
-        return clamp(getTrackPreviewGain(trackIndex) * clamp(parseNum(state.previewMasterGain, 1), 0, 3), 0, 3);
-    }
-
-    function hydrateItemSourceMapping(item) {
-        var sourceMapper = requireFeature(CutPreviewSourceMapperFeature, 'AutoCastPanelCutPreviewSourceMapperFeature');
-        return sourceMapper.hydrateItemSourceMapping(item, {
-            tracks: state.tracks,
-            getTrackByIndex: getTrackByIndex,
-            parseNum: parseNum,
-            round: round,
-            ticksPerSecondDefault: TICKS_PER_SECOND
-        });
-    }
-    function buildCutPreviewState(result) {
-        var cutPreviewFeature = requireFeature(CutPreviewFeature, 'AutoCastPanelCutPreviewFeature');
-        return cutPreviewFeature.buildCutPreviewState(result, {
-            parseNum: parseNum,
-            clamp: clamp,
-            round: round,
-            getTrackDisplayName: getTrackDisplayName,
-            trackColors: TRACK_COLORS,
-            trackCount: state.tracks.length,
-            tracks: state.tracks,
-            isUninterestingSnippet: function (item) {
-                return getRenderFeature().isUninterestingSnippet(item, { parseNum: parseNum });
-            },
-            hydrateItemSourceMapping: hydrateItemSourceMapping
-        });
-    }
-
-    function getVisibleCutPreviewItems() {
-        return getViewportFeature().getVisibleCutPreviewItems(state);
-    }
-
-    function getTotalCutPreviewDurationSec() {
-        return getViewportFeature().getTotalCutPreviewDurationSec(state, parseNum);
-    }
-
-    function getZoomModel() {
-        return getViewportFeature().getZoomModel(state, els.cutPreviewTimeline, parseNum);
-    }
-
-    function sliderToPixelsPerSec(sliderValue, zoomModel) {
-        var model = zoomModel || getZoomModel();
-        return getViewportFeature().sliderToPixelsPerSec(sliderValue, model, parseNum, clamp);
-    }
-
-    function pixelsPerSecToSlider(pixelsPerSec, zoomModel) {
-        var model = zoomModel || getZoomModel();
-        return getViewportFeature().pixelsPerSecToSlider(pixelsPerSec, model, parseNum, clamp);
-    }
-
-    function ensureCutPreviewViewport(forceFit) {
-        return getViewportFeature().ensureCutPreviewViewport(state, forceFit, getZoomModel(), parseNum, clamp);
-    }
-
-    function getTimelineTickStep(visibleDurationSec) {
-        return getViewportFeature().getTimelineTickStep(visibleDurationSec);
-    }
-    function setActiveSnippet(itemId, ensureVisible) {
-        return getCutPreviewRuntimeFeature().setActiveSnippet({
-            state: state,
-            itemId: itemId,
-            ensureVisible: !!ensureVisible,
-            ensureCutPreviewViewport: ensureCutPreviewViewport,
-            clamp: clamp
-        });
-    }
-
-    function cancelPendingCutPreviewRender() {
-        return getCutPreviewRuntimeFeature().cancelPendingCutPreviewRender({
-            state: state,
-            windowObj: window
-        });
-    }
-
-    function requestCutPreviewRender(immediate) {
-        return getCutPreviewRuntimeFeature().requestCutPreviewRender({
-            state: state,
-            immediate: !!immediate,
-            renderNow: renderCutPreviewNow,
-            windowObj: window
-        });
-    }
-
-    function renderCutPreview() {
-        requestCutPreviewRender(false);
-    }
-
-    function renderCutPreviewNow() {
-        return getCutPreviewRuntimeFeature().renderCutPreviewNow({
-            state: state,
-            els: els,
-            renderFeature: getRenderFeature(),
-            setPanelPageMode: setPanelPageMode,
-            hideCutPreview: hideCutPreview,
-            getVisibleCutPreviewItems: getVisibleCutPreviewItems,
-            getTotalCutPreviewDurationSec: getTotalCutPreviewDurationSec,
-            ensureCutPreviewViewport: ensureCutPreviewViewport,
-            getTimelineTickStep: getTimelineTickStep,
-            getTrackPreviewGain: getTrackPreviewGain,
-            buildPreviewPlaybackPlan: buildPreviewPlaybackPlan,
-            getTrackDisplayName: getTrackDisplayName,
-            parseNum: parseNum,
-            round: round,
-            clamp: clamp,
-            formatClock: formatClock,
-            formatDurationMs: formatDurationMs,
-            formatSigned: formatSigned,
-            formatSummaryDuration: formatSummaryDuration,
-            escapeHtml: escapeHtml
-        });
-    }
-
-    function getCutPreviewItemById(itemId) {
-        return getCutPreviewRuntimeFeature().getCutPreviewItemById(state, itemId);
-    }
-
-    function setCutPreviewItemSelected(itemId, selected) {
-        return getCutPreviewRuntimeFeature().setCutPreviewItemSelected({
-            state: state,
-            itemId: itemId,
-            selected: selected,
-            renderCutPreview: renderCutPreview
-        });
-    }
-
-    function findDataElement(startEl, attrName) {
-        var cur = startEl;
-        while (cur && cur !== document.body) {
-            if (cur.getAttribute && cur.getAttribute(attrName)) return cur;
-            cur = cur.parentNode;
-        }
-        return null;
-    }
-
-    function resolveMediaPathToAudioUrl(mediaPath) {
-        return getAudioPreviewPlayerFeature().resolveMediaPathToAudioUrl(mediaPath, {
-            pathObj: (typeof path !== 'undefined' ? path : null),
-            hostAdapter: HostAdapter,
-            windowObj: window,
-            consoleObj: console
-        });
-    }
-
-    function buildPreviewPlaybackPlan(item) {
-        return requireFeature(AudioPreviewFeature, 'AutoCastPanelAudioPreviewFeature')
-            .buildPreviewPlaybackPlan(item);
-    }
-
-    function stopCurrentPreviewAudio(skipRender) {
-        return getAudioPreviewPlayerFeature()
-            .stopCurrentPreviewAudio({
-                state: state,
-                skipRender: !!skipRender,
-                renderCutPreview: renderCutPreview
-            });
-    }
-
-    function updateCurrentPreviewGain() {
-        return getAudioPreviewPlayerFeature()
-            .updateCurrentPreviewGain({
-                state: state,
-                getCutPreviewItemById: getCutPreviewItemById,
-                getEffectivePreviewGain: getEffectivePreviewGain,
-                clamp: clamp
-            });
-    }
-
-    function createPreviewGainController(audio, trackIndex) {
-        return getAudioPreviewPlayerFeature()
-            .createPreviewGainController(audio, trackIndex, {
-                state: state,
-                getEffectivePreviewGain: getEffectivePreviewGain,
-                parseNum: parseNum,
-                clamp: clamp,
-                windowObj: window
-            });
-    }
-
-    function toggleSnippetPreview(itemId) {
-        return getAudioPreviewPlayerFeature()
-            .toggleSnippetPreview(itemId, {
-                state: state,
-                getCutPreviewItemById: getCutPreviewItemById,
-                buildPreviewPlaybackPlan: buildPreviewPlaybackPlan,
-                resolveMediaPathToAudioUrl: resolveMediaPathToAudioUrl,
-                stopCurrentPreviewAudio: function (skipRender) {
-                    stopCurrentPreviewAudio(skipRender);
-                },
-                createPreviewGainController: createPreviewGainController,
-                parseNum: parseNum,
-                clamp: clamp,
-                renderCutPreview: renderCutPreview,
-                setStatus: setStatus,
-                audioCtor: Audio,
-                audioPreviewPrerollSec: AUDIO_PREVIEW_PREROLL_SEC,
-                audioPreviewPostrollSec: AUDIO_PREVIEW_POSTROLL_SEC
-            });
-    }
     function buildApplyCutsPayload() {
         var applyHelper = window.AutoCastCutPreviewApply || null;
         if (!applyHelper && typeof globalThis !== 'undefined') {
@@ -679,28 +421,9 @@
     }
 
     function bindCutPreviewControls() {
-        var interactionFeature = requireFeature(CutPreviewInteractionFeature, 'AutoCastPanelInteractionFeature');
-        interactionFeature.bindCutPreviewControls({
-            state: state,
-            els: els,
-            parseNum: parseNum,
-            clamp: clamp,
-            findDataElement: findDataElement,
-            getCutPreviewItemById: getCutPreviewItemById,
-            setCutPreviewItemSelected: setCutPreviewItemSelected,
-            setActiveSnippet: setActiveSnippet,
-            toggleSnippetPreview: toggleSnippetPreview,
-            renderCutPreview: renderCutPreview,
-            setTrackPreviewGain: setTrackPreviewGain,
-            updateCurrentPreviewGain: updateCurrentPreviewGain,
-            getZoomModel: getZoomModel,
-            ensureCutPreviewViewport: ensureCutPreviewViewport,
-            sliderToPixelsPerSec: sliderToPixelsPerSec,
-            pixelsPerSecToSlider: pixelsPerSecToSlider,
-            documentObj: document,
-            windowObj: window
-        });
+        return previewRuntime.bindCutPreviewControls();
     }
+
     requireFeature(PanelInitFeature, 'AutoCastPanelInitFeature').initializePanel({
         interactionFeature: requireFeature(CutPreviewInteractionFeature, 'AutoCastPanelInteractionFeature'),
         bindPrimaryActionsOptions: {
@@ -728,5 +451,3 @@
         consoleObj: console
     });
 })();
-
-

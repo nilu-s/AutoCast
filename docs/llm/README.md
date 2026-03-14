@@ -7,7 +7,7 @@ Zentraler Einstieg fuer LLM-Assistenten in diesem Repository.
 Diese Unterlagen helfen bei drei Fragen:
 - Wo liegt welche Verantwortung?
 - Welche Dateien werden fuer Aufgabe X angepasst?
-- Welche Invarianten duerfen waehrend der Migration nicht gebrochen werden?
+- Welche Invarianten und Qualitaetsregeln duerfen nicht gebrochen werden?
 
 ## Empfohlene Lesereihenfolge
 
@@ -15,15 +15,27 @@ Diese Unterlagen helfen bei drei Fragen:
 2. `docs/architecture.md`
 3. `docs/llm/CODEBASE_MAP.md`
 4. `docs/llm/WORKFLOW_PLAYBOOK.md`
-5. `docs/llm/MIGRATION_GUARDRAILS.md`
+5. `docs/llm/GUARDRAILS.md`
 6. `docs/llm/DOMAIN_GLOSSARY.md`
 
 ## Arbeitsmodus fuer Assistenten
 
 - Immer zuerst den betroffenen Einstiegspfad identifizieren (Panel, Analyzer, Contracts).
 - Nur die fuer die Aufgabe relevanten Dateien anfassen.
-- Bei Struktur- oder Split-Aenderungen die Guardrails strikt einhalten.
+- Bei Struktur- oder Refactor-Aenderungen die Guardrails strikt einhalten.
 - Vor Abschluss immer die Repo-Checks ausfuehren.
+
+## Test-Governance (verbindlich)
+
+- Tests ko-lokal halten:
+  - Panel-Tests unter `apps/panel/src/**/tests/*.test.js`
+  - Analyzer-Tests unter `packages/analyzer/src/**/tests/*.test.js`
+- Jede Testdatei hat genau einen klaren Fokus (ein Modul/Thema, kein Sammeltest).
+- Groesse begrenzen:
+  - Soft-Limit: 150 Zeilen
+  - Hard-Limit: 220 Zeilen (Ausnahme nur mit kurzer Begruendung im PR/Commit-Text)
+- Neue oder verschobene Tests muessen im passenden `suite_manifest.js` registriert werden.
+- Wiederverwendbare Fixtures/Generatoren in `packages/analyzer/src/tests/helpers/*` auslagern.
 
 ## Abschluss-Check
 
@@ -31,4 +43,4 @@ Diese Unterlagen helfen bei drei Fragen:
 npm run check
 ```
 
-`npm run check` umfasst Syntax-, Struktur- und Test-Checks.
+`npm run check` umfasst Syntax-, Struktur-, Architektur-, LLM-Requirements- und Test-Checks.

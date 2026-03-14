@@ -27,11 +27,12 @@ AutoCast/
 
 - `apps/panel`: CEP-UI, App-Features, Adapter, ExtendScript-Bridge
 - `packages/analyzer/src`: Audio-Analyse-Pipeline und Module
-- `packages/analyzer/test`: Unit-, Integration- und E2E-Tests
+- `packages/analyzer/src/**/tests`: ko-lokale Analyzer-Tests (Runner-Manifeste unter `packages/analyzer/test/*`)
 
 ## Entwicklung
 
 ```bash
+npm run check:llm
 npm run check
 npm test
 npm run test:e2e
@@ -62,10 +63,11 @@ Beispiel:
 }
 ```
 
-## Architektur und Migration
+## Architektur und Betrieb
 
 - Aktuelle Architektur: `docs/architecture.md`
-- Naechste Migrationsphasen: `docs/migration_next_3_phases_todo.md`
+- Workflow-Playbook: `docs/llm/WORKFLOW_PLAYBOOK.md`
+- Engineering-Guardrails: `docs/llm/GUARDRAILS.md`
 
 ## LLM Onboarding
 
@@ -73,7 +75,7 @@ Beispiel:
 - `docs/llm/README.md`
 - `docs/llm/CODEBASE_MAP.md`
 - `docs/llm/WORKFLOW_PLAYBOOK.md`
-- `docs/llm/MIGRATION_GUARDRAILS.md`
+- `docs/llm/GUARDRAILS.md`
 - `docs/llm/DOMAIN_GLOSSARY.md`
 
 ## Installation in Premiere

@@ -1,5 +1,6 @@
-'use strict';
+﻿'use strict';
 
 module.exports = [
-    'test_e2e.js'
+    '../src/tests/e2e/analyzer_baseline.e2e.test.js',
+    '../src/tests/e2e/analyzer_modes.e2e.test.js'
 ];

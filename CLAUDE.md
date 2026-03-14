@@ -18,7 +18,7 @@ AutoCast ist ein CEP-Plugin fuer Adobe Premiere Pro:
 
 ## Harte Invarianten
 
-- Keine unbeabsichtigte Verhaltensaenderung waehrend Migrations-Splits.
+- Keine unbeabsichtigte Verhaltensaenderung bei Refactors/Splits.
 - Panel greift Analyzer nur ueber Adapter/API an.
 - Runtime-Entry-Points muessen stabil bleiben:
   - `apps/panel/js/main.js`
@@ -51,5 +51,5 @@ AutoCast ist ein CEP-Plugin fuer Adobe Premiere Pro:
 - `docs/llm/README.md`
 - `docs/llm/CODEBASE_MAP.md`
 - `docs/llm/WORKFLOW_PLAYBOOK.md`
-- `docs/llm/MIGRATION_GUARDRAILS.md`
+- `docs/llm/GUARDRAILS.md`
 - `docs/llm/DOMAIN_GLOSSARY.md`

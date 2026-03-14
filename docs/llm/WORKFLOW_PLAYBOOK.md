@@ -9,6 +9,25 @@ Bei jedem Workflow gilt:
 - Danach immer `npm run check`.
 - Neue Tests in das passende `suite_manifest.js` eintragen.
 
+## Test-Workflow (systematisch)
+
+Wenn Tests zu gross oder unkoordiniert wirken, in genau dieser Reihenfolge arbeiten:
+
+1. Inventur:
+   - Groesste Testdateien identifizieren (Zeilenanzahl, Domaene, Ueberschneidungen).
+2. Schnittplan:
+   - Pro grosse Datei 2-5 kleinere Ziel-Dateien definieren.
+   - Je Ziel-Datei ein klarer Scope (`<modul>.<aspekt>.test.js`).
+3. Helper-Auslagerung:
+   - Gemeinsame Builder/Fixtures nach `packages/analyzer/src/tests/helpers/*`.
+4. Ko-Lokation:
+   - Panel-Tests unter `apps/panel/src/**/tests`.
+   - Analyzer-Tests unter `packages/analyzer/src/**/tests/*.test.js`.
+5. Runner-Integration:
+   - Alle neuen Pfade im passenden `suite_manifest.js` registrieren.
+6. Abschluss:
+   - `npm run check` und erst dann finalisieren.
+
 ## 1) Panel-Button oder Flow anpassen
 
 Bearbeite:

@@ -14,6 +14,7 @@
 
     function createSettingsFeature(storageAdapter) {
         var storage = storageAdapter || root.AutoCastPanelStorageAdapter || null;
+        var settingsStore = root.AutoCastPanelSettingsStore || null;
 
         function loadSettings(defaults) {
             var base = defaults || {};
@@ -22,6 +23,9 @@
             }
             var raw = storage.getItem(STORAGE_KEY, null);
             var parsed = safeParse(raw, {});
+            if (settingsStore && typeof settingsStore.mergeSettings === 'function') {
+                return settingsStore.mergeSettings(base, parsed);
+            }
             var out = {};
             var key;
             for (key in base) {
@@ -35,6 +39,10 @@
 
         function saveSettings(settings) {
             if (!storage || typeof storage.setItem !== 'function') return false;
+            if (settingsStore && typeof settingsStore.serializeSettings === 'function') {
+                storage.setItem(STORAGE_KEY, settingsStore.serializeSettings(settings || {}));
+                return true;
+            }
             storage.setItem(STORAGE_KEY, JSON.stringify(settings || {}));
             return true;
         }
