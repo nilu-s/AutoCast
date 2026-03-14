@@ -6,12 +6,14 @@
 'use strict';
 
 (function (root, factory) {
+    var api = factory();
     if (typeof module !== 'undefined' && module.exports) {
-        module.exports = factory();
-        return;
+        module.exports = api;
     }
-    root.AutoCastCutPreviewApply = factory();
-})(this, function () {
+    if (root && typeof root === 'object') {
+        root.AutoCastCutPreviewApply = api;
+    }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
     function parseNum(v, fallback) {
         var n = parseFloat(v);
         return (typeof n === 'number' && isFinite(n)) ? n : fallback;

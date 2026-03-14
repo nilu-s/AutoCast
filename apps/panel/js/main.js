@@ -663,6 +663,9 @@
     }
     function buildApplyCutsPayload() {
         var applyHelper = window.AutoCastCutPreviewApply || null;
+        if (!applyHelper && typeof globalThis !== 'undefined') {
+            applyHelper = globalThis.AutoCastCutPreviewApply || null;
+        }
         if (!applyHelper && typeof require !== 'undefined') {
             try {
                 applyHelper = require('./cut_preview_apply');

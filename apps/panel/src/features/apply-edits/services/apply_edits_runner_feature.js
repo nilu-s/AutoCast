@@ -27,8 +27,12 @@
         }
 
         var applyPayload = buildApplyCutsPayload();
-        if (!applyPayload || !applyPayload.trackIndices || applyPayload.trackIndices.length === 0) {
-            setStatus('error', 'Apply payload unavailable (helper missing or no tracks selected).');
+        if (!applyPayload) {
+            setStatus('error', 'Apply payload unavailable (helper missing).');
+            return;
+        }
+        if (!applyPayload.trackIndices || applyPayload.trackIndices.length === 0) {
+            setStatus('error', 'No tracks selected for apply.');
             return;
         }
 

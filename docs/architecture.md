@@ -111,7 +111,6 @@ packages/analyzer/test/
 ## Struktur- und Doku-Referenzen
 
 - Struktur-Gate: `scripts/check_structure.js`
-- Migrations-TODO: `docs/migration_next_3_phases_todo.md`
 - LLM-Onboarding: `CLAUDE.md`, `docs/llm/*`
 
 ## Hinweis zur Historie
