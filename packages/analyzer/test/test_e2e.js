@@ -1,5 +1,5 @@
-﻿/**
- * AutoCast Ã¢â‚¬â€œ End-to-End Test
+/**
+ * AutoCast  End-to-End Test
  * 
  * Generates synthetic podcast WAVs and runs the full analyzer pipeline.
  * Verifies that the correct speakers are detected as active in each segment.
@@ -178,5 +178,6 @@ describe('End-to-End Analysis', function () {
         assert(result.params.fillGaps === true, 'fillGaps should remain user-defined true');
     });
 });
+
 
 

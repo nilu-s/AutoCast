@@ -5,8 +5,8 @@
 'use strict';
 
 var path = require('path');
-var laughterDetector = require(path.join(__dirname, '..', 'src', 'laughter_detector'));
-var rmsCalc = require(path.join(__dirname, '..', 'src', 'rms_calculator'));
+var laughterDetector = require(path.join(__dirname, '..', 'src', 'modules', 'vad', 'laughter_detector'));
+var rmsCalc = require(path.join(__dirname, '..', 'src', 'modules', 'energy', 'rms_calculator'));
 
 describe('Laughter Detector', function () {
     var SAMPLE_RATE = 16000;

@@ -12,6 +12,9 @@
         var path = require('path');
         var childProcess = require('child_process');
         var processObj = require('process');
+        var contracts = (typeof window !== 'undefined' && window.AutoCastPanelContracts)
+            ? window.AutoCastPanelContracts
+            : null;
         var getExtensionPath = (typeof options.getExtensionPath === 'function')
             ? options.getExtensionPath
             : function () { return '.'; };
@@ -213,20 +216,51 @@
 
         return {
             analyze: function (trackPaths, params, progressCallback) {
+                if (contracts && typeof contracts.validateAnalyzeRequest === 'function') {
+                    var reqValidation = contracts.validateAnalyzeRequest(trackPaths, params);
+                    if (!reqValidation.ok) {
+                        return Promise.reject(new Error(reqValidation.message));
+                    }
+                    trackPaths = reqValidation.value.trackPaths;
+                    params = reqValidation.value.params;
+                }
+
                 return runAnalyzerWorker(
                     'analyzer_worker_stdio.js',
                     { trackPaths: trackPaths, params: params },
                     progressCallback,
                     'Analyzer process exited'
-                );
+                ).then(function (result) {
+                    if (contracts && typeof contracts.validateAnalyzeResult === 'function') {
+                        var validation = contracts.validateAnalyzeResult(result);
+                        if (!validation.ok) throw new Error(validation.message);
+                        return validation.value;
+                    }
+                    return result;
+                });
             },
             quickGainScan: function (trackPaths, progressCallback) {
+                if (contracts && typeof contracts.validateQuickGainRequest === 'function') {
+                    var quickReqValidation = contracts.validateQuickGainRequest(trackPaths);
+                    if (!quickReqValidation.ok) {
+                        return Promise.reject(new Error(quickReqValidation.message));
+                    }
+                    trackPaths = quickReqValidation.value;
+                }
+
                 return runAnalyzerWorker(
                     'quick_gain_scan.js',
                     { trackPaths: trackPaths },
                     progressCallback,
                     'Quick scan process exited'
-                );
+                ).then(function (result) {
+                    if (contracts && typeof contracts.validateQuickGainResult === 'function') {
+                        var validation = contracts.validateQuickGainResult(result);
+                        if (!validation.ok) throw new Error(validation.message);
+                        return validation.value;
+                    }
+                    return result;
+                });
             }
         };
     }

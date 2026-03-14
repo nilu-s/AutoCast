@@ -7,11 +7,16 @@ var childProcess = require('child_process');
 var ROOT = path.resolve(__dirname, '..');
 var TARGET_DIRS = [
     path.join(ROOT, 'apps', 'panel', 'js'),
+    path.join(ROOT, 'apps', 'panel', 'src'),
     path.join(ROOT, 'apps', 'panel', 'jsx'),
     path.join(ROOT, 'packages', 'analyzer', 'src'),
     path.join(ROOT, 'packages', 'analyzer', 'test'),
     path.join(ROOT, 'scripts')
 ];
+var SUPPORTED_EXTENSIONS = {
+    '.js': true,
+    '.jsx': true
+};
 
 function walk(dir, out) {
     if (!fs.existsSync(dir)) return;
@@ -23,14 +28,27 @@ function walk(dir, out) {
             walk(fullPath, out);
             continue;
         }
-        if (entry.isFile() && fullPath.endsWith('.js')) {
+        var ext = path.extname(fullPath).toLowerCase();
+        if (entry.isFile() && SUPPORTED_EXTENSIONS[ext]) {
             out.push(fullPath);
         }
     }
 }
 
 function checkFileSyntax(filePath) {
-    var res = childProcess.spawnSync(process.execPath, ['--check', filePath], { encoding: 'utf8' });
+    var ext = path.extname(filePath).toLowerCase();
+    var res;
+
+    if (ext === '.jsx') {
+        var source = fs.readFileSync(filePath, 'utf8');
+        res = childProcess.spawnSync(process.execPath, ['--check'], {
+            encoding: 'utf8',
+            input: source
+        });
+    } else {
+        res = childProcess.spawnSync(process.execPath, ['--check', filePath], { encoding: 'utf8' });
+    }
+
     return {
         ok: res.status === 0,
         filePath: filePath,

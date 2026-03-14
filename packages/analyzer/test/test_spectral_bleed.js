@@ -1,21 +1,21 @@
-﻿/**
- * AutoCast Ã¢â‚¬â€œ Spectral Bleed Detection Tests
+/**
+ * AutoCast  Spectral Bleed Detection Tests
  *
  * Tests for:
  *   1. computeSpectralFingerprint: produces correct shape
- *   2. computeCrossTrackSimilarity: identical signal Ã¢â€ â€™ ~1.0, different Ã¢â€ â€™ lower
- *   3. spectral_bleed_safe policy: real overlap Ã¢â€ â€™ both active
- *   4. spectral_bleed_safe policy: bleed scenario Ã¢â€ â€™ quieter track suppressed
+ *   2. computeCrossTrackSimilarity: identical signal  ~1.0, different  lower
+ *   3. spectral_bleed_safe policy: real overlap  both active
+ *   4. spectral_bleed_safe policy: bleed scenario  quieter track suppressed
  */
 
 'use strict';
 
 var path = require('path');
-var spectralVad = require(path.join(__dirname, '..', 'src', 'spectral_vad'));
-var overlapResolver = require(path.join(__dirname, '..', 'src', 'overlap_resolver'));
-var rmsCalc = require(path.join(__dirname, '..', 'src', 'rms_calculator'));
+var spectralVad = require(path.join(__dirname, '..', 'src', 'modules', 'vad', 'spectral_vad'));
+var overlapResolver = require(path.join(__dirname, '..', 'src', 'modules', 'overlap', 'overlap_resolver'));
+var rmsCalc = require(path.join(__dirname, '..', 'src', 'modules', 'energy', 'rms_calculator'));
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+//  Helpers 
 
 var SAMPLE_RATE = 16000;
 var FRAME_MS = 10;
@@ -38,7 +38,7 @@ function uniformRMS(value, frameCount) {
     return r;
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Unit: computeSpectralFingerprint Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+//  Unit: computeSpectralFingerprint 
 
 describe('computeSpectralFingerprint', function () {
     it('should return the correct shape', function () {
@@ -67,7 +67,7 @@ describe('computeSpectralFingerprint', function () {
     });
 });
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Unit: computeCrossTrackSimilarity Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+//  Unit: computeCrossTrackSimilarity 
 
 describe('computeCrossTrackSimilarity', function () {
     it('identical signals should yield similarity near 1.0', function () {
@@ -88,13 +88,13 @@ describe('computeCrossTrackSimilarity', function () {
         var fpB = spectralVad.computeSpectralFingerprint(bleed, SAMPLE_RATE, FRAME_MS);
 
         var sim = spectralVad.computeCrossTrackSimilarity(fpA, fpB, 0, fpA.frameCount);
-        // Normalised fingerprints, so amplitude doesn't matter Ã¢â‚¬â€œ shape should be ~identical
+        // Normalised fingerprints, so amplitude doesn't matter  shape should be ~identical
         assert(sim >= 0.95, 'Scaled copy (bleed) should have similarity >= 0.95 (got ' + sim + ')');
     });
 
     it('different frequencies should yield low similarity', function () {
-        var samplesA = sineWave(500, 0.5, N);   // Speaker 1 Ã¢â‚¬â€œ low voice
-        var samplesB = sineWave(3000, 0.5, N);  // Speaker 2 Ã¢â‚¬â€œ high voice
+        var samplesA = sineWave(500, 0.5, N);   // Speaker 1  low voice
+        var samplesB = sineWave(3000, 0.5, N);  // Speaker 2  high voice
 
         var fpA = spectralVad.computeSpectralFingerprint(samplesA, SAMPLE_RATE, FRAME_MS);
         var fpB = spectralVad.computeSpectralFingerprint(samplesB, SAMPLE_RATE, FRAME_MS);
@@ -104,7 +104,7 @@ describe('computeCrossTrackSimilarity', function () {
     });
 });
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Integration: spectral_bleed_safe policy Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+//  Integration: spectral_bleed_safe policy 
 
 describe('spectral_bleed_safe overlap policy', function () {
     var FRAME_COUNT = Math.floor(N / (SAMPLE_RATE * FRAME_MS / 1000));
@@ -112,7 +112,7 @@ describe('spectral_bleed_safe overlap policy', function () {
     it('real simultaneous speech: both tracks should stay active', function () {
         // Two speakers with different frequency content both active at the same time
         var samplesA = sineWave(600, 0.5, N);   // Speaker 1
-        var samplesB = sineWave(2500, 0.4, N);  // Speaker 2 Ã¢â‚¬â€œ genuinely different spectrum
+        var samplesB = sineWave(2500, 0.4, N);  // Speaker 2  genuinely different spectrum
 
         var fpA = spectralVad.computeSpectralFingerprint(samplesA, SAMPLE_RATE, FRAME_MS);
         var fpB = spectralVad.computeSpectralFingerprint(samplesB, SAMPLE_RATE, FRAME_MS);
@@ -178,14 +178,14 @@ describe('spectral_bleed_safe overlap policy', function () {
         ];
 
         var rmsA = uniformRMS(0.5, 500);
-        var rmsB = uniformRMS(0.1, 500); // >14 dB quieter Ã¢â€ â€™ suppressed under bleed_safe too
+        var rmsB = uniformRMS(0.1, 500); // >14 dB quieter  suppressed under bleed_safe too
 
         var result = overlapResolver.resolveOverlaps(allSegments, [rmsA, rmsB], {
             policy: 'spectral_bleed_safe',
             frameDurationMs: FRAME_MS,
             overlapMarginDb: 6,
             bleedMarginDb: 8
-            // fingerprints not provided Ã¢â€ â€™ should fall back to bleed_safe
+            // fingerprints not provided  should fall back to bleed_safe
         });
 
         assert(result[0][0].state === 'active', 'Track A should be active');
@@ -298,5 +298,6 @@ describe('speaker profile lock', function () {
         assert(kept <= filtered.length * 0.35, 'Different speaker frames should mostly be rejected');
     });
 });
+
 
 

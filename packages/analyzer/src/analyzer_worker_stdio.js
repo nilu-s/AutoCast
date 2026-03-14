@@ -1,23 +1,12 @@
-const analyzer = require('./analyzer.js');
+'use strict';
 
-let inputData = '';
+var analyzer = require('./analyzer.js');
+var stdioJsonWorker = require('./interfaces/worker/stdio_json_worker');
+var analyzerContracts = require('./core/contracts/analyzer_contracts');
 
-process.stdin.setEncoding('utf8');
-
-process.stdin.on('data', (chunk) => {
-    inputData += chunk;
-});
-
-process.stdin.on('end', () => {
-    try {
-        const msg = JSON.parse(inputData);
-        const result = analyzer.analyze(msg.trackPaths, msg.params, (pct, statusMsg) => {
-            console.log(JSON.stringify({ type: 'progress', percent: pct, message: statusMsg }));
-        });
-        console.log(JSON.stringify({ type: 'done', result: result }));
-        process.exit(0);
-    } catch (e) {
-        console.log(JSON.stringify({ type: 'error', error: e.message }));
-        process.exit(1);
-    }
+stdioJsonWorker.runJsonWorker(function (msg, progress) {
+    var request = analyzerContracts.validateAnalyzeRequest(msg);
+    var result = analyzer.analyze(request.trackPaths, request.params, progress);
+    analyzerContracts.assertAnalyzeResult(result);
+    return analyzerContracts.withContract(result, 'analyze_result');
 });

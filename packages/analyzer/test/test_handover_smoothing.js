@@ -5,8 +5,8 @@
 'use strict';
 
 var path = require('path');
-var post = require(path.join(__dirname, '..', 'src', 'analyzer_postprocess'));
-var rmsCalc = require(path.join(__dirname, '..', 'src', 'rms_calculator'));
+var post = require(path.join(__dirname, '..', 'src', 'modules', 'postprocess', 'analyzer_postprocess'));
+var rmsCalc = require(path.join(__dirname, '..', 'src', 'modules', 'energy', 'rms_calculator'));
 
 describe('Cross-track handover smoothing', function () {
     it('should trim long weak overlap lead for incoming track', function () {
@@ -105,4 +105,3 @@ function fillDbRange(arr, startSec, endSec, db) {
     var v = rmsCalc.dbToLinear(db);
     for (var i = start; i < end; i++) arr[i] = v;
 }
-

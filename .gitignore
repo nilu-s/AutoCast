@@ -21,6 +21,7 @@ Thumbs.db
 *.wav
 analysis_debug.json
 _tmp_*.json
+_tmp_case_*/
 temp_analyzer_debug.js
 out.txt
 test_output.txt

@@ -1,6 +1,6 @@
 'use strict';
 
-var cutPreviewBuilder = require('../src/cut_preview_builder');
+var cutPreviewBuilder = require('../src/modules/preview/cut_preview_builder');
 
 function makeFilledArray(length, value) {
     var out = new Float32Array(length);
@@ -64,6 +64,15 @@ describe('Cut Preview Builder', function () {
             assert(item.metrics && item.metrics.laughterConfidence !== undefined, 'Expected laughter metric');
             assert(item.metrics && item.metrics.classMargin !== undefined, 'Expected class margin metric');
             assert(item.typeLabel && item.typeConfidence !== undefined, 'Expected type metadata');
+            assert(item.decisionState, 'Expected normalized decision state');
+            assert(item.contentClass, 'Expected normalized content class');
+            assert(item.qualityBand, 'Expected normalized quality band');
+            assert(item.hasOwnProperty('suppressionReason'), 'Expected suppression reason key');
+            assert(item.modelOrigin, 'Expected normalized model origin');
+            assert(item.evidenceMetrics && item.evidenceMetrics.speechEvidence !== undefined, 'Expected evidence metrics');
+            assert(item.decision && item.decision.decisionState, 'Expected decision structure');
+            assert(item.classification && item.classification.contentClass, 'Expected classification structure');
+            assert(item.explainability && item.explainability.reasons, 'Expected explainability structure');
         }
 
         assert(kept === 1, 'Expected one kept item');
@@ -239,6 +248,8 @@ describe('Cut Preview Builder', function () {
             hasFill = true;
             assert(item.origin === 'always_open_fill', 'Expected explicit fill origin on preview item');
             assert(item.decisionStage === 'always_open_fill', 'Expected explicit fill decision stage');
+            assert(item.decisionState === 'filled_gap', 'Expected normalized decisionState for explicit fill');
+            assert(item.modelOrigin === 'continuity_fill', 'Expected normalized continuity origin for explicit fill');
             assert(item.selected === true, 'Fill snippet should be selected by default');
             break;
         }

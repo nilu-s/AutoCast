@@ -1,11 +1,11 @@
-﻿/**
- * AutoCast â€“ Overlap Resolver Tests
+/**
+ * AutoCast  Overlap Resolver Tests
  */
 
 'use strict';
 
 var path = require('path');
-var overlapResolver = require(path.join(__dirname, '..', 'src', 'overlap_resolver'));
+var overlapResolver = require(path.join(__dirname, '..', 'src', 'modules', 'overlap', 'overlap_resolver'));
 
 describe('Overlap Resolver', function () {
 
@@ -106,4 +106,5 @@ function createUniformRMS(value, length) {
     for (var i = 0; i < length; i++) rms[i] = value;
     return rms;
 }
+
 

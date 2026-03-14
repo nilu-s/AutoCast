@@ -1,6 +1,6 @@
 'use strict';
 
-var overlapResolver = require('../src/overlap_resolver');
+var overlapResolver = require('../src/modules/overlap/overlap_resolver');
 
 describe('Overlap fillGaps routing', function () {
     it('should fill leading silence with the first active track, not hardcoded track 0', function () {

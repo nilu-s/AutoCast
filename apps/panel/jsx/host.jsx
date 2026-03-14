@@ -9,12 +9,27 @@
 //@include "apply_cuts.jsx"
 
 function autocast_ping() {
-    return JSON.stringify({ status: 'ok', version: '2.2.0', host: 'Premiere Pro' });
+    return JSON.stringify({
+        status: 'ok',
+        version: '2.2.0',
+        host: 'Premiere Pro',
+        contract: {
+            name: 'host_ping',
+            version: 'autocast.host.v1'
+        }
+    });
 }
 
 function autocast_getTrackInfo() {
     try {
-        var str = JSON.stringify(getTrackInfo());
+        var payload = getTrackInfo();
+        if (payload && !payload.error) {
+            payload.contract = {
+                name: 'host_track_info',
+                version: 'autocast.host.v1'
+            };
+        }
+        var str = JSON.stringify(payload);
         return str;
     } catch (e) {
         var errStr = JSON.stringify({ error: e.toString() });
@@ -48,6 +63,12 @@ function autocast_applyCuts(segmentDataJson) {
         var result = applyCuts(data, function (percent, message) {
             autocast_dispatchCutProgress(percent, message);
         });
+        if (result && !result.error) {
+            result.contract = {
+                name: 'host_apply_cuts',
+                version: 'autocast.host.v1'
+            };
+        }
         var str = JSON.stringify(result);
         return str;
     } catch (e) {

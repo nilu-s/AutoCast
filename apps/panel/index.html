@@ -105,7 +105,7 @@
                     <div class="cut-preview-head-right">
                         <div id="cutPreviewMeta" class="cut-preview-meta"></div>
                         <div class="cut-preview-page-actions">
-                            <button id="cutPreviewBackBtn" class="btn btn-secondary btn-sm" type="button">Zurück zu Setup</button>
+                            <button id="cutPreviewBackBtn" class="btn btn-secondary btn-sm" type="button">Zurueck zu Setup</button>
                             <button id="cutPreviewApplyBtn" class="btn btn-accent btn-sm" type="button">Apply Edits</button>
                         </div>
                     </div>
@@ -173,11 +173,48 @@
 
     <script src="js/CSInterface.js?v=2"></script>
     <script src="js/mock_csi.js?v=2"></script>
-    <script src="js/csi_bridge.js?v=2"></script>
-    <script src="js/analyzer_client.js?v=4"></script>
+    <script src="src/core/contracts/panel_contracts.js?v=1"></script>
+    <script src="src/shared/html_utils.js?v=1"></script>
+    <script src="src/shared/math_format_utils.js?v=1"></script>
+    <script src="js/csi_bridge.js?v=3"></script>
+    <script src="js/analyzer_client.js?v=5"></script>
     <script src="js/cut_preview_apply.js?v=2"></script>
-    <script src="js/main.js?v=5"></script>
+    <script src="src/adapters/host/csi_bridge_adapter.js?v=1"></script>
+    <script src="src/adapters/analyzer/analyzer_client_adapter.js?v=1"></script>
+    <script src="src/adapters/storage/panel_storage_adapter.js?v=1"></script>
+    <script src="src/app/panel_controller.js?v=1"></script>
+    <script src="src/app/panel_bootstrap.js?v=1"></script>
+    <script src="src/app/panel_init_feature.js?v=1"></script>
+    <script src="src/app/panel_ui_runtime_feature.js?v=1"></script>
+    <script src="src/app/panel_flow_runtime_feature.js?v=1"></script>
+    <script src="src/features/settings/components/settings_form_component.js?v=1"></script>
+    <script src="src/app/panel_params_feature.js?v=1"></script>
+    <script src="src/features/tracks/components/track_list_component.js?v=1"></script>
+    <script src="src/features/tracks/services/tracks_feature.js?v=1"></script>
+    <script src="src/features/tracks/services/tracks_loader_feature.js?v=1"></script>
+    <script src="src/features/analysis/services/analysis_feature.js?v=1"></script>
+    <script src="src/features/analysis/services/analysis_run_feature.js?v=1"></script>
+    <script src="src/features/analysis/state/analysis_store.js?v=1"></script>
+    <script src="src/features/tracks/state/tracks_store.js?v=1"></script>
+    <script src="src/features/cut-preview/services/cut_preview_state_feature.js?v=1"></script>
+    <script src="src/features/cut-preview/state/cut_preview_store.js?v=1"></script>
+    <script src="src/features/cut-preview/services/cut_preview_source_mapper_feature.js?v=1"></script>
+    <script src="src/features/cut-preview/services/cut_preview_viewport_feature.js?v=1"></script>
+    <script src="src/features/cut-preview/services/cut_preview_runtime_feature.js?v=1"></script>
+    <script src="src/features/cut-preview/services/cut_preview_interaction_feature.js?v=1"></script>
+    <script src="src/features/cut-preview/components/cut_preview_timeline_component.js?v=1"></script>
+    <script src="src/features/cut-preview/components/cut_preview_navigator_component.js?v=1"></script>
+    <script src="src/features/cut-preview/components/cut_preview_inspector_component.js?v=1"></script>
+    <script src="src/features/cut-preview/services/cut_preview_render_feature.js?v=2"></script>
+    <script src="src/features/audio-preview/services/audio_preview_feature.js?v=1"></script>
+    <script src="src/features/audio-preview/state/audio_preview_store.js?v=1"></script>
+    <script src="src/features/audio-preview/services/audio_preview_player_feature.js?v=1"></script>
+    <script src="src/features/apply-edits/services/apply_edits_feature.js?v=1"></script>
+    <script src="src/features/apply-edits/services/apply_edits_runner_feature.js?v=1"></script>
+    <script src="src/features/settings/services/settings_feature.js?v=1"></script>
+    <script src="js/main.js?v=11"></script>
 </body>
 
 </html>
+
 

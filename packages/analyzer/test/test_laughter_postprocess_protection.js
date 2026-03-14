@@ -5,7 +5,7 @@
 'use strict';
 
 var path = require('path');
-var post = require(path.join(__dirname, '..', 'src', 'analyzer_postprocess'));
+var post = require(path.join(__dirname, '..', 'src', 'modules', 'postprocess', 'analyzer_postprocess'));
 
 describe('Laughter postprocess protection', function () {
     it('should keep weak segments when laughter confidence is high', function () {
@@ -60,4 +60,3 @@ describe('Laughter postprocess protection', function () {
         assert(keptWithProtect[0].length === 1, 'Weak segment should be kept when laughter support is present');
     });
 });
-

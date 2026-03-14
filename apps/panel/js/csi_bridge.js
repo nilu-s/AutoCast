@@ -8,6 +8,9 @@ var AutoCastBridge = (function () {
     var csInterface = null;
     var isMockMode = false;
     var CUT_PROGRESS_EVENT = 'com.autocast.cutProgress';
+    var contracts = (typeof window !== 'undefined' && window.AutoCastPanelContracts)
+        ? window.AutoCastPanelContracts
+        : null;
 
     function init() {
         try {
@@ -55,11 +58,46 @@ var AutoCastBridge = (function () {
     }
 
     function getTrackInfo(callback) {
-        callExtendScript('autocast_getTrackInfo', null, callback);
+        callExtendScript('autocast_getTrackInfo', null, function (result) {
+            if (!contracts || typeof contracts.validateGetTrackInfoResult !== 'function') {
+                if (callback) callback(result);
+                return;
+            }
+            var validation = contracts.validateGetTrackInfoResult(result);
+            if (!validation.ok) {
+                console.error('[Bridge] Invalid getTrackInfo response:', validation.message);
+                if (callback) callback({ error: 'Invalid host track payload: ' + validation.message });
+                return;
+            }
+            if (callback) callback(validation.value);
+        });
     }
 
     function applyCuts(cutData, callback) {
-        callExtendScript('autocast_applyCuts', cutData, callback);
+        if (contracts && typeof contracts.validateApplyCutsPayload === 'function') {
+            var payloadValidation = contracts.validateApplyCutsPayload(cutData);
+            if (!payloadValidation.ok) {
+                console.error('[Bridge] Invalid applyCuts payload:', payloadValidation.message);
+                if (callback) callback({ success: false, error: payloadValidation.message });
+                return;
+            }
+            cutData = payloadValidation.value;
+        }
+
+        callExtendScript('autocast_applyCuts', cutData, function (result) {
+            if (!contracts || typeof contracts.validateApplyCutsResult !== 'function') {
+                if (callback) callback(result);
+                return;
+            }
+
+            var validation = contracts.validateApplyCutsResult(result);
+            if (!validation.ok) {
+                console.error('[Bridge] Invalid applyCuts response:', validation.message);
+                if (callback) callback({ success: false, error: 'Invalid host apply response: ' + validation.message });
+                return;
+            }
+            if (callback) callback(validation.value);
+        });
     }
 
     function addCutProgressListener(handler) {

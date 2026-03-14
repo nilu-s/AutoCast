@@ -1,5 +1,5 @@
-/**
- * AutoCast – Quick Gain Scan (stdio worker)
+﻿/**
+ * AutoCast - Quick Gain Scan (stdio worker)
  *
  * Lightweight alternative to the full analyzer:
  * Only computes RMS profiles and gain matching per track.
@@ -18,72 +18,63 @@
 
 'use strict';
 
-const path = require('path');
-const wavReader = require('./wav_reader');
-const rmsCalc = require('./rms_calculator');
-const gainNormalizer = require('./gain_normalizer');
+var path = require('path');
+var wavReader = require('./modules/io/wav_reader');
+var rmsCalc = require('./modules/energy/rms_calculator');
+var gainNormalizer = require('./modules/energy/gain_normalizer');
+var stdioJsonWorker = require('./interfaces/worker/stdio_json_worker');
+var analyzerContracts = require('./core/contracts/analyzer_contracts');
 
-let inputData = '';
+function runQuickGainScan(trackPaths, progress) {
+    var paths = trackPaths || [];
+    var frameDurationMs = 10;
+    var progressCb = progress || function () { };
 
-process.stdin.setEncoding('utf8');
-
-process.stdin.on('data', (chunk) => {
-    inputData += chunk;
-});
-
-process.stdin.on('end', () => {
-    try {
-        const msg = JSON.parse(inputData);
-        const trackPaths = msg.trackPaths || [];
-        const frameDurationMs = 10;
-
-        if (trackPaths.length === 0) {
-            throw new Error('No track paths provided.');
-        }
-
-        const progress = (pct, message) => {
-            console.log(JSON.stringify({ type: 'progress', percent: pct, message }));
-        };
-
-        progress(5, 'Lese Audiodateien...');
-
-        const rmsProfiles = [];
-        const trackInfos = [];
-
-        for (let i = 0; i < trackPaths.length; i++) {
-            const pct = 5 + Math.round((i / trackPaths.length) * 70);
-            const absPath = path.resolve(trackPaths[i]);
-            progress(pct, 'Lese: ' + path.basename(absPath));
-
-            const wav = wavReader.readWav(absPath);
-            const rmsResult = rmsCalc.calculateRMS(wav.samples, wav.sampleRate, frameDurationMs);
-            const noiseInfo = rmsCalc.estimateNoiseFloor(rmsResult.rms);
-
-            rmsProfiles.push(rmsResult.rms);
-            trackInfos.push({
-                name: path.basename(absPath, path.extname(absPath)),
-                noiseFloorDb: Math.round(noiseInfo.noiseFloorDb * 10) / 10
-            });
-        }
-
-        progress(80, 'Berechne Gain-Anpassungen...');
-
-        const gainInfo = gainNormalizer.computeGainMatching(rmsProfiles);
-
-        for (let i = 0; i < trackInfos.length; i++) {
-            trackInfos[i].gainAdjustDb = gainInfo.gainsDb[i];
-        }
-
-        progress(100, 'Fertig.');
-
-        console.log(JSON.stringify({
-            type: 'done',
-            result: { tracks: trackInfos }
-        }));
-
-        process.exit(0);
-    } catch (e) {
-        console.log(JSON.stringify({ type: 'error', error: e.message }));
-        process.exit(1);
+    if (paths.length === 0) {
+        throw new Error('No track paths provided.');
     }
-});
+
+    progressCb(5, 'Lese Audiodateien...');
+
+    var rmsProfiles = [];
+    var trackInfos = [];
+
+    for (var i = 0; i < paths.length; i++) {
+        var pct = 5 + Math.round((i / paths.length) * 70);
+        var absPath = path.resolve(paths[i]);
+        progressCb(pct, 'Lese: ' + path.basename(absPath));
+
+        var wav = wavReader.readWav(absPath);
+        var rmsResult = rmsCalc.calculateRMS(wav.samples, wav.sampleRate, frameDurationMs);
+        var noiseInfo = rmsCalc.estimateNoiseFloor(rmsResult.rms);
+
+        rmsProfiles.push(rmsResult.rms);
+        trackInfos.push({
+            name: path.basename(absPath, path.extname(absPath)),
+            noiseFloorDb: Math.round(noiseInfo.noiseFloorDb * 10) / 10
+        });
+    }
+
+    progressCb(80, 'Berechne Gain-Anpassungen...');
+
+    var gainInfo = gainNormalizer.computeGainMatching(rmsProfiles);
+    for (i = 0; i < trackInfos.length; i++) {
+        trackInfos[i].gainAdjustDb = gainInfo.gainsDb[i];
+    }
+
+    progressCb(100, 'Fertig.');
+    return { tracks: trackInfos };
+}
+
+if (require.main === module) {
+    stdioJsonWorker.runJsonWorker(function (msg, progress) {
+        var request = analyzerContracts.validateQuickGainScanRequest(msg);
+        var result = runQuickGainScan(request.trackPaths, progress);
+        analyzerContracts.assertQuickGainScanResult(result);
+        return analyzerContracts.withContract(result, 'quick_gain_scan_result');
+    });
+}
+
+module.exports = {
+    runQuickGainScan: runQuickGainScan
+};

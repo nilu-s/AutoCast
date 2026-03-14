@@ -1,5 +1,5 @@
-﻿/**
- * AutoCast â€“ Segmentation Tests
+/**
+ * AutoCast  Segmentation Tests
  * 
  * Tests VAD gate and segment builder for edge cases:
  * - Short segments (debounce)
@@ -11,9 +11,9 @@
 'use strict';
 
 var path = require('path');
-var vadGate = require(path.join(__dirname, '..', 'src', 'vad_gate'));
-var segBuilder = require(path.join(__dirname, '..', 'src', 'segment_builder'));
-var rmsCalc = require(path.join(__dirname, '..', 'src', 'rms_calculator'));
+var vadGate = require(path.join(__dirname, '..', 'src', 'modules', 'vad', 'vad_gate'));
+var segBuilder = require(path.join(__dirname, '..', 'src', 'modules', 'segmentation', 'segment_builder'));
+var rmsCalc = require(path.join(__dirname, '..', 'src', 'modules', 'energy', 'rms_calculator'));
 
 describe('VAD Gate', function () {
 
@@ -316,4 +316,5 @@ describe('Robustness tuning', function () {
         assert(highNoiseSpeechActive >= 25, 'Speech on high noise floor should remain detectable');
     });
 });
+
 
