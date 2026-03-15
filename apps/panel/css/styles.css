@@ -2004,25 +2004,47 @@ html, body {
     margin-bottom: 0;
 }
 
-/* --- Review Grid Layout --- */
+/* --- Review Grid Layout - Horizontal Scroll --- */
 .cpr-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(85px, 1fr));
-    gap: 4px;
+    display: flex;
+    flex-direction: row;
+    gap: 6px;
     padding: 4px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    flex: 1;
+    min-height: 0;
+    align-items: stretch;
+}
+
+.cpr-grid::-webkit-scrollbar {
+    height: 6px;
+}
+
+.cpr-grid::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+}
+
+.cpr-grid::-webkit-scrollbar-track {
+    background: var(--bg-input);
 }
 
 .cpr-card {
     display: flex;
     flex-direction: column;
-    padding: 4px;
+    padding: 6px;
     background: var(--bg-input);
     border-radius: var(--radius-sm);
     border: 1px solid var(--border);
     cursor: pointer;
     transition: all var(--transition);
     position: relative;
-    min-height: 55px;
+    min-height: 80px;
+    min-width: 90px;
+    max-width: 100px;
+    flex-shrink: 0;
 }
 
 .cpr-card:hover {
