@@ -134,19 +134,24 @@
         return result;
     }
 
-    function buildTrackSection(trackGroup, activeSnippetId) {
+    function buildTrackSection(trackGroup, activeSnippetId, isExpanded) {
         var escapeHtml = defaultEscapeHtml;
         var items = trackGroup.items || [];
         
         if (items.length === 0) return '';
         
-        var html = '<div class="cpr-track-section">';
-        html += '  <div class="cpr-track-header">';
+        var expanded = isExpanded !== false; // default to expanded
+        var sectionId = 'cpr-track-' + trackGroup.trackIndex;
+        var toggleIcon = expanded ? '▼' : '▶';
+        
+        var html = '<div class="cpr-track-section" data-track-section="' + trackGroup.trackIndex + '">';
+        html += '  <div class="cpr-track-header" data-track-toggle="' + trackGroup.trackIndex + '">';
+        html += '    <span class="cpr-track-toggle-icon">' + toggleIcon + '</span>';
         html += '    <span class="cpr-track-color" style="background-color: var(--accent);"></span>';
         html += '    <span class="cpr-track-name">' + escapeHtml(trackGroup.trackName) + '</span>';
         html += '    <span class="cpr-track-count">' + items.length + '</span>';
         html += '  </div>';
-        html += '  <div class="cpr-track-items">';
+        html += '  <div class="cpr-track-items' + (expanded ? '' : ' is-collapsed') + '" data-track-items="' + trackGroup.trackIndex + '">';
         
         for (var i = 0; i < items.length; i++) {
             html += buildReviewItemHtml(items[i], items[i].id === activeSnippetId);
@@ -161,6 +166,7 @@
     function buildReviewSectionHtml(input) {
         var reviewItems = input && input.reviewItems ? input.reviewItems : { pending: [], included: [], excluded: [] };
         var activeSnippetId = input && input.activeSnippetId ? input.activeSnippetId : null;
+        var expandedState = input && input.expandedState ? input.expandedState : { groups: {}, tracks: {} };
         var escapeHtml = defaultEscapeHtml;
         
         var pending = reviewItems.pending || [];
@@ -171,6 +177,13 @@
         if (totalCount === 0) {
             return '<div class="cpr-empty">No review items available.</div>';
         }
+        
+        // Default expanded states
+        var groupExpanded = {
+            pending: expandedState.groups && expandedState.groups.pending !== undefined ? expandedState.groups.pending : true,
+            included: expandedState.groups && expandedState.groups.included !== undefined ? expandedState.groups.included : false,
+            excluded: expandedState.groups && expandedState.groups.excluded !== undefined ? expandedState.groups.excluded : false
+        };
         
         var html = '<div class="cpr-section">';
         
@@ -187,33 +200,51 @@
         // Pending items grouped by track
         if (pending.length > 0) {
             var pendingByTrack = groupItemsByTrack(pending);
+            var isPendingExpanded = groupExpanded.pending;
             html += '<div class="cpr-group cpr-group-pending">';
-            html += '  <h4 class="cpr-group-title">⏳ Pending Review</h4>';
+            html += '  <h4 class="cpr-group-title' + (isPendingExpanded ? '' : ' is-collapsed') + '" data-group-toggle="pending">⏳ Pending Review <span class="cpr-group-toggle-icon">▼</span></h4>';
+            html += '  <div class="cpr-group-content' + (isPendingExpanded ? '' : ' is-collapsed') + '" data-group-content="pending">';
             for (var i = 0; i < pendingByTrack.length; i++) {
-                html += buildTrackSection(pendingByTrack[i], activeSnippetId);
+                var trackExpanded = expandedState.tracks && expandedState.tracks[pendingByTrack[i].trackIndex] !== undefined 
+                    ? expandedState.tracks[pendingByTrack[i].trackIndex] 
+                    : true;
+                html += buildTrackSection(pendingByTrack[i], activeSnippetId, trackExpanded);
             }
+            html += '  </div>';
             html += '</div>';
         }
         
         // Included items grouped by track
         if (included.length > 0) {
             var includedByTrack = groupItemsByTrack(included);
+            var isIncludedExpanded = groupExpanded.included;
             html += '<div class="cpr-group cpr-group-included">';
-            html += '  <h4 class="cpr-group-title">✓ Included</h4>';
+            html += '  <h4 class="cpr-group-title' + (isIncludedExpanded ? '' : ' is-collapsed') + '" data-group-toggle="included">✓ Included <span class="cpr-group-toggle-icon">▼</span></h4>';
+            html += '  <div class="cpr-group-content' + (isIncludedExpanded ? '' : ' is-collapsed') + '" data-group-content="included">';
             for (var j = 0; j < includedByTrack.length; j++) {
-                html += buildTrackSection(includedByTrack[j], activeSnippetId);
+                var trackExpandedIncl = expandedState.tracks && expandedState.tracks[includedByTrack[j].trackIndex] !== undefined 
+                    ? expandedState.tracks[includedByTrack[j].trackIndex] 
+                    : false;
+                html += buildTrackSection(includedByTrack[j], activeSnippetId, trackExpandedIncl);
             }
+            html += '  </div>';
             html += '</div>';
         }
         
         // Excluded items grouped by track
         if (excluded.length > 0) {
             var excludedByTrack = groupItemsByTrack(excluded);
+            var isExcludedExpanded = groupExpanded.excluded;
             html += '<div class="cpr-group cpr-group-excluded">';
-            html += '  <h4 class="cpr-group-title">✕ Excluded</h4>';
+            html += '  <h4 class="cpr-group-title' + (isExcludedExpanded ? '' : ' is-collapsed') + '" data-group-toggle="excluded">✕ Excluded <span class="cpr-group-toggle-icon">▼</span></h4>';
+            html += '  <div class="cpr-group-content' + (isExcludedExpanded ? '' : ' is-collapsed') + '" data-group-content="excluded">';
             for (var k = 0; k < excludedByTrack.length; k++) {
-                html += buildTrackSection(excludedByTrack[k], activeSnippetId);
+                var trackExpandedExcl = expandedState.tracks && expandedState.tracks[excludedByTrack[k].trackIndex] !== undefined 
+                    ? expandedState.tracks[excludedByTrack[k].trackIndex] 
+                    : false;
+                html += buildTrackSection(excludedByTrack[k], activeSnippetId, trackExpandedExcl);
             }
+            html += '  </div>';
             html += '</div>';
         }
         

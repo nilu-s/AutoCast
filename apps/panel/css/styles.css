@@ -1919,3 +1919,59 @@ html, body {
     border-radius: 50%;
     background: var(--bg-input);
 }
+
+/* --- Collapsible Groups --- */
+.cpr-group-title {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.cpr-group-toggle-icon {
+    font-size: 10px;
+    transition: transform 0.2s ease;
+}
+
+.cpr-group-title.is-collapsed .cpr-group-toggle-icon {
+    transform: rotate(-90deg);
+}
+
+.cpr-group-content {
+    transition: max-height 0.3s ease, opacity 0.2s ease;
+    max-height: 2000px;
+    opacity: 1;
+    overflow: hidden;
+}
+
+.cpr-group-content.is-collapsed {
+    max-height: 0;
+    opacity: 0;
+}
+
+/* --- Collapsible Track Sections --- */
+.cpr-track-toggle-icon {
+    font-size: 10px;
+    width: 16px;
+    text-align: center;
+    transition: transform 0.2s ease;
+    color: var(--text-muted);
+}
+
+.cpr-track-header.is-collapsed .cpr-track-toggle-icon {
+    transform: rotate(-90deg);
+}
+
+.cpr-track-items {
+    transition: max-height 0.3s ease, opacity 0.2s ease;
+    max-height: 1000px;
+    opacity: 1;
+    overflow: hidden;
+}
+
+.cpr-track-items.is-collapsed {
+    max-height: 0;
+    opacity: 0;
+    padding: 0;
+}

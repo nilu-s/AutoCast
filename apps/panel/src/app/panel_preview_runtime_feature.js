@@ -374,7 +374,8 @@
                 state.activeSnippetId,
                 {
                     reviewListComponent: reviewListComponent,
-                    reviewStore: getReviewStore()
+                    reviewStore: getReviewStore(),
+                    expandedState: state.reviewExpandedState || { groups: {}, tracks: {} }
                 }
             );
         }

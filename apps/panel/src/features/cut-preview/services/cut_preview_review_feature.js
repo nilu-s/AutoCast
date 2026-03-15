@@ -66,9 +66,11 @@
         if (!component || !containerEl) return;
         
         var reviewItems = getReviewItemsForDisplay(cutPreview, reviewState, context);
+        var expandedState = context && context.expandedState ? context.expandedState : { groups: {}, tracks: {} };
         var html = component.buildReviewSectionHtml({
             reviewItems: reviewItems,
-            activeSnippetId: activeSnippetId
+            activeSnippetId: activeSnippetId,
+            expandedState: expandedState
         });
         
         containerEl.innerHTML = html;
@@ -102,9 +104,49 @@
         
         if (!containerEl) return;
         
+        // Track expanded state for groups and tracks
+        if (!state.reviewExpandedState) {
+            state.reviewExpandedState = {
+                groups: { pending: true, included: false, excluded: false },
+                tracks: {}
+            };
+        }
+        
         containerEl.addEventListener('click', function (evt) {
             var target = evt.target;
             if (!target) return;
+            
+            // Handle group toggle (Pending/Included/Excluded headers)
+            var groupToggle = closestPolyfill(target, '[data-group-toggle]');
+            if (groupToggle) {
+                evt.stopPropagation();
+                var groupName = groupToggle.getAttribute('data-group-toggle');
+                var contentEl = containerEl.querySelector('[data-group-content="' + groupName + '"]');
+                if (contentEl) {
+                    var isCollapsed = contentEl.classList.toggle('is-collapsed');
+                    groupToggle.classList.toggle('is-collapsed', isCollapsed);
+                    if (state.reviewExpandedState && state.reviewExpandedState.groups) {
+                        state.reviewExpandedState.groups[groupName] = !isCollapsed;
+                    }
+                }
+                return;
+            }
+            
+            // Handle track toggle
+            var trackToggle = closestPolyfill(target, '[data-track-toggle]');
+            if (trackToggle) {
+                evt.stopPropagation();
+                var trackIndex = trackToggle.getAttribute('data-track-toggle');
+                var itemsEl = containerEl.querySelector('[data-track-items="' + trackIndex + '"]');
+                if (itemsEl) {
+                    var isCollapsed = itemsEl.classList.toggle('is-collapsed');
+                    trackToggle.classList.toggle('is-collapsed', isCollapsed);
+                    if (state.reviewExpandedState && state.reviewExpandedState.tracks) {
+                        state.reviewExpandedState.tracks[trackIndex] = !isCollapsed;
+                    }
+                }
+                return;
+            }
             
             // Handle include button first (higher priority)
             var includeBtn = closestPolyfill(target, '[data-review-include]');
