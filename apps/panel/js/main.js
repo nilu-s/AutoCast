@@ -73,6 +73,9 @@
     var CutPreviewRuntimeFeature = window.AutoCastPanelCutPreviewRuntimeFeature || null;
     var CutPreviewInteractionFeature = window.AutoCastPanelInteractionFeature || null;
     var CutPreviewRenderFeature = window.AutoCastPanelCutPreviewRenderFeature || null;
+    var CutPreviewReviewStore = window.AutoCastPanelCutPreviewReviewStore || null;
+    var CutPreviewReviewFeature = window.AutoCastPanelCutPreviewReviewFeature || null;
+    var CutPreviewReviewListComponent = window.AutoCastPanelCutPreviewReviewListComponent || null;
     var AudioPreviewFeature = window.AutoCastPanelAudioPreviewFeature || null;
     var AudioPreviewPlayerFeature = window.AutoCastPanelAudioPreviewPlayerFeature || null;
 
@@ -139,6 +142,7 @@
         cutPreviewTimeline: $('cutPreviewTimeline'),
         cutPreviewNavigator: $('cutPreviewNavigator'),
         cutPreviewInspector: $('cutPreviewInspector'),
+        cutPreviewReviewList: $('cutPreviewReviewList'),
         cutPreviewApplyBtn: $('cutPreviewApplyBtn'),
         cutPreviewZoom: $('cutPreviewZoom'),
         cutPreviewFitBtn: $('cutPreviewFitBtn'),
@@ -305,6 +309,9 @@
         cutPreviewRuntimeFeature: requireFeature(CutPreviewRuntimeFeature, 'AutoCastPanelCutPreviewRuntimeFeature'),
         cutPreviewInteractionFeature: requireFeature(CutPreviewInteractionFeature, 'AutoCastPanelInteractionFeature'),
         cutPreviewRenderFeature: requireFeature(CutPreviewRenderFeature, 'AutoCastPanelCutPreviewRenderFeature'),
+        cutPreviewReviewFeature: CutPreviewReviewFeature,
+        cutPreviewReviewStore: CutPreviewReviewStore,
+        cutPreviewReviewListComponent: CutPreviewReviewListComponent,
         audioPreviewFeature: requireFeature(AudioPreviewFeature, 'AutoCastPanelAudioPreviewFeature'),
         audioPreviewPlayerFeature: requireFeature(AudioPreviewPlayerFeature, 'AutoCastPanelAudioPreviewPlayerFeature')
     });
@@ -386,7 +393,8 @@
             stopCurrentPreviewAudio: stopCurrentPreviewAudio,
             hideProgress: hideProgress,
             hideCutPreview: hideCutPreview,
-            setStatus: setStatus
+            setStatus: setStatus,
+            resetReviewState: previewRuntime.resetReviewState
         });
     }
 
@@ -449,6 +457,8 @@
 
     requireFeature(PanelInitFeature, 'AutoCastPanelInitFeature').initializePanel({
         interactionFeature: requireFeature(CutPreviewInteractionFeature, 'AutoCastPanelInteractionFeature'),
+        uiRuntimeFeature: getPanelUiRuntimeFeature(),
+        onTabClick: onTabClick,
         bindPrimaryActionsOptions: {
             els: els,
             loadTracksFromHost: loadTracksFromHost,

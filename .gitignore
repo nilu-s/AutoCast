@@ -1,9 +1,11 @@
 # Dependencies
 node_modules/
+venv/
 
 # Test data (generated)
 test/test_data/
 test/tmp_*.wav
+test_data_real/
 
 # OS files
 .DS_Store
@@ -19,9 +21,18 @@ Thumbs.db
 
 # Audio and Logs
 *.wav
+*.log
+*.tmp
 analysis_debug.json
 _tmp_*.json
 _tmp_case_*/
 temp_analyzer_debug.js
 out.txt
 test_output.txt
+
+# Environment
+.env
+.env.*
+
+# Debug
+.debug

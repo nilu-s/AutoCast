@@ -41,9 +41,14 @@
         var bindPrimaryActionsOptions = options.bindPrimaryActionsOptions || {};
         var els = options.els || {};
         var windowObj = options.windowObj || root;
+        var uiRuntimeFeature = options.uiRuntimeFeature || null;
 
         if (interactionFeature && typeof interactionFeature.bindPrimaryActions === 'function') {
             interactionFeature.bindPrimaryActions(bindPrimaryActionsOptions);
+        }
+
+        if (uiRuntimeFeature && typeof uiRuntimeFeature.bindTabNavigation === 'function' && typeof options.onTabClick === 'function') {
+            uiRuntimeFeature.bindTabNavigation(els, options.onTabClick);
         }
 
         if (typeof options.bindCutPreviewControls === 'function') {
