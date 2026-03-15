@@ -1,12 +1,13 @@
-﻿'use strict';
+'use strict';
 
 var decisionEngine = require('./cut_preview_decision_engine');
+var snippetMetricsBuilder = require('./snippet_metrics_builder');
 var modelHelpers = require('./cut_preview_model_helpers');
 
-var computeMetrics = decisionEngine.computeMetrics;
+var buildEvidenceMetrics = snippetMetricsBuilder.buildEvidenceMetrics;
 var computeScore = decisionEngine.computeScore;
 var inferCoverageDecision = decisionEngine.inferCoverageDecision;
-var decidePreviewState = decisionEngine.decidePreviewState;
+var applyDecisionPolicy = decisionEngine.applyDecisionPolicy;
 var canAutoKeepAlwaysOpenFill = decisionEngine.canAutoKeepAlwaysOpenFill;
 var classifyType = decisionEngine.classifyType;
 var buildReasons = decisionEngine.buildReasons;
@@ -15,8 +16,6 @@ var buildSegmentModel = modelHelpers.buildSegmentModel;
 var buildSummary = modelHelpers.buildSummary;
 var buildStateTimelineByTrack = modelHelpers.buildStateTimelineByTrack;
 var appendUninterestingGapItems = modelHelpers.appendUninterestingGapItems;
-var buildUninterestingMetrics = modelHelpers.buildUninterestingMetrics;
-var isUninterestingItem = modelHelpers.isUninterestingItem;
 var hasMatchingAlwaysOpenFillItem = modelHelpers.hasMatchingAlwaysOpenFillItem;
 var getUncoveredSpansForTrackItems = modelHelpers.getUncoveredSpansForTrackItems;
 var computeCoverageByState = modelHelpers.computeCoverageByState;
@@ -26,17 +25,12 @@ var filterSegmentsByState = modelHelpers.filterSegmentsByState;
 var buildFrameActivityMaps = modelHelpers.buildFrameActivityMaps;
 var cloneSegmentsByTrack = modelHelpers.cloneSegmentsByTrack;
 var normalizeSegmentSpan = modelHelpers.normalizeSegmentSpan;
-var averageRange = modelHelpers.averageRange;
-var maxRange = modelHelpers.maxRange;
-var getFrameValue = modelHelpers.getFrameValue;
 var getTrackName = modelHelpers.getTrackName;
 var getTrackPath = modelHelpers.getTrackPath;
 var getTrackThresholdDb = modelHelpers.getTrackThresholdDb;
 var buildItemId = modelHelpers.buildItemId;
 var computeMaxEnd = modelHelpers.computeMaxEnd;
-var getOverlapSec = modelHelpers.getOverlapSec;
 var parseNum = modelHelpers.parseNum;
-var clamp = modelHelpers.clamp;
 var round = modelHelpers.round;
 var isFiniteNumber = modelHelpers.isFiniteNumber;
 
@@ -48,6 +42,7 @@ function buildCutPreview(ctx) {
     var overlapSegments = cloneSegmentsByTrack(ctx.overlapSegments);
     var finalSegments = cloneSegmentsByTrack(ctx.finalSegments);
     var rmsProfiles = Array.isArray(ctx.rmsProfiles) ? ctx.rmsProfiles : [];
+    var rawRmsProfiles = Array.isArray(ctx.rawRmsProfiles) ? ctx.rawRmsProfiles : rmsProfiles;
     var spectralResults = Array.isArray(ctx.spectralResults) ? ctx.spectralResults : [];
     var laughterResults = Array.isArray(ctx.laughterResults) ? ctx.laughterResults : [];
     var gateSnapshots = Array.isArray(ctx.gateSnapshots) ? ctx.gateSnapshots : [];
@@ -70,9 +65,11 @@ function buildCutPreview(ctx) {
             lanes: [],
             summary: {
                 totalItems: 0,
-                keptCount: 0,
-                nearMissCount: 0,
-                suppressedCount: 0,
+                keepCount: 0,
+                reviewCount: 0,
+                suppressCount: 0,
+                filledGapCount: 0,
+                uninterestingCount: 0,
                 selectedCount: 0,
                 avgScore: 0,
                 trackCount: 0,
@@ -84,7 +81,6 @@ function buildCutPreview(ctx) {
     normalizeTrackArrays(trackCount, sourceSegments, overlapSegments, finalSegments);
 
     var overlapActiveMaps = buildFrameActivityMaps(overlapSegments, frameDurSec, false);
-    var finalActiveMaps = buildFrameActivityMaps(finalSegments, frameDurSec, false);
     var itemCounter = 0;
     var items = [];
     var laneIdBuckets = [];
@@ -119,25 +115,24 @@ function buildCutPreview(ctx) {
                 sourceActiveCoverage: sourceActiveCoverage
             });
 
-            var seedMetrics = computeMetrics({
+            var seedMetrics = buildEvidenceMetrics({
                 trackIndex: t,
                 start: span.start,
                 end: span.end,
                 frameDurSec: frameDurSec,
                 thresholdDb: getTrackThresholdDb(trackInfos, t),
                 rmsProfiles: rmsProfiles,
+                rawRmsProfiles: rawRmsProfiles,
                 spectralResults: spectralResults,
                 laughterResults: laughterResults,
                 gateSnapshots: gateSnapshots,
                 overlapActiveMaps: overlapActiveMaps,
-                finalActiveMaps: finalActiveMaps,
                 mergedSegmentCount: overlapSpan.mergedCount,
-                maxMergedGapSec: overlapSpan.maxGapSec,
-                state: baseDecision.state
+                maxMergedGapSec: overlapSpan.maxGapSec
             });
 
-            var decision = decidePreviewState({
-                baseState: baseDecision.state,
+            var decision = applyDecisionPolicy({
+                baseState: baseDecision.decisionState,
                 baseStage: baseDecision.stage,
                 keepCoverage: keepCoverage,
                 keptSourceRatio: keptSourceRatio,
@@ -146,57 +141,36 @@ function buildCutPreview(ctx) {
                 metrics: seedMetrics.values
             });
 
-            var decisionState = decision.state;
+            var decisionState = decision.decisionState;
             var decisionStage = decision.stage;
             var allowAlwaysOpenAutoKeep = false;
-            if (params && params.enforceAlwaysOneTrackOpen && alwaysOpenFillCoverage >= 0.65 && decisionState !== 'kept') {
+            if (params && params.enforceAlwaysOneTrackOpen && alwaysOpenFillCoverage >= 0.65 && decisionState !== 'keep') {
                 allowAlwaysOpenAutoKeep = canAutoKeepAlwaysOpenFill(decision, seedMetrics.values, params);
             }
             if (allowAlwaysOpenAutoKeep) {
-                decisionState = 'kept';
+                decisionState = 'keep';
                 decisionStage = 'always_open_fill_blend';
-                decision.state = 'kept';
+                decision.decisionState = 'keep';
                 decision.stage = 'always_open_fill_blend';
             } else if (params && params.enforceAlwaysOneTrackOpen && alwaysOpenFillCoverage >= 0.65 &&
-                decisionStage !== 'always_open_fill_review' && decisionState !== 'kept') {
+                decisionStage !== 'always_open_fill_review' && decisionState !== 'keep') {
                 decisionStage = 'always_open_fill_review';
                 decision.stage = 'always_open_fill_review';
             }
             var metrics = seedMetrics;
-            if (decisionState !== baseDecision.state) {
-                metrics = computeMetrics({
-                    trackIndex: t,
-                    start: span.start,
-                    end: span.end,
-                    frameDurSec: frameDurSec,
-                    thresholdDb: getTrackThresholdDb(trackInfos, t),
-                    rmsProfiles: rmsProfiles,
-                    spectralResults: spectralResults,
-                    laughterResults: laughterResults,
-                    gateSnapshots: gateSnapshots,
-                    overlapActiveMaps: overlapActiveMaps,
-                    finalActiveMaps: finalActiveMaps,
-                    mergedSegmentCount: overlapSpan.mergedCount,
-                    maxMergedGapSec: overlapSpan.maxGapSec,
-                    state: decisionState
-                });
-            }
-
-            metrics.values.keptSourceRatio = round(keptSourceRatio, 3);
-            metrics.values.keepLikelihood = round(decision.keepLikelihood, 3);
-            metrics.values.suppressLikelihood = round(decision.suppressLikelihood, 3);
-            metrics.values.decisionMargin = round(decision.margin, 3);
-            metrics.values.bleedHighConfidence = decision.bleedHighConfidence ? 1 : 0;
-            metrics.values.alwaysOpenFill = alwaysOpenFillCoverage >= 0.5 ? 1 : 0;
-            metrics.values.alwaysOpenFillRatio = round(alwaysOpenFillCoverage, 3);
+            applyDecisionMetrics(metrics, decision, {
+                keptSourceRatio: keptSourceRatio,
+                alwaysOpenFillRatio: alwaysOpenFillCoverage
+            });
 
             var scoreInfo = computeScore(decisionState, span.durationSec, metrics);
             var typeInfo = classifyType(decisionState, scoreInfo.score, metrics, params);
             var reasons = buildReasons(decisionState, metrics, scoreInfo, typeInfo, decision);
-            var legacyOrigin = alwaysOpenFillCoverage >= 0.5 ? 'always_open_fill' : 'analysis_active';
+            var origin = alwaysOpenFillCoverage >= 0.5 ? 'always_open_fill' : 'analysis_active';
             var model = buildSegmentModel({
-                legacyState: decisionState,
-                legacyOrigin: legacyOrigin,
+                decisionState: decisionState,
+                contentState: typeInfo.label,
+                origin: origin,
                 decisionStage: decisionStage,
                 alwaysOpenFill: alwaysOpenFillCoverage >= 0.5,
                 scoreInfo: scoreInfo,
@@ -216,31 +190,29 @@ function buildCutPreview(ctx) {
                 start: round(span.start, 4),
                 end: round(span.end, 4),
                 durationMs: Math.max(1, Math.round(span.durationSec * 1000)),
-                state: decisionState,
                 decisionState: model.decisionState,
-                selected: decisionState === 'kept',
+                selected: model.decisionState === 'keep' || model.decisionState === 'filled_gap',
                 score: scoreInfo.score,
                 scoreLabel: scoreInfo.label,
                 reasons: reasons,
-                typeLabel: typeInfo.label,
-                typeConfidence: typeInfo.confidence,
-                contentClass: model.contentClass,
-                qualityBand: model.qualityBand,
                 suppressionReason: model.suppressionReason,
                 sourceClipIndex: null,
                 mediaPath: getTrackPath(trackInfos, t),
                 sourceStartSec: round(span.start, 4),
                 sourceEndSec: round(span.end, 4),
                 decisionStage: decisionStage,
-                origin: legacyOrigin,
-                modelOrigin: model.origin,
+                origin: origin,
                 alwaysOpenFill: alwaysOpenFillCoverage >= 0.5,
                 overlapInfo: metrics.overlapInfo,
                 metrics: metrics.values,
                 evidenceMetrics: model.evidenceMetrics,
                 decision: model.decision,
                 classification: model.classification,
-                explainability: model.explainability
+                explainability: model.explainability,
+                contentState: model.contentState,
+                quality: model.quality,
+                provenance: model.provenance,
+                stateModel: model.stateModel
             };
 
             items.push(item);
@@ -269,24 +241,23 @@ function buildCutPreview(ctx) {
                 var fillCoverage = computeCoverageByOrigin(finalSegments[t], spanStart, spanEnd, 'always_open_fill');
                 var isAlwaysOpenFill = !!(params && params.enforceAlwaysOneTrackOpen && fillCoverage >= 0.55);
 
-                var finalMetrics = computeMetrics({
+                var finalMetrics = buildEvidenceMetrics({
                     trackIndex: t,
                     start: spanStart,
                     end: spanEnd,
                     frameDurSec: frameDurSec,
                     thresholdDb: getTrackThresholdDb(trackInfos, t),
                     rmsProfiles: rmsProfiles,
+                    rawRmsProfiles: rawRmsProfiles,
                     spectralResults: spectralResults,
                     laughterResults: laughterResults,
                     gateSnapshots: gateSnapshots,
                     overlapActiveMaps: overlapActiveMaps,
-                    finalActiveMaps: finalActiveMaps,
                     mergedSegmentCount: finalSeg.mergedCount,
-                    maxMergedGapSec: finalSeg.maxGapSec,
-                    state: 'kept'
+                    maxMergedGapSec: finalSeg.maxGapSec
                 });
-                var finalDecision = decidePreviewState({
-                    baseState: 'kept',
+                var finalDecision = applyDecisionPolicy({
+                    baseState: 'keep',
                     baseStage: isAlwaysOpenFill ? 'always_open_fill' : 'postprocess_added',
                     keepCoverage: 1,
                     keptSourceRatio: 1,
@@ -294,60 +265,35 @@ function buildCutPreview(ctx) {
                     sourceActiveCoverage: 1,
                     metrics: finalMetrics.values
                 });
-                finalMetrics.values.keptSourceRatio = 1;
-                finalMetrics.values.keepLikelihood = round(finalDecision.keepLikelihood, 3);
-                finalMetrics.values.suppressLikelihood = round(finalDecision.suppressLikelihood, 3);
-                finalMetrics.values.decisionMargin = round(finalDecision.margin, 3);
-                finalMetrics.values.bleedHighConfidence = finalDecision.bleedHighConfidence ? 1 : 0;
-                finalMetrics.values.alwaysOpenFill = isAlwaysOpenFill ? 1 : 0;
-                finalMetrics.values.alwaysOpenFillRatio = round(fillCoverage, 3);
+                applyDecisionMetrics(finalMetrics, finalDecision, {
+                    keptSourceRatio: 1,
+                    alwaysOpenFillRatio: isAlwaysOpenFill ? fillCoverage : 0
+                });
 
                 var allowFinalAlwaysOpenAutoKeep = isAlwaysOpenFill
                     ? canAutoKeepAlwaysOpenFill(finalDecision, finalMetrics.values, params)
                     : false;
-                var finalState = finalDecision.state;
+                var finalState = finalDecision.decisionState;
                 var finalStage = finalDecision.stage;
                 if (isAlwaysOpenFill && allowFinalAlwaysOpenAutoKeep) {
-                    finalState = 'kept';
+                    finalState = 'keep';
                     finalStage = 'always_open_fill';
                 } else if (isAlwaysOpenFill && !allowFinalAlwaysOpenAutoKeep) {
-                    if (finalDecision.bleedHighConfidence || finalState === 'suppressed') {
-                        finalState = 'near_miss';
+                    if (finalDecision.bleedHighConfidence || finalState === 'suppress') {
+                        finalState = 'review';
                     }
                     finalStage = 'always_open_fill_review';
                 }
-                if (finalState !== 'kept') {
-                    finalMetrics = computeMetrics({
-                        trackIndex: t,
-                        start: spanStart,
-                        end: spanEnd,
-                        frameDurSec: frameDurSec,
-                        thresholdDb: getTrackThresholdDb(trackInfos, t),
-                        rmsProfiles: rmsProfiles,
-                        spectralResults: spectralResults,
-                        laughterResults: laughterResults,
-                        gateSnapshots: gateSnapshots,
-                        overlapActiveMaps: overlapActiveMaps,
-                        finalActiveMaps: finalActiveMaps,
-                        mergedSegmentCount: finalSeg.mergedCount,
-                        maxMergedGapSec: finalSeg.maxGapSec,
-                        state: finalState
-                    });
-                    finalMetrics.values.keptSourceRatio = 1;
-                    finalMetrics.values.keepLikelihood = round(finalDecision.keepLikelihood, 3);
-                    finalMetrics.values.suppressLikelihood = round(finalDecision.suppressLikelihood, 3);
-                    finalMetrics.values.decisionMargin = round(finalDecision.margin, 3);
-                    finalMetrics.values.bleedHighConfidence = finalDecision.bleedHighConfidence ? 1 : 0;
-                    finalMetrics.values.alwaysOpenFill = isAlwaysOpenFill ? 1 : 0;
-                    finalMetrics.values.alwaysOpenFillRatio = round(fillCoverage, 3);
-                }
+                finalDecision.decisionState = finalState;
+                finalDecision.stage = finalStage;
                 var finalScoreInfo = computeScore(finalState, spanDur, finalMetrics);
                 var finalTypeInfo = classifyType(finalState, finalScoreInfo.score, finalMetrics, params);
                 var finalReasons = buildReasons(finalState, finalMetrics, finalScoreInfo, finalTypeInfo, finalDecision);
-                var finalLegacyOrigin = isAlwaysOpenFill ? 'always_open_fill' : 'analysis_active';
+                var finalOrigin = isAlwaysOpenFill ? 'always_open_fill' : 'analysis_active';
                 var finalModel = buildSegmentModel({
-                    legacyState: finalState,
-                    legacyOrigin: finalLegacyOrigin,
+                    decisionState: finalState,
+                    contentState: finalTypeInfo.label,
+                    origin: finalOrigin,
                     decisionStage: finalStage,
                     alwaysOpenFill: isAlwaysOpenFill,
                     scoreInfo: finalScoreInfo,
@@ -367,31 +313,29 @@ function buildCutPreview(ctx) {
                     start: round(spanStart, 4),
                     end: round(spanEnd, 4),
                     durationMs: Math.max(1, Math.round(spanDur * 1000)),
-                    state: finalState,
                     decisionState: finalModel.decisionState,
-                    selected: finalState === 'kept',
+                    selected: finalModel.decisionState === 'keep' || finalModel.decisionState === 'filled_gap',
                     score: finalScoreInfo.score,
                     scoreLabel: finalScoreInfo.label,
                     reasons: finalReasons,
-                    typeLabel: finalTypeInfo.label,
-                    typeConfidence: finalTypeInfo.confidence,
-                    contentClass: finalModel.contentClass,
-                    qualityBand: finalModel.qualityBand,
                     suppressionReason: finalModel.suppressionReason,
                     sourceClipIndex: null,
                     mediaPath: getTrackPath(trackInfos, t),
                     sourceStartSec: round(spanStart, 4),
                     sourceEndSec: round(spanEnd, 4),
                     decisionStage: finalStage,
-                    origin: finalLegacyOrigin,
-                    modelOrigin: finalModel.origin,
+                    origin: finalOrigin,
                     alwaysOpenFill: isAlwaysOpenFill,
                     overlapInfo: finalMetrics.overlapInfo,
                     metrics: finalMetrics.values,
                     evidenceMetrics: finalModel.evidenceMetrics,
                     decision: finalModel.decision,
                     classification: finalModel.classification,
-                    explainability: finalModel.explainability
+                    explainability: finalModel.explainability,
+                    contentState: finalModel.contentState,
+                    quality: finalModel.quality,
+                    provenance: finalModel.provenance,
+                    stateModel: finalModel.stateModel
                 };
                 items.push(addedItem);
                 laneIdBuckets[t].push(addedItem.id);
@@ -412,32 +356,29 @@ function buildCutPreview(ctx) {
             if (hasMatchingAlwaysOpenFillItem(items, t, fillStart, fillEnd)) continue;
 
             var fillDur = fillEnd - fillStart;
-            var fillMetrics = computeMetrics({
+            var fillMetrics = buildEvidenceMetrics({
                 trackIndex: t,
                 start: fillStart,
                 end: fillEnd,
                 frameDurSec: frameDurSec,
                 thresholdDb: getTrackThresholdDb(trackInfos, t),
                 rmsProfiles: rmsProfiles,
+                rawRmsProfiles: rawRmsProfiles,
                 spectralResults: spectralResults,
                 laughterResults: laughterResults,
                 gateSnapshots: gateSnapshots,
                 overlapActiveMaps: overlapActiveMaps,
-                finalActiveMaps: finalActiveMaps,
                 mergedSegmentCount: 1,
-                maxMergedGapSec: 0,
-                state: 'kept'
+                maxMergedGapSec: 0
             });
 
-            fillMetrics.values.keptSourceRatio = round(
+            var fillKeptSourceRatio = round(
                 computeSourceSegmentKeepRatio(overlapSegments[t] || [], finalSegments[t] || []),
                 3
             );
-            fillMetrics.values.alwaysOpenFill = 1;
-            fillMetrics.values.alwaysOpenFillRatio = 1;
 
-            var fillDecision = decidePreviewState({
-                baseState: 'kept',
+            var fillDecision = applyDecisionPolicy({
+                baseState: 'keep',
                 baseStage: 'always_open_fill',
                 keepCoverage: 1,
                 keptSourceRatio: 1,
@@ -445,59 +386,33 @@ function buildCutPreview(ctx) {
                 sourceActiveCoverage: 1,
                 metrics: fillMetrics.values
             });
-            fillMetrics.values.keepLikelihood = round(fillDecision.keepLikelihood, 3);
-            fillMetrics.values.suppressLikelihood = round(fillDecision.suppressLikelihood, 3);
-            fillMetrics.values.decisionMargin = round(fillDecision.margin, 3);
-            fillMetrics.values.bleedHighConfidence = fillDecision.bleedHighConfidence ? 1 : 0;
+            applyDecisionMetrics(fillMetrics, fillDecision, {
+                keptSourceRatio: fillKeptSourceRatio,
+                alwaysOpenFillRatio: 1
+            });
 
             var allowFillAutoKeep = canAutoKeepAlwaysOpenFill(fillDecision, fillMetrics.values, params);
-            var fillState = fillDecision.state;
+            var fillState = fillDecision.decisionState;
             var fillStage = fillDecision.stage;
             if (allowFillAutoKeep) {
-                fillState = 'kept';
+                fillState = 'keep';
                 fillStage = 'always_open_fill';
             } else {
-                if (fillDecision.bleedHighConfidence || fillState === 'suppressed') {
-                    fillState = 'near_miss';
+                if (fillDecision.bleedHighConfidence || fillState === 'suppress') {
+                    fillState = 'review';
                 }
                 fillStage = 'always_open_fill_review';
             }
-
-            if (fillState !== 'kept') {
-                fillMetrics = computeMetrics({
-                    trackIndex: t,
-                    start: fillStart,
-                    end: fillEnd,
-                    frameDurSec: frameDurSec,
-                    thresholdDb: getTrackThresholdDb(trackInfos, t),
-                    rmsProfiles: rmsProfiles,
-                    spectralResults: spectralResults,
-                    laughterResults: laughterResults,
-                    gateSnapshots: gateSnapshots,
-                    overlapActiveMaps: overlapActiveMaps,
-                    finalActiveMaps: finalActiveMaps,
-                    mergedSegmentCount: 1,
-                    maxMergedGapSec: 0,
-                    state: fillState
-                });
-                fillMetrics.values.keptSourceRatio = round(
-                    computeSourceSegmentKeepRatio(overlapSegments[t] || [], finalSegments[t] || []),
-                    3
-                );
-                fillMetrics.values.keepLikelihood = round(fillDecision.keepLikelihood, 3);
-                fillMetrics.values.suppressLikelihood = round(fillDecision.suppressLikelihood, 3);
-                fillMetrics.values.decisionMargin = round(fillDecision.margin, 3);
-                fillMetrics.values.bleedHighConfidence = fillDecision.bleedHighConfidence ? 1 : 0;
-                fillMetrics.values.alwaysOpenFill = 1;
-                fillMetrics.values.alwaysOpenFillRatio = 1;
-            }
+            fillDecision.decisionState = fillState;
+            fillDecision.stage = fillStage;
 
             var fillScoreInfo = computeScore(fillState, fillDur, fillMetrics);
             var fillTypeInfo = classifyType(fillState, fillScoreInfo.score, fillMetrics, params);
             var fillReasons = buildReasons(fillState, fillMetrics, fillScoreInfo, fillTypeInfo, fillDecision);
             var fillModel = buildSegmentModel({
-                legacyState: fillState,
-                legacyOrigin: 'always_open_fill',
+                decisionState: fillState,
+                contentState: fillTypeInfo.label,
+                origin: 'always_open_fill',
                 decisionStage: fillStage,
                 alwaysOpenFill: true,
                 scoreInfo: fillScoreInfo,
@@ -517,16 +432,11 @@ function buildCutPreview(ctx) {
                 start: round(fillStart, 4),
                 end: round(fillEnd, 4),
                 durationMs: Math.max(1, Math.round(fillDur * 1000)),
-                state: fillState,
                 decisionState: fillModel.decisionState,
-                selected: fillState === 'kept',
+                selected: fillModel.decisionState === 'keep' || fillModel.decisionState === 'filled_gap',
                 score: fillScoreInfo.score,
                 scoreLabel: fillScoreInfo.label,
                 reasons: fillReasons,
-                typeLabel: fillTypeInfo.label,
-                typeConfidence: fillTypeInfo.confidence,
-                contentClass: fillModel.contentClass,
-                qualityBand: fillModel.qualityBand,
                 suppressionReason: fillModel.suppressionReason,
                 sourceClipIndex: null,
                 mediaPath: getTrackPath(trackInfos, t),
@@ -534,14 +444,17 @@ function buildCutPreview(ctx) {
                 sourceEndSec: round(fillEnd, 4),
                 decisionStage: fillStage,
                 origin: 'always_open_fill',
-                modelOrigin: fillModel.origin,
                 alwaysOpenFill: true,
                 overlapInfo: fillMetrics.overlapInfo,
                 metrics: fillMetrics.values,
                 evidenceMetrics: fillModel.evidenceMetrics,
                 decision: fillModel.decision,
                 classification: fillModel.classification,
-                explainability: fillModel.explainability
+                explainability: fillModel.explainability,
+                contentState: fillModel.contentState,
+                quality: fillModel.quality,
+                provenance: fillModel.provenance,
+                stateModel: fillModel.stateModel
             };
 
             items.push(fillItem);
@@ -681,8 +594,29 @@ function buildConsolidatedPreviewSpans(trackSegs, options) {
     return out;
 }
 
+function applyDecisionMetrics(metrics, decision, extras) {
+    metrics = metrics || { values: {} };
+    metrics.values = metrics.values || {};
+    decision = decision || {};
+    extras = extras || {};
+
+    var alwaysOpenFillRatio = Math.max(0, parseNum(extras.alwaysOpenFillRatio, 0));
+    var alwaysOpenFill = alwaysOpenFillRatio >= 0.5 ? 1 : 0;
+    metrics.values.keptSourceRatio = round(parseNum(extras.keptSourceRatio, 0), 3);
+    metrics.values.keepLikelihood = round(parseNum(decision.keepLikelihood, 0), 3);
+    metrics.values.suppressLikelihood = round(parseNum(decision.suppressLikelihood, 0), 3);
+    metrics.values.decisionMargin = round(parseNum(decision.margin, 0), 3);
+    metrics.values.bleedHighConfidence = decision.bleedHighConfidence ? 1 : 0;
+    metrics.values.postprocessPenalty = round(parseNum(decision.postprocessPenalty, metrics.values.postprocessPenalty), 3);
+    metrics.values.alwaysOpenFill = alwaysOpenFill;
+    metrics.values.alwaysOpenFillRatio = round(alwaysOpenFillRatio, 3);
+    return metrics;
+}
+
 module.exports = {
     buildCutPreview: buildCutPreview
 };
+
+
 
 

@@ -50,9 +50,9 @@ describe('Cut Preview Builder - Timeline Coverage', function () {
         var gapItemCount = 0;
         for (i = 0; i < result.items.length; i++) {
             var item = result.items[i];
-            if (item.typeLabel !== 'uninteresting_gap') continue;
+            if (item.decisionState !== 'uninteresting') continue;
             gapItemCount++;
-            assert(item.state === 'suppressed', 'Uninteresting gap should be suppressed state');
+            assert(item.decisionState === 'uninteresting', 'Uninteresting gap should have uninteresting decision state');
             assert(item.selected === false, 'Uninteresting gap should not be selected');
             assert(item.selectable === false, 'Uninteresting gap should not be selectable');
             assert(item.origin === 'timeline_gap', 'Uninteresting gap should have timeline gap origin');

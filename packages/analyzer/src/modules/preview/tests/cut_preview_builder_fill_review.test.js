@@ -57,7 +57,7 @@ describe('Cut Preview Builder - Fill Review under Bleed', function () {
 
         assert(fillItem, 'Expected always_open_fill preview item');
         assert(fillItem.metrics && fillItem.metrics.bleedConfidence >= 0.75, 'Expected high bleed confidence for fill item');
-        assert(fillItem.state !== 'kept', 'High-bleed always_open_fill should not be auto-kept');
+        assert(fillItem.decisionState !== 'keep', 'High-bleed always_open_fill should not be auto-kept');
         assert(fillItem.selected === false, 'High-bleed always_open_fill should not be selected by default');
         assert(fillItem.decisionStage === 'always_open_fill_review', 'Expected explicit review stage for risky fill');
     });

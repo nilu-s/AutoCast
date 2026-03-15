@@ -22,9 +22,10 @@
 
         var summary = {
             totalItems: items.length,
-            keptCount: 0,
-            nearMissCount: 0,
-            suppressedCount: 0,
+            keepCount: 0,
+            reviewCount: 0,
+            suppressCount: 0,
+            filledGapCount: 0,
             uninterestingCount: 0,
             selectedCount: 0,
             avgScore: 0
@@ -35,9 +36,12 @@
         for (var i = 0; i < items.length; i++) {
             var item = items[i];
             if (isUninterestingSnippet(item)) summary.uninterestingCount++;
-            else if (item.state === 'kept') summary.keptCount++;
-            else if (item.state === 'near_miss') summary.nearMissCount++;
-            else summary.suppressedCount++;
+            else if (item.decisionState === 'filled_gap') {
+                summary.filledGapCount++;
+                summary.keepCount++;
+            } else if (item.decisionState === 'keep') summary.keepCount++;
+            else if (item.decisionState === 'review') summary.reviewCount++;
+            else summary.suppressCount++;
             if (item.selected) summary.selectedCount++;
             if (!isUninterestingSnippet(item)) {
                 scoreSum += parseNum(item.score, 0);
@@ -205,12 +209,12 @@
             getTimelineTickStep: options.getTimelineTickStep,
             formatClock: options.formatClock,
             escapeHtml: options.escapeHtml,
-            shortTypeLabel: renderFeature.shortTypeLabel,
+            shortContentLabel: renderFeature.shortContentLabel,
             compactReasonText: renderFeature.compactReasonText,
             buildSnippetInlineLabel: function (item, widthPx) {
                 return renderFeature.buildSnippetInlineLabel(item, widthPx, { parseNum: options.parseNum });
             },
-            getTypeCssClass: renderFeature.getTypeCssClass,
+            getContentCssClass: renderFeature.getContentCssClass,
             isAlwaysOpenFillSnippet: function (item) {
                 return renderFeature.isAlwaysOpenFillSnippet(item, { parseNum: options.parseNum });
             },
@@ -235,7 +239,7 @@
             clamp: options.clamp,
             formatClock: options.formatClock,
             escapeHtml: options.escapeHtml,
-            getTypeCssClass: renderFeature.getTypeCssClass,
+            getContentCssClass: renderFeature.getContentCssClass,
             isAlwaysOpenFillSnippet: function (item) {
                 return renderFeature.isAlwaysOpenFillSnippet(item, { parseNum: options.parseNum });
             },

@@ -1,194 +1,96 @@
-﻿'use strict';
+'use strict';
 
-var rmsCalc = require('../energy/rms_calculator');
 var modelHelpers = require('./cut_preview_model_helpers');
+var snippetMetricsBuilder = require('./snippet_metrics_builder');
 
 var parseNum = modelHelpers.parseNum;
 var clamp = modelHelpers.clamp;
-var round = modelHelpers.round;
 var isFiniteNumber = modelHelpers.isFiniteNumber;
-var averageRange = modelHelpers.averageRange;
-var maxRange = modelHelpers.maxRange;
-var getFrameValue = modelHelpers.getFrameValue;
 
 function computeMetrics(ctx) {
-    var startFrame = Math.max(0, Math.floor(ctx.start / ctx.frameDurSec));
-    var endFrame = Math.max(startFrame + 1, Math.ceil(ctx.end / ctx.frameDurSec));
-    var rmsTrack = ctx.rmsProfiles[ctx.trackIndex] || [];
-    var spectralTrack = (ctx.spectralResults[ctx.trackIndex] && ctx.spectralResults[ctx.trackIndex].confidence)
-        ? ctx.spectralResults[ctx.trackIndex].confidence
-        : null;
-    var laughterTrack = (ctx.laughterResults[ctx.trackIndex] && ctx.laughterResults[ctx.trackIndex].confidence)
-        ? ctx.laughterResults[ctx.trackIndex].confidence
-        : null;
-    var speakerSimilarity = (ctx.gateSnapshots[ctx.trackIndex] &&
-        ctx.gateSnapshots[ctx.trackIndex].speakerDebug &&
-        ctx.gateSnapshots[ctx.trackIndex].speakerDebug.similarity)
-        ? ctx.gateSnapshots[ctx.trackIndex].speakerDebug.similarity
-        : null;
-
-    var meanLin = averageRange(rmsTrack, startFrame, endFrame, 0);
-    var peakLin = maxRange(rmsTrack, startFrame, endFrame, 0);
-    var meanDb = rmsCalc.linearToDb(Math.max(meanLin, 1e-12));
-    var peakDb = rmsCalc.linearToDb(Math.max(peakLin, 1e-12));
-    var thresholdDb = isFiniteNumber(ctx.thresholdDb) ? ctx.thresholdDb : -60;
-
-    var spectralConfidence = clamp(averageRange(spectralTrack, startFrame, endFrame, 0), 0, 1);
-    var laughterConfidence = clamp(averageRange(laughterTrack, startFrame, endFrame, 0), 0, 1);
-    var laughterPeakConfidence = clamp(maxRange(laughterTrack, startFrame, endFrame, laughterConfidence), 0, 1);
-    var speakerLockScore = clamp(averageRange(speakerSimilarity, startFrame, endFrame, spectralConfidence), 0, 1);
-
-    var overlapStats = computeOverlapStats(
-        ctx.trackIndex,
-        startFrame,
-        endFrame,
-        ctx.overlapActiveMaps,
-        ctx.rmsProfiles
-    );
-    var mergedSegmentCount = Math.max(1, Math.round(parseNum(ctx.mergedSegmentCount, 1)));
-    var maxMergedGapSec = Math.max(0, parseNum(ctx.maxMergedGapSec, 0));
-
-    var postprocessPenalty = computePostprocessPenalty(ctx.state, {
-        peakOverThreshold: peakDb - thresholdDb,
-        meanOverThreshold: meanDb - thresholdDb,
-        spectralConfidence: spectralConfidence,
-        overlapPenalty: overlapStats.penalty
-    });
-    var classEvidence = computeClassEvidence({
-        state: ctx.state,
-        peakOverThreshold: peakDb - thresholdDb,
-        meanOverThreshold: meanDb - thresholdDb,
-        spectralConfidence: spectralConfidence,
-        laughterConfidence: laughterConfidence,
-        laughterPeakConfidence: laughterPeakConfidence,
-        speakerLockScore: speakerLockScore,
-        overlapPenalty: overlapStats.penalty,
-        overlapRatio: overlapStats.overlapRatio,
-        strongerRatio: overlapStats.strongerRatio,
-        postprocessPenalty: postprocessPenalty
-    });
-    var bleedConfidence = clamp(
-        classEvidence.bleed * 0.68 +
-        clamp(overlapStats.strongerRatio, 0, 1) * 0.22 +
-        clamp(overlapStats.overlapRatio, 0, 1) * 0.10,
-        0,
-        1
-    );
-
-    return {
-        values: {
-            meanOverThreshold: round(meanDb - thresholdDb, 2),
-            peakOverThreshold: round(peakDb - thresholdDb, 2),
-            spectralConfidence: round(spectralConfidence, 3),
-            laughterConfidence: round(laughterConfidence, 3),
-            overlapPenalty: round(overlapStats.penalty, 3),
-            speakerLockScore: round(speakerLockScore, 3),
-            postprocessPenalty: round(postprocessPenalty, 3),
-            speechEvidence: round(classEvidence.speech, 3),
-            laughterEvidence: round(classEvidence.laughter, 3),
-            bleedEvidence: round(classEvidence.bleed, 3),
-            bleedConfidence: round(bleedConfidence, 3),
-            noiseEvidence: round(classEvidence.noise, 3),
-            classMargin: round(classEvidence.margin, 3),
-            mergedSegmentCount: mergedSegmentCount,
-            maxMergedGapMs: round(maxMergedGapSec * 1000, 1)
-        },
-        classEvidence: classEvidence,
-        overlapInfo: {
-            overlapRatio: round(overlapStats.overlapRatio, 3),
-            strongerOverlapRatio: round(overlapStats.strongerRatio, 3),
-            dominantTrackIndex: overlapStats.dominantTrackIndex
-        }
-    };
+    return snippetMetricsBuilder.buildEvidenceMetrics(ctx);
 }
 
 function computeOverlapStats(trackIndex, startFrame, endFrame, activeMaps, rmsProfiles) {
-    var frameCount = Math.max(1, endFrame - startFrame);
-    var overlapFrames = 0;
-    var strongerFrames = 0;
-    var penaltyAcc = 0;
-    var dominantCounter = {};
-
-    for (var f = startFrame; f < endFrame; f++) {
-        var selfActive = getFrameValue(activeMaps[trackIndex], f, 0) > 0;
-        if (!selfActive) continue;
-
-        var selfRms = getFrameValue(rmsProfiles[trackIndex], f, 0);
-        var hasOverlap = false;
-        var dominantTrack = -1;
-        var dominantRms = selfRms;
-
-        for (var t = 0; t < activeMaps.length; t++) {
-            if (t === trackIndex) continue;
-            if (getFrameValue(activeMaps[t], f, 0) <= 0) continue;
-            hasOverlap = true;
-            var otherRms = getFrameValue(rmsProfiles[t], f, 0);
-            if (otherRms > dominantRms) {
-                dominantRms = otherRms;
-                dominantTrack = t;
-            }
-        }
-
-        if (!hasOverlap) continue;
-        overlapFrames++;
-
-        if (dominantTrack >= 0) {
-            strongerFrames++;
-            dominantCounter[dominantTrack] = (dominantCounter[dominantTrack] || 0) + 1;
-            var strength = dominantRms / Math.max(selfRms, 1e-12);
-            penaltyAcc += clamp((strength - 1) / 4, 0, 1);
-        } else {
-            penaltyAcc += 0.12;
-        }
-    }
-
-    var dominantTrackIndex = -1;
-    var dominantCount = 0;
-    for (var key in dominantCounter) {
-        if (!dominantCounter.hasOwnProperty(key)) continue;
-        if (dominantCounter[key] > dominantCount) {
-            dominantCount = dominantCounter[key];
-            dominantTrackIndex = parseInt(key, 10);
-        }
-    }
-
-    return {
-        overlapRatio: overlapFrames / frameCount,
-        strongerRatio: strongerFrames / frameCount,
-        penalty: overlapFrames > 0 ? clamp(penaltyAcc / overlapFrames, 0, 1) : 0,
-        dominantTrackIndex: dominantTrackIndex
-    };
+    return snippetMetricsBuilder.computeOverlapStats(trackIndex, startFrame, endFrame, activeMaps, rmsProfiles);
 }
 
-function computePostprocessPenalty(state, metrics) {
-    var relativeWeakness = clamp((0 - metrics.peakOverThreshold) / 8, 0, 1);
-    var meanWeakness = clamp((0 - metrics.meanOverThreshold) / 8, 0, 1);
-    var spectralWeakness = 1 - clamp(metrics.spectralConfidence, 0, 1);
-    var overlapPenalty = clamp(metrics.overlapPenalty, 0, 1);
+function computePostprocessPenalty(decisionState, metrics) {
+    metrics = metrics || {};
+    var relativeWeakness = clamp((0 - parseNum(metrics.peakOverThreshold, 0)) / 8, 0, 1);
+    var meanWeakness = clamp((0 - parseNum(metrics.meanOverThreshold, 0)) / 8, 0, 1);
+    var spectralWeakness = 1 - clamp(parseNum(metrics.spectralConfidence, 0), 0, 1);
+    var overlapPenalty = clamp(parseNum(metrics.overlapPenalty, 0), 0, 1);
+    var rawPeakWeakness = clamp((-54 - parseNum(metrics.rawPeakDbFs, -90)) / 20, 0, 1);
+    var rawMeanWeakness = clamp((-58 - parseNum(metrics.rawMeanDbFs, -90)) / 20, 0, 1);
 
-    if (state === 'suppressed') {
-        return clamp(0.72 + overlapPenalty * 0.25, 0, 1);
+    if (decisionState === 'suppress') {
+        return clamp(
+            0.62 +
+            overlapPenalty * 0.22 +
+            rawPeakWeakness * 0.10 +
+            rawMeanWeakness * 0.06,
+            0,
+            1
+        );
     }
-    if (state === 'near_miss') {
-        return clamp(0.42 + relativeWeakness * 0.28 + meanWeakness * 0.18 + spectralWeakness * 0.12, 0, 1);
+    if (decisionState === 'review') {
+        return clamp(
+            0.34 +
+            relativeWeakness * 0.24 +
+            meanWeakness * 0.16 +
+            spectralWeakness * 0.10 +
+            rawPeakWeakness * 0.10 +
+            rawMeanWeakness * 0.06,
+            0,
+            1
+        );
     }
-    return clamp(0.08 + overlapPenalty * 0.10 + relativeWeakness * 0.06, 0, 1);
+    if (decisionState === 'uninteresting') {
+        return 1;
+    }
+    return clamp(
+        0.08 +
+        overlapPenalty * 0.10 +
+        relativeWeakness * 0.05 +
+        rawPeakWeakness * 0.04,
+        0,
+        1
+    );
 }
 
-function computeScore(state, durationSec, metrics) {
+function computeScore(decisionState, durationSec, metrics) {
+    metrics = metrics || {};
+    var values = metrics.values || {};
     var durationNorm = clamp(durationSec / 2.2, 0, 1);
-    var peakNorm = clamp((metrics.values.peakOverThreshold + 2.0) / 14.0, 0, 1);
-    var meanNorm = clamp((metrics.values.meanOverThreshold + 3.0) / 10.0, 0, 1);
-    var spectralNorm = clamp(metrics.values.spectralConfidence, 0, 1);
-    var speakerNorm = clamp(metrics.values.speakerLockScore, 0, 1);
-    var overlapPenalty = clamp(metrics.values.overlapPenalty, 0, 1);
-    var postprocessPenalty = clamp(metrics.values.postprocessPenalty, 0, 1);
+    var peakNorm = clamp((parseNum(values.peakOverThreshold, 0) + 2.0) / 14.0, 0, 1);
+    var meanNorm = clamp((parseNum(values.meanOverThreshold, 0) + 3.0) / 10.0, 0, 1);
+    var spectralNorm = clamp(parseNum(values.spectralConfidence, 0), 0, 1);
+    var speakerNorm = clamp(parseNum(values.speakerLockScore, 0), 0, 1);
+    var overlapPenalty = clamp(parseNum(values.overlapPenalty, 0), 0, 1);
+    var postprocessPenalty = parseNum(values.postprocessPenalty, NaN);
+
+    if (!isFiniteNumber(postprocessPenalty)) {
+        postprocessPenalty = computePostprocessPenalty(decisionState, {
+            peakOverThreshold: parseNum(values.peakOverThreshold, 0),
+            meanOverThreshold: parseNum(values.meanOverThreshold, 0),
+            spectralConfidence: spectralNorm,
+            overlapPenalty: overlapPenalty,
+            rawPeakDbFs: parseNum(values.rawPeakDbFs, -90),
+            rawMeanDbFs: parseNum(values.rawMeanDbFs, -90)
+        });
+    }
+    postprocessPenalty = clamp(postprocessPenalty, 0, 1);
 
     var stateAdjust = 0;
-    if (state === 'kept') {
+    if (decisionState === 'keep') {
         stateAdjust = 0.10;
-    } else if (state === 'near_miss') {
+    } else if (decisionState === 'filled_gap') {
+        stateAdjust = 0.06;
+    } else if (decisionState === 'review') {
         stateAdjust = 0.02;
+    } else if (decisionState === 'uninteresting') {
+        stateAdjust = -0.18;
     } else {
         stateAdjust = -0.10;
     }
@@ -222,19 +124,19 @@ function inferCoverageDecision(ctx) {
     var sourceActiveCoverage = clamp(parseNum(ctx.sourceActiveCoverage, 0), 0, 1);
 
     if (keepCoverage > 0.55 || keptSourceRatio >= 0.80) {
-        return { state: 'kept', stage: 'final_kept' };
+        return { decisionState: 'keep', stage: 'final_kept' };
     }
     if (sourceSuppressedCoverage >= 0.60 && keepCoverage < 0.25) {
-        return { state: 'suppressed', stage: 'overlap_resolve' };
+        return { decisionState: 'suppress', stage: 'overlap_resolve' };
     }
     if (sourceActiveCoverage < 0.20 && sourceSuppressedCoverage >= 0.45) {
-        return { state: 'suppressed', stage: 'overlap_resolve' };
+        return { decisionState: 'suppress', stage: 'overlap_resolve' };
     }
-    return { state: 'near_miss', stage: 'postprocess_pruned' };
+    return { decisionState: 'review', stage: 'postprocess_pruned' };
 }
 
-function decidePreviewState(ctx) {
-    var baseState = ctx.baseState || 'near_miss';
+function applyDecisionPolicy(ctx) {
+    var baseState = ctx.baseState || 'review';
     var baseStage = ctx.baseStage || 'postprocess_pruned';
     var values = ctx.metrics || {};
 
@@ -251,31 +153,44 @@ function decidePreviewState(ctx) {
     var spectralConfidence = clamp(parseNum(values.spectralConfidence, 0), 0, 1);
     var speakerLockScore = clamp(parseNum(values.speakerLockScore, 0), 0, 1);
     var overlapPenalty = clamp(parseNum(values.overlapPenalty, 0), 0, 1);
-    var postprocessPenalty = clamp(parseNum(values.postprocessPenalty, 0), 0, 1);
     var classMargin = clamp(parseNum(values.classMargin, 0), 0, 1);
     var peakNorm = clamp((parseNum(values.peakOverThreshold, 0) + 2) / 12, 0, 1);
     var meanNorm = clamp((parseNum(values.meanOverThreshold, 0) + 2) / 9, 0, 1);
+    var rawPeakNorm = clamp((parseNum(values.rawPeakDbFs, -90) + 62) / 20, 0, 1);
+    var rawMeanNorm = clamp((parseNum(values.rawMeanDbFs, -90) + 66) / 20, 0, 1);
     var laughterDominance = clamp((laughterEvidence - speechEvidence + 0.15) / 0.5, 0, 1);
+    var postprocessPenalty = computePostprocessPenalty(baseState, {
+        peakOverThreshold: parseNum(values.peakOverThreshold, 0),
+        meanOverThreshold: parseNum(values.meanOverThreshold, 0),
+        spectralConfidence: spectralConfidence,
+        overlapPenalty: overlapPenalty,
+        rawPeakDbFs: parseNum(values.rawPeakDbFs, -90),
+        rawMeanDbFs: parseNum(values.rawMeanDbFs, -90)
+    });
 
     var speechSupport = clamp(
-        speechEvidence * 0.32 +
-        spectralConfidence * 0.14 +
-        speakerLockScore * 0.14 +
-        peakNorm * 0.12 +
+        speechEvidence * 0.30 +
+        spectralConfidence * 0.13 +
+        speakerLockScore * 0.13 +
+        peakNorm * 0.11 +
         meanNorm * 0.10 +
         classMargin * 0.08 +
-        (1 - noiseEvidence) * 0.10,
+        rawPeakNorm * 0.09 +
+        rawMeanNorm * 0.04 +
+        (1 - noiseEvidence) * 0.08,
         0,
         1
     );
     var suppressPressure = clamp(
-        bleedEvidence * 0.25 +
-        overlapPenalty * 0.19 +
-        postprocessPenalty * 0.17 +
-        noiseEvidence * 0.12 +
+        bleedEvidence * 0.24 +
+        overlapPenalty * 0.17 +
+        postprocessPenalty * 0.16 +
+        noiseEvidence * 0.10 +
         sourceSuppressedCoverage * 0.14 +
         (1 - sourceActiveCoverage) * 0.06 +
-        laughterDominance * 0.07,
+        laughterDominance * 0.07 +
+        (1 - rawPeakNorm) * 0.04 +
+        (1 - rawMeanNorm) * 0.02,
         0,
         1
     );
@@ -303,20 +218,18 @@ function decidePreviewState(ctx) {
     var bleedHighConfidence = false;
 
     if (suppressLikelihood >= 0.74 && keepLikelihood <= 0.46) {
-        nextState = 'suppressed';
-        nextStage = (baseState === 'suppressed') ? baseStage : 'metrics_demoted_suppressed';
+        nextState = 'suppress';
+        nextStage = (baseState === 'suppress') ? baseStage : 'metrics_demoted_suppressed';
     } else if (keepLikelihood >= 0.66 && keepCoverage >= 0.22) {
-        nextState = 'kept';
-        nextStage = (baseState === 'kept') ? baseStage : 'metrics_promoted_keep';
+        nextState = 'keep';
+        nextStage = (baseState === 'keep') ? baseStage : 'metrics_promoted_keep';
     } else {
-        nextState = 'near_miss';
-        if (baseState === 'near_miss') nextStage = baseStage;
-        else if (baseState === 'kept') nextStage = 'metrics_demoted_near_miss';
-        else nextStage = 'metrics_recovered_near_miss';
+        nextState = 'review';
+        if (baseState === 'review') nextStage = baseStage;
+        else if (baseState === 'keep') nextStage = 'metrics_demoted_review';
+        else nextStage = 'metrics_recovered_review';
     }
 
-    // Hard safety gate: very high bleed probability should not stay "kept"
-    // unless speech evidence is exceptionally strong.
     if (bleedConfidence >= 0.80 && overlapPenalty >= 0.55) {
         bleedHighConfidence = true;
         var strongSpeechCounterEvidence = (
@@ -328,43 +241,47 @@ function decidePreviewState(ctx) {
         );
 
         if (strongSpeechCounterEvidence) {
-            if (nextState === 'kept') {
-                nextState = 'near_miss';
+            if (nextState === 'keep') {
+                nextState = 'review';
                 nextStage = 'bleed_high_confidence_review';
             }
         } else {
-            nextState = 'suppressed';
+            nextState = 'suppress';
             nextStage = 'bleed_high_confidence';
         }
     }
 
-    // Guardrails: do not flip clear structural outcomes unless pressure is very high.
-    if (baseState === 'kept' &&
+    if (baseState === 'keep' &&
         keepCoverage >= 0.82 &&
         keptSourceRatio >= 0.82 &&
         keepLikelihood >= 0.62 &&
         suppressLikelihood < 0.78 &&
         !bleedHighConfidence) {
-        nextState = 'kept';
+        nextState = 'keep';
         nextStage = baseStage;
     }
-    if (baseState === 'suppressed' &&
+    if (baseState === 'suppress' &&
         sourceSuppressedCoverage >= 0.68 &&
         keepCoverage < 0.25 &&
         keepLikelihood < 0.72) {
-        nextState = 'suppressed';
+        nextState = 'suppress';
         nextStage = baseStage;
     }
 
     return {
-        state: nextState,
+        decisionState: nextState,
         stage: nextStage,
-        baseState: baseState,
+        baseDecisionState: baseState,
         bleedHighConfidence: bleedHighConfidence,
         keepLikelihood: keepLikelihood,
         suppressLikelihood: suppressLikelihood,
-        margin: margin
+        margin: margin,
+        postprocessPenalty: postprocessPenalty
     };
+}
+
+function decidePreviewState(ctx) {
+    return applyDecisionPolicy(ctx);
 }
 
 function canAutoKeepAlwaysOpenFill(decision, metricValues, params) {
@@ -381,14 +298,14 @@ function canAutoKeepAlwaysOpenFill(decision, metricValues, params) {
         1
     );
     var bleedHighConfidence = !!decision.bleedHighConfidence || (parseNum(metricValues.bleedHighConfidence, 0) >= 0.5);
-    var state = decision.state || '';
+    var state = decision.decisionState || '';
 
     var maxBleed = clamp(parseNum(params.alwaysOpenFillAutoKeepBleedMaxConfidence, 0.76), 0, 1);
     var minSpeech = clamp(parseNum(params.alwaysOpenFillAutoKeepMinSpeechEvidence, 0.46), 0, 1);
     var minKeepLikelihood = clamp(parseNum(params.alwaysOpenFillAutoKeepMinKeepLikelihood, 0.60), 0, 1);
     var promoteSuppressed = !!params.alwaysOpenFillPromoteSuppressed;
 
-    if (!promoteSuppressed && state === 'suppressed') return false;
+    if (!promoteSuppressed && state === 'suppress') return false;
     if (bleedHighConfidence) return false;
     if (bleedConfidence >= maxBleed && speechEvidence < (minSpeech + 0.06)) return false;
     if (keepLikelihood < minKeepLikelihood && speechEvidence < minSpeech) return false;
@@ -398,35 +315,7 @@ function canAutoKeepAlwaysOpenFill(decision, metricValues, params) {
 }
 
 function rankClassEvidence(scores) {
-    var firstLabel = 'unknown';
-    var secondLabel = 'unknown';
-    var firstScore = -Infinity;
-    var secondScore = -Infinity;
-
-    for (var key in scores) {
-        if (!scores.hasOwnProperty(key)) continue;
-        var value = clamp(parseNum(scores[key], 0), 0, 1);
-        if (value > firstScore) {
-            secondScore = firstScore;
-            secondLabel = firstLabel;
-            firstScore = value;
-            firstLabel = key;
-        } else if (value > secondScore) {
-            secondScore = value;
-            secondLabel = key;
-        }
-    }
-
-    if (!isFiniteNumber(firstScore)) firstScore = 0;
-    if (!isFiniteNumber(secondScore)) secondScore = 0;
-
-    return {
-        firstLabel: firstLabel,
-        firstScore: firstScore,
-        secondLabel: secondLabel,
-        secondScore: secondScore,
-        margin: clamp(firstScore - secondScore, 0, 1)
-    };
+    return snippetMetricsBuilder.rankClassEvidence(scores);
 }
 
 function evidenceConfidence(primaryScore, margin, bias) {
@@ -435,78 +324,11 @@ function evidenceConfidence(primaryScore, margin, bias) {
 }
 
 function computeClassEvidence(ctx) {
-    var peakNorm = clamp((ctx.peakOverThreshold + 1.5) / 12, 0, 1);
-    var meanNorm = clamp((ctx.meanOverThreshold + 2.0) / 9, 0, 1);
-    var energyNorm = clamp(peakNorm * 0.60 + meanNorm * 0.40, 0, 1);
-    var spectral = clamp(ctx.spectralConfidence, 0, 1);
-    var laughter = clamp(ctx.laughterConfidence, 0, 1);
-    var laughterPeak = clamp(ctx.laughterPeakConfidence, 0, 1);
-    var speaker = clamp(ctx.speakerLockScore, 0, 1);
-    var overlapPenalty = clamp(ctx.overlapPenalty, 0, 1);
-    var overlapRatio = clamp(ctx.overlapRatio, 0, 1);
-    var strongerRatio = clamp(ctx.strongerRatio, 0, 1);
-    var postPenalty = clamp(ctx.postprocessPenalty, 0, 1);
-
-    var speechScore = clamp(
-        spectral * 0.38 +
-        speaker * 0.20 +
-        energyNorm * 0.26 +
-        (1 - overlapPenalty) * 0.08 +
-        (1 - laughter) * 0.08,
-        0,
-        1
-    );
-    var laughterScore = clamp(
-        laughter * 0.48 +
-        laughterPeak * 0.20 +
-        energyNorm * 0.14 +
-        (1 - speaker) * 0.08 +
-        (1 - overlapPenalty) * 0.10,
-        0,
-        1
-    );
-    var bleedScore = clamp(
-        overlapPenalty * 0.40 +
-        strongerRatio * 0.28 +
-        overlapRatio * 0.18 +
-        (1 - speaker) * 0.07 +
-        (1 - spectral) * 0.07,
-        0,
-        1
-    );
-    var noiseScore = clamp(
-        (1 - spectral) * 0.28 +
-        postPenalty * 0.26 +
-        clamp((0 - ctx.meanOverThreshold) / 8, 0, 1) * 0.20 +
-        clamp((0 - ctx.peakOverThreshold) / 8, 0, 1) * 0.12 +
-        (1 - energyNorm) * 0.14,
-        0,
-        1
-    );
-
-    if (ctx.state === 'suppressed') {
-        bleedScore = clamp(bleedScore + 0.14, 0, 1);
-    }
-
-    var ranked = rankClassEvidence({
-        speech: speechScore,
-        laughter: laughterScore,
-        bleed: bleedScore,
-        noise: noiseScore
-    });
-
-    return {
-        speech: speechScore,
-        laughter: laughterScore,
-        bleed: bleedScore,
-        noise: noiseScore,
-        dominant: ranked.firstLabel,
-        secondary: ranked.secondLabel,
-        margin: ranked.margin
-    };
+    return snippetMetricsBuilder.computeClassEvidence(ctx);
 }
 
-function classifyType(state, score, metrics, params) {
+function classifyType(decisionState, score, metrics, params) {
+    params = params || {};
     var minSpectral = isFiniteNumber(params.spectralMinConfidence) ? params.spectralMinConfidence : 0.18;
     var values = metrics.values || {};
     var spectral = clamp(parseNum(values.spectralConfidence, 0), 0, 1);
@@ -538,15 +360,21 @@ function classifyType(state, score, metrics, params) {
 
     var label = 'unknown';
     var confidence = 35;
-    if (state === 'suppressed') {
-        if (evidence.bleed >= 0.48 || evidence.dominant === 'bleed') {
-            label = 'suppressed_bleed';
+    if (decisionState === 'suppress' || decisionState === 'uninteresting') {
+        if (decisionState === 'uninteresting') {
+            label = 'noise';
+            confidence = 95;
+        } else if (evidence.bleed >= 0.48 || evidence.dominant === 'bleed') {
+            label = 'bleed';
             confidence = evidenceConfidence(evidence.bleed, evidence.margin, 0.08);
         } else if (evidence.laughter >= 0.54 && evidence.laughter > evidence.speech + 0.08) {
-            label = 'laughter_candidate';
+            label = 'laughter';
             confidence = evidenceConfidence(evidence.laughter, evidence.margin, 0.02);
+        } else if (noiseEvidence >= 0.56) {
+            label = 'noise';
+            confidence = evidenceConfidence(noiseEvidence, evidence.margin, 0.02);
         } else {
-            label = 'overlap_candidate';
+            label = 'unknown';
             confidence = evidenceConfidence(Math.max(evidence.bleed, overlapPenalty), evidence.margin, -0.05);
         }
         return {
@@ -560,34 +388,36 @@ function classifyType(state, score, metrics, params) {
         Math.abs(evidence.speech - evidence.laughter) <= 0.14;
 
     if (mixedSpeechLaughter) {
-        label = 'mixed_speech_laughter';
+        label = 'mixed';
         confidence = evidenceConfidence(
             Math.min(evidence.speech, evidence.laughter),
             1 - Math.abs(evidence.speech - evidence.laughter),
             0.05
         );
     } else if (evidence.bleed >= 0.56 && (evidence.bleed >= evidence.speech + 0.10)) {
-        label = 'bleed_candidate';
+        label = 'bleed';
         confidence = evidenceConfidence(evidence.bleed, evidence.margin, 0.04);
     } else if (evidence.dominant === 'laughter' && evidence.laughter >= 0.46) {
-        label = 'laughter_candidate';
+        label = 'laughter';
         confidence = evidenceConfidence(evidence.laughter, evidence.margin, 0.02);
     } else if (overlapPenalty >= 0.5 || (evidence.dominant === 'bleed' && evidence.bleed >= 0.46)) {
-        label = 'overlap_candidate';
+        label = 'bleed';
         confidence = evidenceConfidence(Math.max(evidence.bleed, overlapPenalty), evidence.margin, -0.02);
     } else if (score >= 70 && spectral >= Math.max(minSpectral, 0.30) && evidence.speech >= 0.58) {
-        label = 'primary_speech';
+        label = 'speech';
         confidence = evidenceConfidence(evidence.speech, evidence.margin, 0.08);
     } else if (evidence.speech >= 0.40 || score >= 45 || spectral >= (minSpectral - 0.04)) {
-        label = 'borderline_speech';
+        label = 'speech';
         confidence = evidenceConfidence(Math.max(evidence.speech, score / 100), evidence.margin, 0.01);
+    } else if (noiseEvidence >= 0.52 || postPenalty >= 0.62) {
+        label = 'noise';
+        confidence = evidenceConfidence(Math.max(noiseEvidence, 1 - postPenalty), evidence.margin, -0.05);
     } else {
-        label = 'weak_voice';
+        label = 'unknown';
         confidence = evidenceConfidence(Math.max(noiseEvidence, 1 - postPenalty), evidence.margin, -0.08);
     }
 
-    if (state === 'near_miss' && label === 'primary_speech') {
-        label = 'borderline_speech';
+    if (decisionState === 'review' && label === 'speech') {
         confidence = clamp(confidence - 8, 0, 100);
     }
 
@@ -597,18 +427,20 @@ function classifyType(state, score, metrics, params) {
     };
 }
 
-function buildReasons(state, metrics, scoreInfo, typeInfo, decision) {
+function buildReasons(decisionState, metrics, scoreInfo, typeInfo, decision) {
     var out = [];
-    var vals = metrics.values;
+    var vals = metrics.values || {};
 
-    if (state === 'kept') out.push('Kept in final decision');
-    if (state === 'near_miss') out.push('Pruned in postprocess pass');
-    if (state === 'suppressed') out.push('Suppressed in overlap resolution');
+    if (decisionState === 'keep') out.push('Kept in final decision');
+    if (decisionState === 'review') out.push('Marked for manual review');
+    if (decisionState === 'suppress') out.push('Suppressed in overlap resolution');
+    if (decisionState === 'filled_gap') out.push('Continuity fill kept to avoid silent gaps');
+    if (decisionState === 'uninteresting') out.push('Timeline gap marked as uninteresting');
     if (parseNum(vals.alwaysOpenFill, 0) >= 0.5) {
         out.push('Dominant speaker continuity fill (always-open safety)');
     }
     if (vals.mergedSegmentCount > 1) {
-        out.push('Merged ' + vals.mergedSegmentCount + ' nearby snippets (max gap ' + round(parseNum(vals.maxMergedGapMs, 0), 0) + ' ms)');
+        out.push('Merged ' + vals.mergedSegmentCount + ' nearby snippets (max gap ' + Math.round(parseNum(vals.maxMergedGapMs, 0)) + ' ms)');
     }
 
     if (vals.peakOverThreshold >= 4) out.push('Peak is clearly above gate threshold');
@@ -638,18 +470,17 @@ function buildReasons(state, metrics, scoreInfo, typeInfo, decision) {
     }
 
     if (scoreInfo.label === 'borderline') out.push('Ranked as borderline confidence');
-    if (typeInfo.label === 'suppressed_bleed') out.push('Pattern matches likely bleed');
-    if (typeInfo.label === 'bleed_candidate') out.push('Likely bleed-dominant segment');
-    if (typeInfo.label === 'laughter_candidate') out.push('Segment pattern matches likely laughter');
-    if (typeInfo.label === 'mixed_speech_laughter') out.push('Mixed speech and laughter profile detected');
+    if (typeInfo.label === 'bleed') out.push('Pattern matches likely bleed');
+    if (typeInfo.label === 'laughter') out.push('Segment pattern matches likely laughter');
+    if (typeInfo.label === 'mixed') out.push('Mixed speech and laughter profile detected');
     if (decision) {
         out.push('Decision model keep ' + Math.round(clamp(parseNum(decision.keepLikelihood, 0), 0, 1) * 100) +
             '% vs suppress ' + Math.round(clamp(parseNum(decision.suppressLikelihood, 0), 0, 1) * 100) + '%');
         if (decision.bleedHighConfidence) {
             out.push('High bleed confidence safety gate is active');
         }
-        if (decision.baseState && decision.state && decision.baseState !== decision.state) {
-            out.push('State adjusted by combined metrics (' + decision.baseState + ' -> ' + decision.state + ')');
+        if (decision.baseDecisionState && decision.decisionState && decision.baseDecisionState !== decision.decisionState) {
+            out.push('State adjusted by combined metrics (' + decision.baseDecisionState + ' -> ' + decision.decisionState + ')');
         }
         if (parseNum(decision.margin, 1) < 0.12) {
             out.push('Decision is close; manual review recommended');
@@ -671,13 +502,13 @@ function buildReasons(state, metrics, scoreInfo, typeInfo, decision) {
     return deduped;
 }
 
-
 module.exports = {
     computeMetrics: computeMetrics,
     computeOverlapStats: computeOverlapStats,
     computePostprocessPenalty: computePostprocessPenalty,
     computeScore: computeScore,
     inferCoverageDecision: inferCoverageDecision,
+    applyDecisionPolicy: applyDecisionPolicy,
     decidePreviewState: decidePreviewState,
     canAutoKeepAlwaysOpenFill: canAutoKeepAlwaysOpenFill,
     rankClassEvidence: rankClassEvidence,
@@ -686,5 +517,3 @@ module.exports = {
     classifyType: classifyType,
     buildReasons: buildReasons
 };
-
-

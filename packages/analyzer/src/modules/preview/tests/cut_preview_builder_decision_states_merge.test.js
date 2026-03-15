@@ -36,7 +36,7 @@ describe('Cut Preview Builder Decision States - Merge', function () {
 
         var actionable = previewUtils.actionableItems(result && result.items);
         assert(actionable.length === 1, 'Expected one merged actionable preview span');
-        assert(actionable[0].state === 'kept', 'Merged span should stay kept');
+        assert(actionable[0].decisionState === 'keep', 'Merged span should stay keep');
         assert(actionable[0].metrics && actionable[0].metrics.mergedSegmentCount === 2, 'Expected merged segment count = 2');
         assert(actionable[0].metrics && actionable[0].metrics.keptSourceRatio >= 0.99, 'Expected kept source ratio close to 1');
     });

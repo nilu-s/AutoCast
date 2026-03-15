@@ -19,6 +19,15 @@ Diese Regeln gelten fuer Architekturpflege, Refactors und Strukturarbeiten.
 3. Danach Orchestrierung vereinfachen.
 4. Abschliessend Tests nachziehen/haerten.
 
+## Legacy-Abbau (verbindlich)
+
+1. Bei neuen Loesungsansaetzen standardmaessig den alten Ansatz ersetzen, nicht parallel mitfuehren.
+2. Alte Heuristiken/Fallbacks entfernen, wenn sie durch den neuen Ansatz fachlich ersetzt sind.
+3. Rueckwaertskompatibilitaet nur dort halten, wo ein konkreter Runtime- oder API-Vertrag sie erzwingt.
+4. Falls Legacy verbleibt:
+   - Grund benennen (z. B. externer Vertrag, Migrationsfenster)
+   - isoliert halten (kein Durchmischen in neuer Kernlogik)
+
 ## Strukturregeln
 
 - Zielstruktur wird durch `scripts/check_structure.js` erzwungen.

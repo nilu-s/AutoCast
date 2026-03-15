@@ -5,7 +5,7 @@ var cutPreviewBuilder = require('../cut_preview_builder');
 var previewUtils = require(path.join(__dirname, '..', '..', '..', 'tests', 'helpers', 'cut_preview_test_utils'));
 
 describe('Cut Preview Builder - Continuity Fill', function () {
-    it('should add uncovered final continuity spans as kept items', function () {
+    it('should add uncovered final continuity spans as keep items', function () {
         var frameCount = 900;
         var result = cutPreviewBuilder.buildCutPreview({
             sourceSegments: [[
@@ -38,12 +38,12 @@ describe('Cut Preview Builder - Continuity Fill', function () {
             if (item.trackIndex !== 0) continue;
             if (item.end >= 6.8 && item.start <= 1.2) {
                 hasTailItem = true;
-                assert(item.state === 'kept', 'Uncovered final continuity span should be kept');
+                assert(item.decisionState === 'keep', 'Uncovered final continuity span should be keep');
                 assert(item.selected === true, 'Uncovered final continuity span should be selected');
                 break;
             }
         }
-        assert(hasTailItem, 'Expected kept continuity item covering final uncovered tail');
+        assert(hasTailItem, 'Expected keep continuity item covering final uncovered tail');
     });
 
     it('should keep explicit always_open_fill origin visible in cut preview', function () {
@@ -77,8 +77,7 @@ describe('Cut Preview Builder - Continuity Fill', function () {
             hasFill = true;
             assert(item.origin === 'always_open_fill', 'Expected explicit fill origin on preview item');
             assert(item.decisionStage === 'always_open_fill', 'Expected explicit fill decision stage');
-            assert(item.decisionState === 'filled_gap', 'Expected normalized decisionState for explicit fill');
-            assert(item.modelOrigin === 'continuity_fill', 'Expected normalized continuity origin for explicit fill');
+            assert(item.decisionState === 'filled_gap', 'Expected decisionState for explicit fill');
             assert(item.selected === true, 'Fill snippet should be selected by default');
             break;
         }

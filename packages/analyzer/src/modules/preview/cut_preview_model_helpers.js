@@ -5,36 +5,45 @@ function buildSegmentModel(ctx) {
     var metrics = ctx.metrics || {};
     var values = metrics.values || {};
     var isUninteresting = !!ctx.isUninteresting;
-    var decisionState = mapLegacyStateToDecisionState(
-        ctx.legacyState || 'suppressed',
+    var decisionState = normalizeDecisionState(
+        ctx.decisionState || 'review',
         !!ctx.alwaysOpenFill,
         isUninteresting
     );
-    var contentClass = mapTypeLabelToContentClass(
-        ctx.typeInfo && ctx.typeInfo.label,
-        values,
+    var contentState = normalizeContentState(
+        ctx.contentState || (ctx.typeInfo && ctx.typeInfo.label) || 'unknown',
+        !!ctx.alwaysOpenFill,
         isUninteresting
     );
-    var qualityBand = mapScoreToQualityBand(ctx.scoreInfo);
     var suppressionReason = mapSuppressionReason({
         decisionState: decisionState,
         decisionStage: ctx.decisionStage || '',
         values: values,
-        contentClass: contentClass,
+        contentState: contentState,
         isUninteresting: isUninteresting
     });
     var modelOrigin = mapModelOrigin({
-        legacyOrigin: ctx.legacyOrigin || 'analysis_active',
+        origin: ctx.origin || 'analysis_active',
         decisionStage: ctx.decisionStage || '',
         alwaysOpenFill: !!ctx.alwaysOpenFill,
         isUninteresting: isUninteresting
     });
-    var typeConfidence = clamp(parseNum(ctx.typeInfo && ctx.typeInfo.confidence, 0), 0, 100);
+    var classificationConfidence = clamp(parseNum(ctx.typeInfo && ctx.typeInfo.confidence, 0), 0, 100);
+    var quality = buildQualityObject(ctx.scoreInfo, classificationConfidence, values);
+    var provenance = buildProvenance(ctx.decisionStage || '', modelOrigin);
+    var stateModel = {
+        contentState: contentState,
+        decisionState: decisionState,
+        quality: quality,
+        provenance: provenance
+    };
 
     return {
         decisionState: decisionState,
-        contentClass: contentClass,
-        qualityBand: qualityBand,
+        contentState: contentState,
+        quality: quality,
+        provenance: provenance,
+        stateModel: stateModel,
         suppressionReason: suppressionReason,
         origin: modelOrigin,
         evidenceMetrics: buildEvidenceMetrics(values),
@@ -47,16 +56,14 @@ function buildSegmentModel(ctx) {
             margin: round(clamp(parseNum(values.decisionMargin, 0), 0, 1), 3)
         },
         classification: {
-            contentClass: contentClass,
-            confidence: round(typeConfidence / 100, 3),
-            qualityBand: qualityBand
+            contentState: contentState,
+            confidence: round(classificationConfidence / 100, 3)
         },
         explainability: {
             reasons: Array.isArray(ctx.reasons) ? ctx.reasons.slice(0) : [],
             decisionStage: ctx.decisionStage || '',
-            legacyTypeLabel: ctx.typeInfo && ctx.typeInfo.label ? ctx.typeInfo.label : 'unknown',
-            legacyScoreLabel: ctx.scoreInfo && ctx.scoreInfo.label ? ctx.scoreInfo.label : 'weak',
-            overlapInfo: metrics.overlapInfo || null
+            overlapInfo: metrics.overlapInfo || null,
+            stateModel: stateModel
         }
     };
 }
@@ -66,11 +73,12 @@ function buildEvidenceMetrics(values) {
     return {
         meanOverThresholdDb: round(parseNum(values.meanOverThreshold, 0), 2),
         peakOverThresholdDb: round(parseNum(values.peakOverThreshold, 0), 2),
+        rawMeanDbFs: round(parseNum(values.rawMeanDbFs, -90), 2),
+        rawPeakDbFs: round(parseNum(values.rawPeakDbFs, -90), 2),
         spectralConfidence: round(clamp(parseNum(values.spectralConfidence, 0), 0, 1), 3),
         laughterConfidence: round(clamp(parseNum(values.laughterConfidence, 0), 0, 1), 3),
         overlapPenalty: round(clamp(parseNum(values.overlapPenalty, 0), 0, 1), 3),
         speakerLockScore: round(clamp(parseNum(values.speakerLockScore, 0), 0, 1), 3),
-        postprocessPenalty: round(clamp(parseNum(values.postprocessPenalty, 0), 0, 1), 3),
         speechEvidence: round(clamp(parseNum(values.speechEvidence, 0), 0, 1), 3),
         laughterEvidence: round(clamp(parseNum(values.laughterEvidence, 0), 0, 1), 3),
         bleedEvidence: round(clamp(parseNum(values.bleedEvidence, 0), 0, 1), 3),
@@ -78,42 +86,70 @@ function buildEvidenceMetrics(values) {
         noiseEvidence: round(clamp(parseNum(values.noiseEvidence, 0), 0, 1), 3),
         classMargin: round(clamp(parseNum(values.classMargin, 0), 0, 1), 3),
         mergedSegmentCount: Math.max(1, Math.round(parseNum(values.mergedSegmentCount, 1))),
-        maxMergedGapMs: round(Math.max(0, parseNum(values.maxMergedGapMs, 0)), 1),
-        keptSourceRatio: round(clamp(parseNum(values.keptSourceRatio, 0), 0, 1), 3),
-        alwaysOpenFillRatio: round(clamp(parseNum(values.alwaysOpenFillRatio, 0), 0, 1), 3)
+        maxMergedGapMs: round(Math.max(0, parseNum(values.maxMergedGapMs, 0)), 1)
     };
 }
 
-function mapLegacyStateToDecisionState(legacyState, alwaysOpenFill, isUninteresting) {
-    if (isUninteresting) return 'suppressed';
-    if (alwaysOpenFill && legacyState === 'kept') return 'filled_gap';
-    if (legacyState === 'kept' || legacyState === 'near_miss' || legacyState === 'suppressed') {
-        return legacyState;
+function normalizeDecisionState(decisionState, alwaysOpenFill, isUninteresting) {
+    var state = decisionState ? String(decisionState) : 'review';
+    if (isUninteresting) return 'uninteresting';
+    if (alwaysOpenFill && state === 'keep') return 'filled_gap';
+    if (state === 'keep' || state === 'review' || state === 'suppress' || state === 'filled_gap' || state === 'uninteresting') {
+        return state;
     }
-    return 'suppressed';
+    return 'review';
 }
 
-function mapTypeLabelToContentClass(typeLabel, values, isUninteresting) {
+function normalizeContentState(contentState, alwaysOpenFill, isUninteresting) {
+    var state = contentState ? String(contentState) : 'unknown';
     if (isUninteresting) return 'noise';
-    if (typeLabel === 'primary_speech' || typeLabel === 'borderline_speech') return 'speech';
-    if (typeLabel === 'laughter_candidate') return 'laughter';
-    if (typeLabel === 'mixed_speech_laughter') return 'mixed';
-    if (typeLabel === 'suppressed_bleed' || typeLabel === 'bleed_candidate' || typeLabel === 'overlap_candidate') {
-        return 'bleed';
-    }
-    if (typeLabel === 'uninteresting_gap') return 'noise';
-    if (typeLabel === 'weak_voice') {
-        return parseNum(values && values.noiseEvidence, 0) >= 0.55 ? 'noise' : 'unknown';
+    if (alwaysOpenFill && state === 'unknown') return 'silence_fill';
+    if (state === 'speech' ||
+        state === 'laughter' ||
+        state === 'mixed' ||
+        state === 'bleed' ||
+        state === 'noise' ||
+        state === 'silence_fill' ||
+        state === 'unknown') {
+        return state;
     }
     return 'unknown';
 }
 
-function mapScoreToQualityBand(scoreInfo) {
-    var score = clamp(parseNum(scoreInfo && scoreInfo.score, 0), 0, 100);
-    var label = scoreInfo && scoreInfo.label ? scoreInfo.label : '';
-    if (label === 'strong' || score >= 70) return 'high';
-    if (label === 'borderline' || score >= 45) return 'medium';
-    return 'low';
+function buildQualityObject(scoreInfo, classificationConfidence, values) {
+    var score = round(clamp(parseNum(scoreInfo && scoreInfo.score, 0), 0, 100), 1);
+    var confidence = round(clamp(parseNum(classificationConfidence, 0) / 100, 0, 1), 3);
+    var margin = round(clamp(parseNum(values && values.decisionMargin, 0), 0, 1), 3);
+    return {
+        score0to100: score,
+        confidence0to1: confidence,
+        margin0to1: margin
+    };
+}
+
+function buildProvenance(decisionStage, modelOrigin) {
+    var stage = decisionStage || '';
+    var origin = modelOrigin || 'vad';
+    var passesTouched = [];
+
+    if (stage.indexOf('always_open_fill') === 0 || stage === 'timeline_gap_uninteresting') {
+        passesTouched.push('continuity');
+    }
+    if (stage === 'overlap_resolve' || stage.indexOf('bleed_high_confidence') === 0) {
+        passesTouched.push('overlap');
+    }
+    if (stage.indexOf('postprocess_') === 0 || stage.indexOf('metrics_') === 0 || stage === 'postprocess_pruned') {
+        passesTouched.push('postprocess');
+    }
+    if (!passesTouched.length) {
+        passesTouched.push('preview');
+    }
+
+    return {
+        stage: stage || 'unknown',
+        origin: origin,
+        passesTouched: passesTouched
+    };
 }
 
 function mapSuppressionReason(ctx) {
@@ -121,7 +157,7 @@ function mapSuppressionReason(ctx) {
     var stage = ctx.decisionStage || '';
     var values = ctx.values || {};
 
-    if (state === 'kept' || state === 'filled_gap') return null;
+    if (state === 'keep' || state === 'filled_gap') return null;
     if (ctx.isUninteresting) return 'postprocess_prune';
 
     if (stage.indexOf('always_open_fill_review') === 0) return 'continuity_override';
@@ -137,7 +173,7 @@ function mapSuppressionReason(ctx) {
     var overlap = clamp(parseNum(values.overlapPenalty, 0), 0, 1);
     var bleedConf = clamp(parseNum(values.bleedConfidence, parseNum(values.bleedEvidence, 0)), 0, 1);
 
-    if (ctx.contentClass === 'bleed' || bleedConf >= 0.60) return 'bleed';
+    if (ctx.contentState === 'bleed' || bleedConf >= 0.60) return 'bleed';
     if (overlap >= 0.60 && bleedConf < 0.60) return 'dominance_loss';
     if (spectral < 0.20) return 'low_spectral_confidence';
     if (peakOver < 0 && meanOver < 0) return 'low_energy';
@@ -146,10 +182,10 @@ function mapSuppressionReason(ctx) {
 
 function mapModelOrigin(ctx) {
     var stage = ctx.decisionStage || '';
-    var legacyOrigin = ctx.legacyOrigin || 'analysis_active';
+    var origin = ctx.origin || 'analysis_active';
 
     if (ctx.isUninteresting) return 'postprocess';
-    if (ctx.alwaysOpenFill || legacyOrigin === 'always_open_fill' || legacyOrigin === 'timeline_gap') {
+    if (ctx.alwaysOpenFill || origin === 'always_open_fill' || origin === 'timeline_gap') {
         return 'continuity_fill';
     }
     if (stage === 'overlap_resolve' || stage.indexOf('bleed_high_confidence') === 0) {
@@ -163,9 +199,10 @@ function mapModelOrigin(ctx) {
 }
 
 function buildSummary(items, trackCount, totalDurationSec) {
-    var kept = 0;
-    var nearMiss = 0;
-    var suppressed = 0;
+    var keep = 0;
+    var review = 0;
+    var suppress = 0;
+    var filledGap = 0;
     var uninteresting = 0;
     var selected = 0;
     var scoreSum = 0;
@@ -173,14 +210,18 @@ function buildSummary(items, trackCount, totalDurationSec) {
 
     for (var i = 0; i < items.length; i++) {
         var item = items[i];
+        var decisionState = normalizeDecisionState(item && item.decisionState, !!(item && item.alwaysOpenFill), !!(item && item.isUninteresting));
         if (isUninterestingItem(item)) {
             uninteresting++;
-        } else if (item.state === 'kept') {
-            kept++;
-        } else if (item.state === 'near_miss') {
-            nearMiss++;
+        } else if (decisionState === 'filled_gap') {
+            filledGap++;
+            keep++;
+        } else if (decisionState === 'keep') {
+            keep++;
+        } else if (decisionState === 'review') {
+            review++;
         } else {
-            suppressed++;
+            suppress++;
         }
 
         if (item.selected) selected++;
@@ -192,9 +233,10 @@ function buildSummary(items, trackCount, totalDurationSec) {
 
     return {
         totalItems: items.length,
-        keptCount: kept,
-        nearMissCount: nearMiss,
-        suppressedCount: suppressed,
+        keepCount: keep,
+        reviewCount: review,
+        suppressCount: suppress,
+        filledGapCount: filledGap,
         uninterestingCount: uninteresting,
         selectedCount: selected,
         avgScore: scoredCount > 0 ? round(scoreSum / scoredCount, 1) : 0,
@@ -208,9 +250,10 @@ function buildStateTimelineByTrack(items, trackCount, totalDurationSec) {
     var duration = Math.max(0, parseNum(totalDurationSec, computeMaxEndFromItems(items)));
     var epsilon = 0.0001;
     var priority = {
-        kept: 3,
-        near_miss: 2,
-        suppressed: 1,
+        filled_gap: 4,
+        keep: 3,
+        review: 2,
+        suppress: 1,
         uninteresting: 0
     };
 
@@ -228,7 +271,7 @@ function buildStateTimelineByTrack(items, trackCount, totalDurationSec) {
             trackItems.push({
                 start: st,
                 end: en,
-                state: item.state || 'suppressed'
+                state: item.decisionState || 'suppress'
             });
             points.push(st, en);
         }
@@ -254,7 +297,7 @@ function buildStateTimelineByTrack(items, trackCount, totalDurationSec) {
                 var trItem = trackItems[j];
                 if (trItem.end <= segStart + epsilon || trItem.start >= segEnd - epsilon) continue;
                 var state = normalizeStateLabel(trItem.state);
-                var rank = priority.hasOwnProperty(state) ? priority[state] : priority.suppressed;
+                var rank = priority.hasOwnProperty(state) ? priority[state] : priority.suppress;
                 if (rank > bestRank) {
                     bestRank = rank;
                     bestState = state;
@@ -310,12 +353,13 @@ function appendUninterestingGapItems(ctx) {
             counter++;
             var gapReasons = ['No relevant speech candidate in this span'];
             var gapModel = buildSegmentModel({
-                legacyState: 'suppressed',
-                legacyOrigin: 'timeline_gap',
+                decisionState: 'uninteresting',
+                contentState: 'noise',
+                origin: 'timeline_gap',
                 decisionStage: 'timeline_gap_uninteresting',
                 alwaysOpenFill: false,
                 scoreInfo: { score: 0, label: 'weak' },
-                typeInfo: { label: 'uninteresting_gap', confidence: 100 },
+                typeInfo: { label: 'noise', confidence: 100 },
                 metrics: { values: buildUninterestingMetrics(), overlapInfo: null },
                 reasons: gapReasons,
                 isUninteresting: true
@@ -330,7 +374,6 @@ function appendUninterestingGapItems(ctx) {
                 start: round(st, 4),
                 end: round(en, 4),
                 durationMs: Math.max(1, Math.round((en - st) * 1000)),
-                state: 'suppressed',
                 decisionState: gapModel.decisionState,
                 selected: false,
                 selectable: false,
@@ -338,10 +381,6 @@ function appendUninterestingGapItems(ctx) {
                 score: 0,
                 scoreLabel: 'weak',
                 reasons: gapReasons,
-                typeLabel: 'uninteresting_gap',
-                typeConfidence: 100,
-                contentClass: gapModel.contentClass,
-                qualityBand: gapModel.qualityBand,
                 suppressionReason: gapModel.suppressionReason,
                 sourceClipIndex: null,
                 mediaPath: getTrackPath(trackInfos, t),
@@ -349,14 +388,17 @@ function appendUninterestingGapItems(ctx) {
                 sourceEndSec: round(en, 4),
                 decisionStage: 'timeline_gap_uninteresting',
                 origin: 'timeline_gap',
-                modelOrigin: gapModel.origin,
                 alwaysOpenFill: false,
                 overlapInfo: null,
                 metrics: buildUninterestingMetrics(),
                 evidenceMetrics: gapModel.evidenceMetrics,
                 decision: gapModel.decision,
                 classification: gapModel.classification,
-                explainability: gapModel.explainability
+                explainability: gapModel.explainability,
+                contentState: gapModel.contentState,
+                quality: gapModel.quality,
+                provenance: gapModel.provenance,
+                stateModel: gapModel.stateModel
             };
 
             items.push(gapItem);
@@ -371,6 +413,8 @@ function buildUninterestingMetrics() {
     return {
         meanOverThreshold: 0,
         peakOverThreshold: 0,
+        rawMeanDbFs: -90,
+        rawPeakDbFs: -90,
         spectralConfidence: 0,
         laughterConfidence: 0,
         overlapPenalty: 0,
@@ -395,18 +439,19 @@ function buildUninterestingMetrics() {
 }
 
 function normalizeStateLabel(state) {
-    if (state === 'kept' || state === 'near_miss' || state === 'suppressed' || state === 'uninteresting') {
+    if (state === 'keep' || state === 'review' || state === 'suppress' || state === 'filled_gap' || state === 'uninteresting') {
         return state;
     }
-    if (state === 'active') return 'kept';
-    return 'suppressed';
+    if (state === 'active') return 'keep';
+    return 'suppress';
 }
 
 function isUninterestingItem(item) {
     if (!item) return false;
     if (item.isUninteresting) return true;
+    if (item.decisionState === 'uninteresting') return true;
     if (item.origin === 'timeline_gap') return true;
-    return item.typeLabel === 'uninteresting_gap';
+    return item.metrics && parseNum(item.metrics.uninterestingGap, 0) >= 0.5;
 }
 
 function computeMaxEndFromItems(items) {
@@ -737,9 +782,10 @@ function isFiniteNumber(v) {
 module.exports = {
     buildSegmentModel: buildSegmentModel,
     buildEvidenceMetrics: buildEvidenceMetrics,
-    mapLegacyStateToDecisionState: mapLegacyStateToDecisionState,
-    mapTypeLabelToContentClass: mapTypeLabelToContentClass,
-    mapScoreToQualityBand: mapScoreToQualityBand,
+    normalizeDecisionState: normalizeDecisionState,
+    normalizeContentState: normalizeContentState,
+    buildQualityObject: buildQualityObject,
+    buildProvenance: buildProvenance,
     mapSuppressionReason: mapSuppressionReason,
     mapModelOrigin: mapModelOrigin,
     buildSummary: buildSummary,

@@ -26,6 +26,14 @@ AutoCast ist ein CEP-Plugin fuer Adobe Premiere Pro:
 - Struktur-, Syntax- und Test-Gates muessen gruen bleiben:
   - `npm run check`
 
+## Legacy-Strategie (verbindlich)
+
+- Standard ist ein klarer Zielansatz statt Hybrid-Loesungen.
+- Keine Dual-Paths ohne technische Notwendigkeit.
+- Keine zusaetzlichen Fallbacks oder Adapter "just in case".
+- Wenn ein neuer Ansatz einen alten ersetzt, alte Logik aktiv entfernen oder entkoppeln.
+- Legacy-Verhalten nur behalten, wenn konkret erforderlich; Begruendung kurz dokumentieren.
+
 ## Wo anfangen bei typischen Aufgaben
 
 - UI/Flow im Panel: `apps/panel/js/main.js` + `apps/panel/src/app/*`

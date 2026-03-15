@@ -47,15 +47,15 @@
         return 120;
     }
 
-    function defaultGetTypeCssClass(typeLabel) {
-        var key = typeLabel ? String(typeLabel).toLowerCase() : 'unknown';
+    function defaultGetContentCssClass(contentState) {
+        var key = contentState ? String(contentState).toLowerCase() : 'unknown';
         key = key.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
         if (!key) key = 'unknown';
-        return 'cp-type-' + key;
+        return 'cp-content-' + key;
     }
 
-    function defaultShortTypeLabel(typeLabel) {
-        return typeLabel || '';
+    function defaultShortContentLabel(contentState) {
+        return contentState || '';
     }
 
     function defaultCompactReasonText() {
@@ -75,11 +75,11 @@
         var formatClock = getFn(input, 'formatClock', defaultFormatClock);
         var isOverviewZoom = getFn(input, 'isOverviewZoom', defaultIsOverviewZoom);
         var getTimelineTickStep = getFn(input, 'getTimelineTickStep', defaultGetTimelineTickStep);
-        var getTypeCssClassFn = getFn(input, 'getTypeCssClass', defaultGetTypeCssClass);
+        var getContentCssClassFn = getFn(input, 'getContentCssClass', defaultGetContentCssClass);
         var isAlwaysOpenFillFn = getFn(input, 'isAlwaysOpenFillSnippet', function () { return false; });
         var isUninterestingFn = getFn(input, 'isUninterestingSnippet', function () { return false; });
         var buildSnippetInlineLabelFn = getFn(input, 'buildSnippetInlineLabel', defaultBuildSnippetInlineLabel);
-        var shortTypeLabelFn = getFn(input, 'shortTypeLabel', defaultShortTypeLabel);
+        var shortContentLabelFn = getFn(input, 'shortContentLabel', defaultShortContentLabel);
         var compactReasonTextFn = getFn(input, 'compactReasonText', defaultCompactReasonText);
         var getTrackPreviewGain = getFn(input, 'getTrackPreviewGain', function () { return 1; });
 
@@ -155,8 +155,8 @@
                 var widthPx = Math.max(overviewMode ? 1 : 4, widthRaw);
                 var minimalMode = overviewMode || widthPx < 34;
                 var compact = minimalMode || widthPx < 78;
-                var snippetClass = 'cp-snippet cp-state-' + snippet.state;
-                snippetClass += ' ' + getTypeCssClassFn(snippet.typeLabel);
+                var snippetClass = 'cp-snippet cp-state-' + snippet.decisionState;
+                snippetClass += ' ' + getContentCssClassFn(snippet.contentState);
                 if (snippet.selected) snippetClass += ' cp-selected';
                 else snippetClass += ' cp-unselected';
                 if (compact) snippetClass += ' cp-snippet-compact';
@@ -185,7 +185,7 @@
                 html += ''
                     + '<div class="' + snippetClass + '"'
                     + ' data-item-id="' + escapeHtml(snippet.id) + '"'
-                    + ' title="' + escapeHtml('State ' + (isUninterestingFn(snippet) ? 'uninteresting' : snippet.state) + ' | Score ' + snippet.score + ' | ' + shortTypeLabelFn(snippet.typeLabel) + (isAlwaysOpenFillFn(snippet) ? ' | dominant continuity fill' : '') + ' | ' + compactReasonTextFn(snippet, 42) + ' | ' + formatClock(snippet.start) + '-' + formatClock(snippet.end)) + '"'
+                    + ' title="' + escapeHtml('State ' + (isUninterestingFn(snippet) ? 'uninteresting' : snippet.decisionState) + ' | Score ' + snippet.score + ' | ' + shortContentLabelFn(snippet.contentState) + (isAlwaysOpenFillFn(snippet) ? ' | dominant continuity fill' : '') + ' | ' + compactReasonTextFn(snippet, 42) + ' | ' + formatClock(snippet.start) + '-' + formatClock(snippet.end)) + '"'
                     + ' style="left:' + leftPx + 'px;width:' + widthPx + 'px;">'
                     + selectHtml
                     + playHtml

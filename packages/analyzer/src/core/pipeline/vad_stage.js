@@ -70,6 +70,7 @@ function runVadStage(ctx) {
         var gateAfterVad = cloneUint8Array(vadResult.gateOpen);
         var spectralDebug = null;
         var speakerDebug = null;
+        var speakerSimilarity = null;
         var laughterDebug = null;
 
         if (params.useSpectralVAD && spectralResults[i]) {
@@ -128,6 +129,15 @@ function runVadStage(ctx) {
                 } else {
                     vadResult.gateOpen = speakerLockResult;
                 }
+                if (speakerLockResult && speakerLockResult.similarity) {
+                    speakerSimilarity = speakerLockResult.similarity;
+                } else {
+                    speakerSimilarity = buildSpeakerSimilaritySeries(
+                        fingerprintResults[i],
+                        profile,
+                        vadResult.gateOpen ? vadResult.gateOpen.length : 0
+                    );
+                }
 
                 trackInfos[i].speakerProfileFrames = profile.frameCount;
             } else {
@@ -185,6 +195,7 @@ function runVadStage(ctx) {
             vadDebug: vadResult.debug || null,
             spectralDebug: spectralDebug,
             speakerDebug: speakerDebug,
+            speakerSimilarity: speakerSimilarity,
             laughterDebug: laughterDebug,
             laughterContinuityDebug: null,
             laughterBurstDebug: null
@@ -511,6 +522,18 @@ function cloneUint8Array(arr) {
 
 function clampNumber(v, min, max) {
     return runtimeUtils.clampNumber(v, min, max);
+}
+
+function buildSpeakerSimilaritySeries(fingerprint, profile, targetLength) {
+    if (!fingerprint || !profile || !fingerprint.frameCount) return null;
+    var len = Math.min(fingerprint.frameCount, Math.max(0, targetLength || 0));
+    if (len <= 0) return null;
+
+    var similarity = new Float32Array(len);
+    for (var i = 0; i < len; i++) {
+        similarity[i] = spectralVad.computeFrameToProfileSimilarity(fingerprint, profile, i);
+    }
+    return similarity;
 }
 
 module.exports = {

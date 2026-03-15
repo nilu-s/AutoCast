@@ -11,7 +11,7 @@ function actionableItems(items) {
     for (var i = 0; i < (items || []).length; i++) {
         var item = items[i];
         if (!item) continue;
-        if (item.typeLabel === 'uninteresting_gap') continue;
+        if (item.isUninteresting || item.decisionState === 'uninteresting') continue;
         out.push(item);
     }
     return out;

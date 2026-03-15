@@ -86,9 +86,10 @@
         var previewPlan = input && input.previewPlan ? input.previewPlan : null;
         var isAlwaysOpenFill = isAlwaysOpenFillFn(item);
         var isUninteresting = isUninterestingFn(item);
-        var statePillClass = 'cp-pill cp-pill-' + item.state;
+        var statePillClass = 'cp-pill cp-pill-' + item.decisionState;
         var selectedLabel = item.selectable ? (item.selected ? 'Selected' : 'Unselected') : 'Locked';
         var inspectorPlayLabel = isPlaying ? 'Stop Preview' : 'Play Preview';
+        var quality = item.quality || {};
 
         var html = '';
         html += '<div class="cp-inspector-head">';
@@ -105,9 +106,9 @@
 
         html += '<div class="cp-inspector-pills">';
         html += '  <span class="cp-pill ' + (item.selected ? 'cp-pill-kept' : '') + '">' + escapeHtml(selectedLabel) + '</span>';
-        html += '  <span class="' + statePillClass + '">' + escapeHtml('state: ' + (isUninteresting ? 'uninteresting' : item.state)) + '</span>';
+        html += '  <span class="' + statePillClass + '">' + escapeHtml('decision: ' + (isUninteresting ? 'uninteresting' : item.decisionState)) + '</span>';
         html += '  <span class="cp-pill">' + escapeHtml('score: ' + item.score + ' (' + item.scoreLabel + ')') + '</span>';
-        html += '  <span class="cp-pill">' + escapeHtml('type: ' + item.typeLabel + ' (' + round(item.typeConfidence, 1) + '%)') + '</span>';
+        html += '  <span class="cp-pill">' + escapeHtml('content: ' + (item.contentState || 'unknown')) + '</span>';
         if (isAlwaysOpenFill) html += '  <span class="cp-pill cp-pill-always-open">dominant continuity fill</span>';
         if (isUninteresting) html += '  <span class="cp-pill">timeline gap</span>';
         if (previewPlan && previewPlan.approximate) {
@@ -120,10 +121,10 @@
 
         html += '<div class="cp-inspector-grid">';
         html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Selected</span><span class="cp-inspector-value">' + escapeHtml(item.selectable ? (item.selected ? 'yes' : 'no') : 'locked') + '</span></div>';
-        html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">State</span><span class="cp-inspector-value">' + escapeHtml(isUninteresting ? 'uninteresting' : item.state) + '</span></div>';
+        html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Decision</span><span class="cp-inspector-value">' + escapeHtml(isUninteresting ? 'uninteresting' : item.decisionState) + '</span></div>';
+        html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Content</span><span class="cp-inspector-value">' + escapeHtml(item.contentState || 'unknown') + '</span></div>';
         html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Score</span><span class="cp-inspector-value">' + escapeHtml(String(item.score) + ' (' + item.scoreLabel + ')') + '</span></div>';
-        html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Type Label</span><span class="cp-inspector-value">' + escapeHtml(item.typeLabel) + '</span></div>';
-        html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Type Confidence</span><span class="cp-inspector-value">' + escapeHtml(round(item.typeConfidence, 1) + '%') + '</span></div>';
+        html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Confidence</span><span class="cp-inspector-value">' + escapeHtml(round(parseNum(quality.confidence0to1, 0) * 100, 1) + '%') + '</span></div>';
         html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Duration</span><span class="cp-inspector-value">' + escapeHtml(formatDurationMs(item.durationMs)) + '</span></div>';
         html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Decision Stage</span><span class="cp-inspector-value">' + escapeHtml(item.decisionStage || '-') + '</span></div>';
         html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Track</span><span class="cp-inspector-value">' + escapeHtml(getTrackDisplayName(item.trackIndex)) + '</span></div>';

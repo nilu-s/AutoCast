@@ -48,7 +48,7 @@ describe('Cut Preview Apply Payload', function () {
         assertApprox(payload.fillSegments[1][0].end, 1.40, 0.0001);
     });
 
-    it('should fall back to legacy analysis segments when cutPreview is missing', function () {
+    it('should return empty segments when cutPreview is missing', function () {
         var tracks = [
             { index: 0, selected: true }
         ];
@@ -63,11 +63,7 @@ describe('Cut Preview Apply Payload', function () {
 
         var payload = cutPreviewApply.buildApplyCutsPayloadFromState(tracks, null, analysisResult);
         assert(payload && payload.segments.length === 1, 'Expected single track payload');
-        assert(payload.segments[0].length === 3, 'Suppressed legacy segment should be excluded');
-        assertApprox(payload.segments[0][0].start, 0.00, 0.0001);
-        assertApprox(payload.segments[0][1].start, 1.30, 0.0001);
-        assert(payload.fillSegments && payload.fillSegments[0].length === 1, 'Expected one legacy fill segment');
-        assertApprox(payload.fillSegments[0][0].start, 2.00, 0.0001);
-        assertApprox(payload.fillSegments[0][0].end, 2.40, 0.0001);
+        assert(payload.segments[0].length === 0, 'Expected no cut segments without cutPreview items');
+        assert(payload.fillSegments && payload.fillSegments[0].length === 0, 'Expected no fill segments without cutPreview items');
     });
 });

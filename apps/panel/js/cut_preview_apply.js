@@ -97,29 +97,8 @@
                 segments.push(mergeSegmentsForApply(selectedSegments));
                 fillSegments.push(mergeSegmentsForApply(selectedFillSegments));
             } else {
-                var legacySegs = (analysisResult.segments && analysisResult.segments[i])
-                    ? analysisResult.segments[i]
-                    : [];
-                var activeLegacy = [];
-                var activeLegacyFill = [];
-                for (var k = 0; k < legacySegs.length; k++) {
-                    var lseg = legacySegs[k];
-                    if (!lseg || lseg.state === 'suppressed') continue;
-                    activeLegacy.push({
-                        start: lseg.start,
-                        end: lseg.end,
-                        state: 'active'
-                    });
-                    if (lseg.origin === 'always_open_fill') {
-                        activeLegacyFill.push({
-                            start: lseg.start,
-                            end: lseg.end,
-                            state: 'active'
-                        });
-                    }
-                }
-                segments.push(mergeSegmentsForApply(activeLegacy));
-                fillSegments.push(mergeSegmentsForApply(activeLegacyFill));
+                segments.push([]);
+                fillSegments.push([]);
             }
         }
 

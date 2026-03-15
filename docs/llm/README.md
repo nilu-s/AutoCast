@@ -23,6 +23,7 @@ Diese Unterlagen helfen bei drei Fragen:
 - Immer zuerst den betroffenen Einstiegspfad identifizieren (Panel, Analyzer, Contracts).
 - Nur die fuer die Aufgabe relevanten Dateien anfassen.
 - Bei Struktur- oder Refactor-Aenderungen die Guardrails strikt einhalten.
+- Legacy bevorzugt abbauen: neuen Zielansatz klar umsetzen, keine unnötigen Hybridpfade.
 - Vor Abschluss immer die Repo-Checks ausfuehren.
 
 ## Test-Governance (verbindlich)

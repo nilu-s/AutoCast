@@ -5,7 +5,7 @@ var cutPreviewBuilder = require('../cut_preview_builder');
 var previewUtils = require(path.join(__dirname, '..', '..', '..', 'tests', 'helpers', 'cut_preview_test_utils'));
 
 describe('Cut Preview Builder Decision States - Metrics', function () {
-    it('should expose kept, near_miss and suppressed states with metrics', function () {
+    it('should expose keep, review and suppress states with metrics', function () {
         var frameCount = 240;
         var result = cutPreviewBuilder.buildCutPreview({
             sourceSegments: [[
@@ -37,31 +37,30 @@ describe('Cut Preview Builder Decision States - Metrics', function () {
         var actionable = previewUtils.actionableItems(result && result.items);
         assert(actionable.length === 3, 'Expected 3 actionable preview items');
 
-        var kept = 0;
-        var nearMiss = 0;
-        var suppressed = 0;
+        var keep = 0;
+        var review = 0;
+        var suppress = 0;
         for (var i = 0; i < actionable.length; i++) {
             var item = actionable[i];
-            if (item.state === 'kept') kept++;
-            if (item.state === 'near_miss') nearMiss++;
-            if (item.state === 'suppressed') suppressed++;
+            if (item.decisionState === 'keep') keep++;
+            if (item.decisionState === 'review') review++;
+            if (item.decisionState === 'suppress') suppress++;
             assert(item.metrics && item.metrics.bleedConfidence !== undefined, 'Expected bleed metric');
             assert(item.metrics && item.metrics.laughterConfidence !== undefined, 'Expected laughter metric');
             assert(item.metrics && item.metrics.classMargin !== undefined, 'Expected class margin metric');
-            assert(item.typeLabel && item.typeConfidence !== undefined, 'Expected type metadata');
             assert(item.decisionState, 'Expected normalized decision state');
-            assert(item.contentClass, 'Expected normalized content class');
-            assert(item.qualityBand, 'Expected normalized quality band');
+            assert(item.contentState, 'Expected normalized content state');
+            assert(item.quality && item.quality.score0to100 !== undefined, 'Expected quality object');
             assert(item.hasOwnProperty('suppressionReason'), 'Expected suppression reason key');
-            assert(item.modelOrigin, 'Expected normalized model origin');
+            assert(item.origin, 'Expected normalized origin');
             assert(item.evidenceMetrics && item.evidenceMetrics.speechEvidence !== undefined, 'Expected evidence metrics');
             assert(item.decision && item.decision.decisionState, 'Expected decision structure');
-            assert(item.classification && item.classification.contentClass, 'Expected classification structure');
+            assert(item.classification && item.classification.contentState, 'Expected classification structure');
             assert(item.explainability && item.explainability.reasons, 'Expected explainability structure');
         }
 
-        assert(kept === 1, 'Expected one kept item');
-        assert(nearMiss === 1, 'Expected one near_miss item');
-        assert(suppressed === 1, 'Expected one suppressed item');
+        assert(keep === 1, 'Expected one keep item');
+        assert(review === 1, 'Expected one review item');
+        assert(suppress === 1, 'Expected one suppress item');
     });
 });

@@ -6,8 +6,25 @@ Konkrete "wenn Aufgabe X, dann Dateien Y" Regeln fuer LLM-Assistenten.
 
 Bei jedem Workflow gilt:
 - Nur die benoetigten Dateien anfassen.
+- Zielstruktur bevorzugen: neue Loesung klar implementieren, nicht stillschweigend alte Pfade mitziehen.
 - Danach immer `npm run check`.
 - Neue Tests in das passende `suite_manifest.js` eintragen.
+
+## Migrationsregel (Legacy -> Zielansatz)
+
+Bei Refactors/Neudesigns immer explizit trennen:
+
+1. Muss bleiben:
+   - vertraglich/runtime-kritische Teile.
+2. Kann entfernt werden:
+   - ersetzte Heuristiken, temporaere Fallbacks, doppelte Pfade.
+3. Historisch gewachsen:
+   - nur behalten, wenn ein konkreter Grund besteht.
+
+Ergebnisvorgabe:
+- Keine unnoetigen Dual-Paths.
+- Keine "just in case"-Kompatibilitaet.
+- Verbleibende Legacy-Stellen kurz begruenden.
 
 ## Test-Workflow (systematisch)
 

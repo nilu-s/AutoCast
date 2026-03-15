@@ -20,42 +20,43 @@
     }
 
     function isUninterestingDefault(item) {
-        return !!(item && item.isUninteresting);
+        return !!(item && (item.isUninteresting || item.decisionState === 'uninteresting'));
     }
 
-    function mapContentClassToLegacyTypeLabel(contentClass, stateValue, isUninteresting) {
-        if (isUninteresting) return 'uninteresting_gap';
-        var cls = contentClass ? String(contentClass) : 'unknown';
-        if (cls === 'speech') return stateValue === 'near_miss' ? 'borderline_speech' : 'primary_speech';
-        if (cls === 'laughter') return 'laughter_candidate';
-        if (cls === 'mixed') return 'mixed_speech_laughter';
-        if (cls === 'bleed') return stateValue === 'suppressed' ? 'suppressed_bleed' : 'bleed_candidate';
-        if (cls === 'noise') return stateValue === 'suppressed' ? 'overlap_candidate' : 'weak_voice';
-        return stateValue === 'suppressed' ? 'suppressed_bleed' : 'unknown';
+    function normalizeDecisionState(value, alwaysOpenFill, isUninteresting) {
+        var state = value ? String(value) : 'review';
+        if (isUninteresting) return 'uninteresting';
+        if (alwaysOpenFill && state === 'keep') return 'filled_gap';
+        if (state === 'keep' || state === 'review' || state === 'suppress' || state === 'filled_gap' || state === 'uninteresting') {
+            return state;
+        }
+        return 'review';
     }
 
-    function mapQualityBandToLegacyScoreLabel(qualityBand, scoreValue) {
-        var qb = qualityBand ? String(qualityBand) : '';
-        if (qb === 'high') return 'strong';
-        if (qb === 'medium') return 'borderline';
-        if (qb === 'low') return 'weak';
-        if (scoreValue >= 70) return 'strong';
-        if (scoreValue >= 45) return 'borderline';
-        return 'weak';
-    }
-
-    function mapScoreToQualityBand(scoreValue) {
-        if (scoreValue >= 70) return 'high';
-        if (scoreValue >= 45) return 'medium';
-        return 'low';
+    function normalizeContentState(value, alwaysOpenFill, isUninteresting) {
+        var state = value ? String(value) : 'unknown';
+        if (isUninteresting) return 'noise';
+        if (alwaysOpenFill && state === 'unknown') return 'silence_fill';
+        if (state === 'speech' || state === 'laughter' || state === 'mixed' || state === 'bleed' ||
+            state === 'noise' || state === 'silence_fill' || state === 'unknown') {
+            return state;
+        }
+        return 'unknown';
     }
 
     function normalizeTimelineStateLabel(stateLabel) {
-        if (stateLabel === 'kept' || stateLabel === 'near_miss' || stateLabel === 'suppressed' || stateLabel === 'uninteresting') {
+        if (stateLabel === 'keep' || stateLabel === 'review' || stateLabel === 'suppress' ||
+            stateLabel === 'filled_gap' || stateLabel === 'uninteresting') {
             return stateLabel;
         }
-        if (stateLabel === 'active') return 'kept';
-        return 'suppressed';
+        if (stateLabel === 'active') return 'keep';
+        return 'suppress';
+    }
+
+    function scoreLabelFromScore(scoreValue) {
+        if (scoreValue >= 70) return 'strong';
+        if (scoreValue >= 45) return 'borderline';
+        return 'weak';
     }
 
     function getDeps(context) {
@@ -88,101 +89,123 @@
         var getTrackDisplayName = deps.getTrackDisplayName;
         var trackColors = deps.trackColors;
 
-        var rawDecision = (raw && raw.decision) ? raw.decision : null;
-        var rawClassification = (raw && raw.classification) ? raw.classification : null;
-        var rawDecisionState = raw && raw.decisionState ? String(raw.decisionState)
-            : (rawDecision && rawDecision.decisionState ? String(rawDecision.decisionState)
-                : (raw && raw.state ? String(raw.state) : 'kept'));
-        if (rawDecisionState !== 'kept' &&
-            rawDecisionState !== 'near_miss' &&
-            rawDecisionState !== 'suppressed' &&
-            rawDecisionState !== 'filled_gap') {
-            rawDecisionState = 'kept';
-        }
-        var stateValue = rawDecisionState;
-        if (stateValue === 'filled_gap') stateValue = 'kept';
-        if (stateValue === 'active') stateValue = 'kept';
-        if (stateValue !== 'kept' && stateValue !== 'near_miss' && stateValue !== 'suppressed') {
-            stateValue = 'kept';
-        }
-
         var start = parseNum(raw && raw.start, 0);
         var end = parseNum(raw && raw.end, start);
         if (end <= start) end = start + 0.01;
 
         var trackIndex = parseInt(raw && raw.trackIndex, 10);
         if (!isFinite(trackIndex)) trackIndex = fallbackTrackIndex;
+
         var rawMetrics = (raw && raw.metrics) ? raw.metrics : null;
-        var rawDecisionStage = raw && raw.decisionStage ? String(raw.decisionStage) : 'legacy_result';
+        var rawDecision = (raw && raw.decision) ? raw.decision : null;
+        var rawClassification = (raw && raw.classification) ? raw.classification : null;
+        var rawStateModel = (raw && raw.stateModel && typeof raw.stateModel === 'object') ? raw.stateModel : null;
+
+        var rawDecisionStage = raw && raw.decisionStage ? String(raw.decisionStage) : 'preview';
         var rawOrigin = raw && raw.origin ? String(raw.origin) : 'analysis_active';
-        var rawUninteresting = !!(
-            (raw && raw.isUninteresting === true) ||
-            rawOrigin === 'timeline_gap' ||
-            (raw && raw.typeLabel === 'uninteresting_gap') ||
-            parseNum(rawMetrics && rawMetrics.uninterestingGap, 0) >= 0.5
-        );
-        var rawContentClass = raw && raw.contentClass ? String(raw.contentClass)
-            : (rawClassification && rawClassification.contentClass ? String(rawClassification.contentClass) : '');
-        var rawQualityBand = raw && raw.qualityBand ? String(raw.qualityBand)
-            : (rawClassification && rawClassification.qualityBand ? String(rawClassification.qualityBand) : '');
-        var rawTypeLabel = raw && raw.typeLabel ? String(raw.typeLabel)
-            : mapContentClassToLegacyTypeLabel(rawContentClass, stateValue, rawUninteresting);
         var rawAlwaysOpenFill = !!(
             (raw && raw.alwaysOpenFill === true) ||
-            rawDecisionState === 'filled_gap' ||
             rawOrigin === 'always_open_fill' ||
             parseNum(rawMetrics && rawMetrics.alwaysOpenFill, 0) >= 0.5 ||
             rawDecisionStage.indexOf('always_open_fill') === 0
         );
-        var rawModelOrigin = raw && raw.modelOrigin ? String(raw.modelOrigin)
-            : (rawDecision && rawDecision.origin ? String(rawDecision.origin) : '');
-        var rawSuppressionReason = raw && raw.suppressionReason ? String(raw.suppressionReason)
-            : (rawDecision && rawDecision.suppressionReason ? String(rawDecision.suppressionReason) : null);
-        var rawSelectable = (raw && typeof raw.selectable === 'boolean')
-            ? raw.selectable
-            : !rawUninteresting;
-        var scoreValue = Math.max(0, Math.min(100, Math.round(parseNum(raw && raw.score, stateValue === 'kept' ? 70 : 35))));
-        var scoreLabelValue = raw && raw.scoreLabel ? String(raw.scoreLabel) : mapQualityBandToLegacyScoreLabel(rawQualityBand, scoreValue);
+        var rawUninteresting = !!(
+            (raw && raw.isUninteresting === true) ||
+            rawOrigin === 'timeline_gap' ||
+            parseNum(rawMetrics && rawMetrics.uninterestingGap, 0) >= 0.5
+        );
+
+        var decisionState = normalizeDecisionState(
+            raw && raw.decisionState ? raw.decisionState
+                : (rawDecision && rawDecision.decisionState ? rawDecision.decisionState
+                    : (rawStateModel && rawStateModel.decisionState ? rawStateModel.decisionState : 'review')),
+            rawAlwaysOpenFill,
+            rawUninteresting
+        );
+
+        var contentState = normalizeContentState(
+            raw && raw.contentState ? raw.contentState
+                : (rawClassification && rawClassification.contentState ? rawClassification.contentState
+                    : (rawStateModel && rawStateModel.contentState ? rawStateModel.contentState : 'unknown')),
+            rawAlwaysOpenFill,
+            rawUninteresting
+        );
+
+        var rawQuality = (raw && raw.quality && typeof raw.quality === 'object') ? raw.quality
+            : (rawStateModel && rawStateModel.quality && typeof rawStateModel.quality === 'object'
+                ? rawStateModel.quality
+                : null);
+        var scoreValue = Math.max(0, Math.min(100, round(parseNum(
+            raw && raw.score,
+            rawQuality && rawQuality.score0to100 !== undefined ? rawQuality.score0to100 : (decisionState === 'keep' ? 70 : 35)
+        ), 1)));
+
+        var quality = rawQuality ? {
+            score0to100: Math.max(0, Math.min(100, round(parseNum(rawQuality.score0to100, scoreValue), 1))),
+            confidence0to1: Math.max(0, Math.min(1, round(parseNum(rawQuality.confidence0to1, 0), 3))),
+            margin0to1: Math.max(0, Math.min(1, round(parseNum(rawQuality.margin0to1, parseNum(rawMetrics && rawMetrics.decisionMargin, 0)), 3)))
+        } : {
+            score0to100: scoreValue,
+            confidence0to1: Math.max(0, Math.min(1, round(parseNum(rawClassification && rawClassification.confidence, 0), 3))),
+            margin0to1: Math.max(0, Math.min(1, round(parseNum(rawMetrics && rawMetrics.decisionMargin, 0), 3)))
+        };
+
+        var rawProvenance = (raw && raw.provenance && typeof raw.provenance === 'object') ? raw.provenance
+            : (rawStateModel && rawStateModel.provenance && typeof rawStateModel.provenance === 'object'
+                ? rawStateModel.provenance
+                : null);
+        var provenance = rawProvenance ? {
+            stage: rawProvenance.stage || rawDecisionStage,
+            origin: rawProvenance.origin || rawOrigin || 'vad',
+            passesTouched: Array.isArray(rawProvenance.passesTouched) ? rawProvenance.passesTouched.slice(0) : []
+        } : {
+            stage: rawDecisionStage,
+            origin: rawOrigin || 'vad',
+            passesTouched: []
+        };
+
+        var rawSelectable = (raw && typeof raw.selectable === 'boolean') ? raw.selectable : !rawUninteresting;
+        var selectedDefault = decisionState === 'keep' || decisionState === 'filled_gap';
 
         var item = {
             id: raw && raw.id ? String(raw.id) : ('cp_ui_' + trackIndex + '_' + Math.round(start * 1000) + '_' + Math.round(end * 1000) + '_' + counter),
             trackIndex: trackIndex,
             trackName: raw && raw.trackName ? String(raw.trackName) : getTrackDisplayName(trackIndex),
             trackColor: raw && raw.trackColor ? String(raw.trackColor) : trackColors[Math.abs(trackIndex) % trackColors.length],
-            laneIndex: isFinite(parseInt(raw && raw.laneIndex, 10)) ? parseInt(raw && raw.laneIndex, 10) : trackIndex,
+            laneIndex: isFinite(parseInt(raw && raw.laneIndex, 10)) ? parseInt(raw.laneIndex, 10) : trackIndex,
             start: round(start, 4),
             end: round(end, 4),
             durationMs: Math.max(1, Math.round((end - start) * 1000)),
-            state: stateValue,
-            decisionState: rawDecisionState,
-            selected: rawSelectable && ((raw && typeof raw.selected === 'boolean') ? raw.selected : (stateValue === 'kept')),
+            decisionState: decisionState,
+            selected: rawSelectable && ((raw && typeof raw.selected === 'boolean') ? raw.selected : selectedDefault),
             selectable: !!rawSelectable,
             isUninteresting: rawUninteresting,
             score: scoreValue,
-            scoreLabel: scoreLabelValue,
+            scoreLabel: raw && raw.scoreLabel ? String(raw.scoreLabel) : scoreLabelFromScore(scoreValue),
             reasons: (raw && raw.reasons && raw.reasons.length) ? raw.reasons.slice(0) : ['No detailed analyzer reason available'],
-            typeLabel: rawTypeLabel,
-            typeConfidence: Math.max(0, Math.min(100, round(parseNum(raw && raw.typeConfidence, stateValue === 'kept' ? 70 : 35), 1))),
-            contentClass: rawContentClass || 'unknown',
-            qualityBand: rawQualityBand || mapScoreToQualityBand(scoreValue),
-            suppressionReason: rawSuppressionReason,
+            contentState: contentState,
+            suppressionReason: raw && raw.suppressionReason ? String(raw.suppressionReason)
+                : (rawDecision && rawDecision.suppressionReason ? String(rawDecision.suppressionReason) : null),
             sourceClipIndex: (raw && raw.sourceClipIndex !== undefined && raw.sourceClipIndex !== null) ? parseInt(raw.sourceClipIndex, 10) : null,
             mediaPath: raw && raw.mediaPath ? String(raw.mediaPath) : '',
             sourceStartSec: parseNum(raw && raw.sourceStartSec, start),
             sourceEndSec: parseNum(raw && raw.sourceEndSec, end),
             previewParts: [],
             decisionStage: rawDecisionStage,
-            origin: rawAlwaysOpenFill ? 'always_open_fill' : rawOrigin,
-            modelOrigin: rawModelOrigin || '',
+            origin: rawOrigin,
             alwaysOpenFill: rawAlwaysOpenFill,
             overlapInfo: raw && raw.overlapInfo ? raw.overlapInfo : null,
             evidenceMetrics: (raw && raw.evidenceMetrics) ? raw.evidenceMetrics : null,
             decision: rawDecision ? rawDecision : null,
             classification: rawClassification ? rawClassification : null,
             explainability: (raw && raw.explainability) ? raw.explainability : null,
+            quality: quality,
+            provenance: provenance,
             metrics: rawMetrics ? rawMetrics : {
                 meanOverThreshold: 0,
                 peakOverThreshold: 0,
+                rawMeanDbFs: -90,
+                rawPeakDbFs: -90,
                 spectralConfidence: 0,
                 laughterConfidence: 0,
                 overlapPenalty: 0,
@@ -206,16 +229,25 @@
             }
         };
 
-        if (item.isUninteresting && item.metrics) {
+        item.stateModel = {
+            contentState: item.contentState,
+            decisionState: item.decisionState,
+            quality: item.quality,
+            provenance: item.provenance
+        };
+
+        if (item.isUninteresting) {
             item.metrics.uninterestingGap = 1;
             item.selected = false;
             item.selectable = false;
             item.score = 0;
             item.scoreLabel = 'weak';
-            if (item.state !== 'suppressed') item.state = 'suppressed';
-            if (item.typeLabel !== 'uninteresting_gap') item.typeLabel = 'uninteresting_gap';
-            if (!item.contentClass || item.contentClass === 'unknown') item.contentClass = 'noise';
-            if (!item.qualityBand || item.qualityBand === 'unknown') item.qualityBand = 'low';
+            item.decisionState = 'uninteresting';
+            item.contentState = 'noise';
+            item.quality.score0to100 = 0;
+            item.quality.margin0to1 = 1;
+            item.stateModel.decisionState = 'uninteresting';
+            item.stateModel.contentState = 'noise';
         }
 
         if (item.alwaysOpenFill && item.metrics) {
@@ -249,71 +281,27 @@
         if (!item.reasons || item.reasons.length === 0) {
             item.reasons = ['Heuristic ranking applied'];
         }
-        if (item.score >= 70) item.scoreLabel = 'strong';
-        else if (item.score >= 45 && item.scoreLabel !== 'strong') item.scoreLabel = 'borderline';
-        else if (item.scoreLabel !== 'strong' && item.scoreLabel !== 'borderline') item.scoreLabel = 'weak';
+
         return item;
     }
 
-    function createFallbackCutPreviewFromSegments(result, deps) {
-        var parseNum = deps.parseNum;
-        var trackCount = deps.trackCount;
-        var getTrackDisplayName = deps.getTrackDisplayName;
-        var trackColors = deps.trackColors;
-        var tracks = deps.tracks;
-
-        var items = [];
-        var segsByTrack = (result && result.segments) ? result.segments : [];
-        var idCounter = 0;
-
-        for (var t = 0; t < segsByTrack.length; t++) {
-            var segs = segsByTrack[t] || [];
-            for (var s = 0; s < segs.length; s++) {
-                var seg = segs[s];
-                if (!seg) continue;
-                var st = parseNum(seg.start, 0);
-                var en = parseNum(seg.end, st);
-                if (!(en > st)) continue;
-                idCounter++;
-                items.push(normalizeCutPreviewItem({
-                    id: 'fallback_' + t + '_' + s + '_' + idCounter,
-                    trackIndex: t,
-                    trackName: getTrackDisplayName(t),
-                    start: st,
-                    end: en,
-                    state: seg.state === 'suppressed' ? 'suppressed' : 'kept',
-                    selected: seg.state !== 'suppressed',
-                    score: seg.state === 'suppressed' ? 28 : 72,
-                    scoreLabel: seg.state === 'suppressed' ? 'weak' : 'strong',
-                    reasons: seg.state === 'suppressed' ? ['Suppressed by legacy overlap result'] : ['Kept in legacy segment output'],
-                    typeLabel: seg.state === 'suppressed' ? 'suppressed_bleed' : 'primary_speech',
-                    typeConfidence: seg.state === 'suppressed' ? 62 : 72,
-                    mediaPath: (tracks[t] && tracks[t].path) ? tracks[t].path : '',
-                    sourceStartSec: st,
-                    sourceEndSec: en,
-                    decisionStage: seg.origin === 'always_open_fill' ? 'always_open_fill' : 'legacy_fallback',
-                    origin: seg.origin || 'analysis_active',
-                    alwaysOpenFill: seg.origin === 'always_open_fill'
-                }, t, idCounter, deps));
-            }
-        }
-
+    function createEmptyCutPreview(deps) {
         var lanes = [];
-        var laneCount = Math.max(trackCount, segsByTrack.length);
-        for (var i = 0; i < laneCount; i++) {
+        for (var i = 0; i < deps.trackCount; i++) {
             lanes.push({
                 laneIndex: i,
                 trackIndex: i,
-                trackName: getTrackDisplayName(i),
-                trackColor: trackColors[i % trackColors.length],
+                trackName: deps.getTrackDisplayName(i),
+                trackColor: deps.trackColors[i % deps.trackColors.length],
                 itemIds: []
             });
         }
 
         return {
-            items: items,
+            items: [],
             lanes: lanes,
-            summary: null
+            summary: null,
+            stateTimelineByTrack: []
         };
     }
 
@@ -324,9 +312,10 @@
 
         var summary = {
             totalItems: items.length,
-            keptCount: 0,
-            nearMissCount: 0,
-            suppressedCount: 0,
+            keepCount: 0,
+            reviewCount: 0,
+            suppressCount: 0,
+            filledGapCount: 0,
             uninterestingCount: 0,
             selectedCount: 0,
             avgScore: 0
@@ -336,10 +325,18 @@
 
         for (var i = 0; i < items.length; i++) {
             var item = items[i];
-            if (isUninterestingSnippet(item)) summary.uninterestingCount++;
-            else if (item.state === 'kept') summary.keptCount++;
-            else if (item.state === 'near_miss') summary.nearMissCount++;
-            else summary.suppressedCount++;
+            if (isUninterestingSnippet(item)) {
+                summary.uninterestingCount++;
+            } else if (item.decisionState === 'filled_gap') {
+                summary.filledGapCount++;
+                summary.keepCount++;
+            } else if (item.decisionState === 'keep') {
+                summary.keepCount++;
+            } else if (item.decisionState === 'review') {
+                summary.reviewCount++;
+            } else {
+                summary.suppressCount++;
+            }
             if (item.selected) summary.selectedCount++;
             if (!isUninterestingSnippet(item)) {
                 scoreSum += parseNum(item.score, 0);
@@ -377,7 +374,7 @@
                 var st = clamp(parseNum(seg.start, 0), 0, duration);
                 var en = clamp(parseNum(seg.end, st), 0, duration);
                 if (!(en > st + epsilon)) continue;
-                var stateLabel = normalizeTimelineStateLabel(seg.state || 'suppressed');
+                var stateLabel = normalizeTimelineStateLabel(seg.state || 'suppress');
 
                 if (!normalizedTrack.length || normalizedTrack[normalizedTrack.length - 1].state !== stateLabel) {
                     normalizedTrack.push({
@@ -415,9 +412,10 @@
         var duration = Math.max(0, parseNum(totalDurationSec, 0));
         var epsilon = 0.0001;
         var priority = {
-            kept: 3,
-            near_miss: 2,
-            suppressed: 1,
+            filled_gap: 4,
+            keep: 3,
+            review: 2,
+            suppress: 1,
             uninteresting: 0
         };
         var out = [];
@@ -435,7 +433,9 @@
                 trackItems.push({
                     start: st,
                     end: en,
-                    state: isUninterestingSnippet(item) ? 'uninteresting' : normalizeTimelineStateLabel(item.state)
+                    state: isUninterestingSnippet(item)
+                        ? 'uninteresting'
+                        : normalizeTimelineStateLabel(item.decisionState)
                 });
                 points.push(st, en);
             }
@@ -497,10 +497,9 @@
     function buildCutPreviewState(result, context) {
         var deps = getDeps(context);
 
-        var base = (result && result.cutPreview && result.cutPreview.items) ? result.cutPreview : null;
-        if (!base) {
-            base = createFallbackCutPreviewFromSegments(result, deps);
-        }
+        var base = (result && result.cutPreview && Array.isArray(result.cutPreview.items))
+            ? result.cutPreview
+            : createEmptyCutPreview(deps);
 
         var rawItems = base.items || [];
         var normalizedItems = [];

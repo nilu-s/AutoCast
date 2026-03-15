@@ -39,32 +39,31 @@
         return input && typeof input[key] === 'function' ? input[key] : fallback;
     }
 
-    function shortStateLabel(stateLabel) {
-        if (stateLabel === 'kept') return 'keep';
-        if (stateLabel === 'near_miss') return 'near';
-        if (stateLabel === 'suppressed') return 'supp';
+    function shortDecisionLabel(stateLabel) {
+        if (stateLabel === 'keep') return 'keep';
+        if (stateLabel === 'filled_gap') return 'fill';
+        if (stateLabel === 'review') return 'review';
+        if (stateLabel === 'suppress') return 'suppress';
+        if (stateLabel === 'uninteresting') return 'idle';
         return stateLabel || '';
     }
 
-    function shortTypeLabel(typeLabel) {
-        if (!typeLabel) return '';
-        if (typeLabel === 'primary_speech') return 'primary';
-        if (typeLabel === 'borderline_speech') return 'borderline';
-        if (typeLabel === 'mixed_speech_laughter') return 'mix';
-        if (typeLabel === 'laughter_candidate') return 'laugh';
-        if (typeLabel === 'bleed_candidate') return 'bleed*';
-        if (typeLabel === 'overlap_candidate') return 'overlap';
-        if (typeLabel === 'suppressed_bleed') return 'bleed';
-        if (typeLabel === 'weak_voice') return 'weak';
-        if (typeLabel === 'uninteresting_gap') return 'idle';
-        return typeLabel;
+    function shortContentLabel(contentState) {
+        if (!contentState) return '';
+        if (contentState === 'speech') return 'speech';
+        if (contentState === 'laughter') return 'laugh';
+        if (contentState === 'mixed') return 'mix';
+        if (contentState === 'bleed') return 'bleed';
+        if (contentState === 'noise') return 'noise';
+        if (contentState === 'silence_fill') return 'silence';
+        return contentState;
     }
 
-    function getTypeCssClass(typeLabel) {
-        var key = typeLabel ? String(typeLabel).toLowerCase() : 'unknown';
+    function getContentCssClass(contentState) {
+        var key = contentState ? String(contentState).toLowerCase() : 'unknown';
         key = key.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
         if (!key) key = 'unknown';
-        return 'cp-type-' + key;
+        return 'cp-content-' + key;
     }
 
     function isAlwaysOpenFillSnippet(item, options) {
@@ -79,18 +78,18 @@
         var parseNum = getFn(options, 'parseNum', defaultParseNum);
         if (!item) return false;
         if (item.isUninteresting) return true;
+        if (item.decisionState === 'uninteresting') return true;
         if (item.origin === 'timeline_gap') return true;
-        if (item.typeLabel === 'uninteresting_gap') return true;
         return !!(item.metrics && parseNum(item.metrics.uninterestingGap, 0) >= 0.5);
     }
 
     function isGenericDecisionReasonText(text) {
         var t = String(text || '').toLowerCase();
         return t === 'kept in final decision' ||
-            t === 'pruned in postprocess pass' ||
+            t === 'marked for manual review' ||
             t === 'suppressed in overlap resolution' ||
-            t === 'kept in legacy segment output' ||
-            t === 'suppressed by legacy overlap result';
+            t === 'continuity fill kept to avoid silent gaps' ||
+            t === 'timeline gap marked as uninteresting';
     }
 
     function firstInformativeReason(item) {
@@ -114,20 +113,23 @@
     }
 
     function buildSnippetInlineLabel(item, widthPx, options) {
-        var stateText = isUninterestingSnippet(item, options) ? 'idle' : shortStateLabel(item && item.state);
-        var typeText = shortTypeLabel(item && item.typeLabel);
+        var scoreValue = item && item.quality && item.quality.score0to100 !== undefined
+            ? item.quality.score0to100
+            : (item ? item.score : 0);
+        var stateText = isUninterestingSnippet(item, options) ? 'idle' : shortDecisionLabel(item && item.decisionState);
+        var contentText = shortContentLabel(item && item.contentState);
         var reason = compactReasonText(item, widthPx >= 260 ? 34 : 20);
-        var fillHint = isAlwaysOpenFillSnippet(item, options) ? 'main-fill' : '';
+        var fillHint = isAlwaysOpenFillSnippet(item, options) ? 'fill' : '';
         if (widthPx >= 260) {
-            return stateText + ' | ' + typeText + ' | ' + item.score + ' ' + item.scoreLabel +
+            return stateText + ' | ' + contentText + ' | ' + Math.round(scoreValue) +
                 (fillHint ? ' | ' + fillHint : '') +
                 (reason ? ' | ' + reason : '');
         }
         if (widthPx >= 190) {
-            return stateText + ' | ' + typeText + ' | ' + item.score + (fillHint ? ' | ' + fillHint : '');
+            return stateText + ' | ' + contentText + ' | ' + Math.round(scoreValue) + (fillHint ? ' | ' + fillHint : '');
         }
         if (widthPx >= 120) {
-            return stateText + ' | ' + item.score + (fillHint ? ' | ' + fillHint : '');
+            return stateText + ' | ' + Math.round(scoreValue) + (fillHint ? ' | ' + fillHint : '');
         }
         if (widthPx >= 74) {
             return stateText;
@@ -164,9 +166,10 @@
         var viewModeText = isOverviewZoom(viewport) ? 'overview' : 'detail';
         var metaText =
             summary.totalItems + ' snippets | selected ' + summary.selectedCount +
-            ' | kept ' + summary.keptCount +
-            ' | near miss ' + summary.nearMissCount +
-            ' | suppressed ' + summary.suppressedCount +
+            ' | keep ' + summary.keepCount +
+            ' | review ' + summary.reviewCount +
+            ' | suppress ' + summary.suppressCount +
+            ' | filled gap ' + (summary.filledGapCount || 0) +
             ' | uninteresting ' + (summary.uninterestingCount || 0) +
             ' | avg score ' + summary.avgScore +
             ' | view ' + viewModeText;
@@ -254,9 +257,9 @@
     }
 
     root.AutoCastPanelCutPreviewRenderFeature = {
-        shortStateLabel: shortStateLabel,
-        shortTypeLabel: shortTypeLabel,
-        getTypeCssClass: getTypeCssClass,
+        shortDecisionLabel: shortDecisionLabel,
+        shortContentLabel: shortContentLabel,
+        getContentCssClass: getContentCssClass,
         isAlwaysOpenFillSnippet: isAlwaysOpenFillSnippet,
         isUninterestingSnippet: isUninterestingSnippet,
         isGenericDecisionReasonText: isGenericDecisionReasonText,

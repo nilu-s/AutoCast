@@ -37,6 +37,7 @@ function runFinalizeStage(ctx) {
         totalDurationSec: totalDurationSec,
         frameDurationMs: params.frameDurationMs,
         rmsProfiles: rmsProfiles,
+        rawRmsProfiles: rawRmsProfiles,
         spectralResults: spectralResults,
         laughterResults: laughterResults,
         gateSnapshots: gateSnapshots,

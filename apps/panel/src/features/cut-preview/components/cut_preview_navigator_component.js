@@ -35,11 +35,11 @@
         return minutes + ':' + secText;
     }
 
-    function defaultGetTypeCssClass(typeLabel) {
-        var key = typeLabel ? String(typeLabel).toLowerCase() : 'unknown';
+    function defaultGetContentCssClass(contentState) {
+        var key = contentState ? String(contentState).toLowerCase() : 'unknown';
         key = key.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
         if (!key) key = 'unknown';
-        return 'cp-type-' + key;
+        return 'cp-content-' + key;
     }
 
     function getFn(input, key, fallback) {
@@ -50,7 +50,7 @@
         var clamp = getFn(input, 'clamp', defaultClamp);
         var escapeHtml = getFn(input, 'escapeHtml', defaultEscapeHtml);
         var formatClock = getFn(input, 'formatClock', defaultFormatClock);
-        var getTypeCssClassFn = getFn(input, 'getTypeCssClass', defaultGetTypeCssClass);
+        var getContentCssClassFn = getFn(input, 'getContentCssClass', defaultGetContentCssClass);
         var isAlwaysOpenFillFn = getFn(input, 'isAlwaysOpenFillSnippet', function () { return false; });
         var isUninterestingFn = getFn(input, 'isUninterestingSnippet', function () { return false; });
 
@@ -67,8 +67,8 @@
             var item = items[i];
             var leftPct = clamp((item.start / totalDuration) * 100, 0, 100);
             var widthPct = clamp(((item.end - item.start) / totalDuration) * 100, 0.1, 100);
-            var navClass = 'cp-nav-snippet cp-state-' + item.state;
-            navClass += ' ' + getTypeCssClassFn(item.typeLabel);
+            var navClass = 'cp-nav-snippet cp-state-' + item.decisionState;
+            navClass += ' ' + getContentCssClassFn(item.contentState);
             if (isAlwaysOpenFillFn(item)) navClass += ' cp-nav-always-open-fill';
             if (isUninterestingFn(item)) navClass += ' cp-nav-uninteresting';
             html += '<div class="' + navClass + '" style="left:' + leftPct + '%;width:' + widthPct + '%;"></div>';
