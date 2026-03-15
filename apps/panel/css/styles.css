@@ -987,20 +987,23 @@ html, body {
 
 .cp-snippet.cp-state-keep,
 .cp-snippet.cp-state-filled_gap {
-    background: linear-gradient(180deg, rgba(67, 171, 92, 0.48), rgba(32, 120, 62, 0.52));
-    border-color: rgba(114, 216, 138, 0.8);
+    background: linear-gradient(180deg, rgba(67, 171, 92, 0.35), rgba(32, 120, 62, 0.40));
+    border-color: rgba(114, 216, 138, 0.6);
+    opacity: 0.7;
 }
 
 .cp-snippet.cp-state-review {
-    background: linear-gradient(180deg, rgba(162, 168, 178, 0.30), rgba(120, 126, 136, 0.33));
-    border-color: rgba(181, 188, 198, 0.58);
+    background: linear-gradient(180deg, rgba(162, 168, 178, 0.55), rgba(120, 126, 136, 0.60));
+    border-color: rgba(181, 188, 198, 0.85);
     color: #e6e9ee;
+    opacity: 1;
 }
 
 .cp-snippet.cp-state-suppress {
-    background: linear-gradient(180deg, rgba(92, 97, 106, 0.20), rgba(54, 58, 66, 0.24));
-    border-color: rgba(115, 121, 131, 0.35);
+    background: linear-gradient(180deg, rgba(92, 97, 106, 0.15), rgba(54, 58, 66, 0.20));
+    border-color: rgba(115, 121, 131, 0.25);
     color: #b1b6bf;
+    opacity: 0.5;
 }
 
 .cp-snippet.cp-content-speech,
