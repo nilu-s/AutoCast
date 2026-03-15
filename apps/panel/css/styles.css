@@ -2008,3 +2008,180 @@ html, body {
 .cpr-track-content .cpr-item:last-child {
     margin-bottom: 0;
 }
+
+/* --- Review Grid Layout --- */
+.cpr-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 6px;
+    padding: 4px;
+    max-height: 280px;
+    overflow-y: auto;
+}
+
+.cpr-card {
+    display: flex;
+    flex-direction: column;
+    padding: 6px;
+    background: var(--bg-input);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all var(--transition);
+    position: relative;
+    min-height: 70px;
+}
+
+.cpr-card:hover {
+    background: var(--bg-surface-hover);
+    border-color: var(--border-light);
+    transform: translateY(-1px);
+}
+
+.cpr-card-active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent-focus);
+    background: rgba(55, 141, 237, 0.08);
+}
+
+.cpr-card-active::after {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border: 2px solid var(--accent);
+    border-radius: var(--radius-sm);
+    pointer-events: none;
+}
+
+.cpr-decision-included {
+    border-top: 2px solid var(--success);
+}
+
+.cpr-decision-excluded {
+    border-top: 2px solid var(--danger);
+    opacity: 0.7;
+}
+
+.cpr-decision-pending {
+    border-top: 2px solid var(--warning);
+}
+
+.cpr-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.cpr-card-time {
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+.cpr-card-decision {
+    font-size: 10px;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--bg-surface);
+}
+
+.cpr-card-body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex: 1;
+    margin-bottom: 4px;
+}
+
+.cpr-card-icon {
+    font-size: 16px;
+}
+
+.cpr-card-duration {
+    font-size: 9px;
+    color: var(--text-secondary);
+}
+
+.cpr-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 4px;
+}
+
+.cpr-card-score {
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 4px;
+    border-radius: var(--radius-sm);
+}
+
+.cpr-card-content {
+    font-size: 8px;
+    color: var(--text-muted);
+    text-transform: capitalize;
+}
+
+.cpr-card-actions {
+    display: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    gap: 4px;
+    background: rgba(30, 30, 30, 0.95);
+    padding: 4px;
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-md);
+}
+
+.cpr-card:hover .cpr-card-actions,
+.cpr-card-active .cpr-card-actions {
+    display: flex;
+}
+
+.cpr-card-btn {
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all var(--transition);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cpr-card-btn-include {
+    background: var(--success);
+    color: white;
+}
+
+.cpr-card-btn-include:hover {
+    background: var(--success-hover);
+}
+
+.cpr-card-btn-exclude {
+    background: var(--danger);
+    color: white;
+}
+
+.cpr-card-btn-exclude:hover {
+    background: var(--danger-hover);
+}
+
+.cpr-card-btn-active {
+    opacity: 0.5;
+}
+
+.cpr-card-btn-inactive {
+    opacity: 0.5;
+}

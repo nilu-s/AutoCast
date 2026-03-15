@@ -64,43 +64,58 @@
         return '⏳';
     }
 
-    function buildReviewItemHtml(item, isActive) {
+    function getDecisionClass(decision) {
+        if (decision === 'included') return 'cpr-decision-included';
+        if (decision === 'excluded') return 'cpr-decision-excluded';
+        return 'cpr-decision-pending';
+    }
+
+    function buildReviewCardHtml(item, isActive) {
         var escapeHtml = defaultEscapeHtml;
         var formatClock = defaultFormatClock;
         var formatDuration = defaultFormatDurationMs;
         
-        var activeClass = isActive ? ' cpr-item-active' : '';
-        var decisionClass = item.decision ? ' cpr-item-' + item.decision : '';
+        var activeClass = isActive ? ' cpr-card-active' : '';
+        var decisionClass = getDecisionClass(item.decision);
         var scoreClass = getScoreClass(item.score);
         var icon = getContentStateIcon(item.contentState);
         var decisionIcon = getDecisionIcon(item.decision);
         
-        var html = '<div class="cpr-item' + activeClass + decisionClass + '" data-review-item-id="' + escapeHtml(item.id) + '">';
-        html += '  <div class="cpr-item-header">';
-        html += '    <span class="cpr-item-icon">' + icon + '</span>';
-        html += '    <span class="cpr-item-time">' + escapeHtml(formatClock(item.start)) + ' - ' + escapeHtml(formatClock(item.end)) + '</span>';
-        html += '    <span class="cpr-item-duration">' + escapeHtml(formatDuration(item.durationMs)) + '</span>';
-        html += '    <span class="cpr-item-decision-icon">' + decisionIcon + '</span>';
-        html += '  </div>';
-        html += '  <div class="cpr-item-meta">';
-        html += '    <span class="cpr-item-score ' + scoreClass + '">' + escapeHtml(String(item.score)) + ' (' + escapeHtml(item.scoreLabel) + ')</span>';
-        html += '    <span class="cpr-item-content">' + escapeHtml(item.contentState || 'unknown') + '</span>';
-        html += '  </div>';
-        html += '  <div class="cpr-item-actions">';
+        var html = '<div class="cpr-card ' + decisionClass + activeClass + '" data-review-item-id="' + escapeHtml(item.id) + '">';
         
+        // Card header with time and decision
+        html += '  <div class="cpr-card-header">';
+        html += '    <span class="cpr-card-time">' + escapeHtml(formatClock(item.start)) + '</span>';
+        html += '    <span class="cpr-card-decision">' + decisionIcon + '</span>';
+        html += '  </div>';
+        
+        // Card body with icon and duration
+        html += '  <div class="cpr-card-body">';
+        html += '    <span class="cpr-card-icon">' + icon + '</span>';
+        html += '    <span class="cpr-card-duration">' + escapeHtml(formatDuration(item.durationMs)) + '</span>';
+        html += '  </div>';
+        
+        // Card footer with score and content type
+        html += '  <div class="cpr-card-footer">';
+        html += '    <span class="cpr-card-score ' + scoreClass + '">' + escapeHtml(String(item.score)) + '</span>';
+        html += '    <span class="cpr-card-content">' + escapeHtml(item.contentState || 'unknown') + '</span>';
+        html += '  </div>';
+        
+        // Actions overlay (shown on hover/active)
+        html += '  <div class="cpr-card-actions">';
         if (item.decision !== 'included') {
-            html += '    <button type="button" class="btn btn-sm btn-primary cpr-btn-include" data-review-include="' + escapeHtml(item.id) + '" title="Include in final cut">✓ Include</button>';
+            html += '    <button type="button" class="cpr-card-btn cpr-card-btn-include" data-review-include="' + escapeHtml(item.id) + '" title="Include">✓</button>';
         } else {
-            html += '    <button type="button" class="btn btn-sm btn-secondary cpr-btn-include cpr-btn-active" data-review-include="' + escapeHtml(item.id) + '" title="Already included">✓ Included</button>';
+            html += '    <button type="button" class="cpr-card-btn cpr-card-btn-include cpr-card-btn-active" data-review-include="' + escapeHtml(item.id) + '">✓</button>';
         }
         
         if (item.decision !== 'excluded') {
-            html += '    <button type="button" class="btn btn-sm btn-danger cpr-btn-exclude" data-review-exclude="' + escapeHtml(item.id) + '" title="Exclude from final cut">✕ Exclude</button>';
+            html += '    <button type="button" class="cpr-card-btn cpr-card-btn-exclude" data-review-exclude="' + escapeHtml(item.id) + '" title="Exclude">✕</button>';
         } else {
-            html += '    <button type="button" class="btn btn-sm btn-secondary cpr-btn-exclude cpr-btn-inactive" data-review-exclude="' + escapeHtml(item.id) + '" title="Already excluded">✕ Excluded</button>';
+            html += '    <button type="button" class="cpr-card-btn cpr-card-btn-exclude cpr-card-btn-inactive" data-review-exclude="' + escapeHtml(item.id) + '">✕</button>';
         }
-        
         html += '  </div>';
+        
         html += '</div>';
         
         return html;
@@ -194,19 +209,19 @@
         
         // Header with stats
         html += '<div class="cpr-header">';
-        html += '  <h3 class="cpr-title">Review Queue</h3>';
+        html += '  <h3 class="cpr-title">Review</h3>';
         html += '  <div class="cpr-stats">';
-        html += '    <span class="cpr-stat cpr-stat-pending">⏳ ' + pending.length + ' pending</span>';
-        html += '    <span class="cpr-stat cpr-stat-included">✓ ' + included.length + ' included</span>';
-        html += '    <span class="cpr-stat cpr-stat-excluded">✕ ' + excluded.length + ' excluded</span>';
+        html += '    <span class="cpr-stat cpr-stat-pending">⏳ ' + pending.length + '</span>';
+        html += '    <span class="cpr-stat cpr-stat-included">✓ ' + included.length + '</span>';
+        html += '    <span class="cpr-stat cpr-stat-excluded">✕ ' + excluded.length + '</span>';
         html += '  </div>';
         html += '</div>';
         
         // Track tabs
         html += buildTrackTabs(tracks, activeTrackIndex);
         
-        // Items for active track
-        html += '<div class="cpr-track-content">';
+        // Items grid for active track
+        html += '<div class="cpr-grid">';
         var activeTrack = tracks[activeTrackIndex];
         if (activeTrack && activeTrack.items.length > 0) {
             // Group by decision status within the track
@@ -225,10 +240,10 @@
             var orderedItems = trackPending.concat(trackIncluded).concat(trackExcluded);
             
             for (var j = 0; j < orderedItems.length; j++) {
-                html += buildReviewItemHtml(orderedItems[j], orderedItems[j].id === activeSnippetId);
+                html += buildReviewCardHtml(orderedItems[j], orderedItems[j].id === activeSnippetId);
             }
         } else {
-            html += '<div class="cpr-empty">No review items for this track.</div>';
+            html += '<div class="cpr-empty">No items for this track.</div>';
         }
         html += '</div>';
         
@@ -239,7 +254,7 @@
 
     root.AutoCastPanelCutPreviewReviewListComponent = {
         buildReviewSectionHtml: buildReviewSectionHtml,
-        buildReviewItemHtml: buildReviewItemHtml,
+        buildReviewCardHtml: buildReviewCardHtml,
         getTracksWithReviewItems: getTracksWithReviewItems
     };
 })(this);
