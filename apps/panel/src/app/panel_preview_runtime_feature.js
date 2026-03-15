@@ -396,8 +396,9 @@
                 onSelectSnippet: function(itemId) {
                     // Set active snippet and ensure it's visible in viewport
                     setActiveSnippet(itemId, true);
-                    // Force immediate render to show highlight
-                    requestCutPreviewRender(true);
+                    // Re-render timeline to show the blue highlight
+                    renderCutPreview();
+                    // Also re-render review list to show active state
                     renderReviewSection();
                 },
                 onSelectTrack: function(trackIndex) {
