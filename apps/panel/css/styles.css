@@ -1052,8 +1052,8 @@ html, body {
 .cp-snippet.cp-content-noise:not(.cp-state-review) { border-color: rgba(139, 165, 188, 0.74); }
 .cp-snippet.cp-content-unknown { border-color: rgba(152, 161, 174, 0.70); }
 
-/* Content type indicator dot for review snippets */
-.cp-snippet.cp-state-review::before {
+/* Content type indicator dot for all snippets */
+.cp-snippet::before {
     content: '';
     position: absolute;
     top: 2px;
@@ -1064,37 +1064,37 @@ html, body {
     z-index: 2;
 }
 
-.cp-snippet.cp-state-review.cp-content-speech::before {
+.cp-snippet.cp-content-speech::before {
     background: #4cc97b;
     box-shadow: 0 0 2px rgba(0,0,0,0.5);
 }
 
-.cp-snippet.cp-state-review.cp-content-mixed::before {
+.cp-snippet.cp-content-mixed::before {
     background: #2ecebc;
     box-shadow: 0 0 2px rgba(0,0,0,0.5);
 }
 
-.cp-snippet.cp-state-review.cp-content-laughter::before {
+.cp-snippet.cp-content-laughter::before {
     background: #be7dff;
     box-shadow: 0 0 2px rgba(0,0,0,0.5);
 }
 
-.cp-snippet.cp-state-review.cp-content-silence_fill::before {
+.cp-snippet.cp-content-silence_fill::before {
     background: #f8b851;
     box-shadow: 0 0 2px rgba(0,0,0,0.5);
 }
 
-.cp-snippet.cp-state-review.cp-content-bleed::before {
+.cp-snippet.cp-content-bleed::before {
     background: #f47676;
     box-shadow: 0 0 2px rgba(0,0,0,0.5);
 }
 
-.cp-snippet.cp-state-review.cp-content-noise::before {
+.cp-snippet.cp-content-noise::before {
     background: #8f88a2;
     box-shadow: 0 0 2px rgba(0,0,0,0.5);
 }
 
-.cp-snippet.cp-state-review.cp-content-unknown::before {
+.cp-snippet.cp-content-unknown::before {
     background: #7c8591;
     box-shadow: 0 0 2px rgba(0,0,0,0.5);
 }
