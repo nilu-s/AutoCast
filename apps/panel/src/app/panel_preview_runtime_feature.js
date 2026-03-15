@@ -332,7 +332,16 @@
                 sliderToPixelsPerSec: sliderToPixelsPerSec,
                 pixelsPerSecToSlider: pixelsPerSecToSlider,
                 documentObj: documentObj,
-                windowObj: windowObj
+                windowObj: windowObj,
+                onSnippetSelected: function(itemId) {
+                    // When snippet is selected from timeline, update review list
+                    // Find which track this snippet belongs to
+                    var item = getCutPreviewItemById(itemId);
+                    if (item) {
+                        state.reviewActiveTrackIndex = item.trackIndex;
+                        renderReviewSection();
+                    }
+                }
             });
 
             bindReviewControls();

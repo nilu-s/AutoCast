@@ -133,6 +133,10 @@
                     var itemId = snippetBtn.getAttribute('data-item-id');
                     setActiveSnippet(itemId, true);
                     renderCutPreview();
+                    // Also update review list to show the selected snippet
+                    if (typeof options.onSnippetSelected === 'function') {
+                        options.onSnippetSelected(itemId);
+                    }
                     return;
                 }
             });
