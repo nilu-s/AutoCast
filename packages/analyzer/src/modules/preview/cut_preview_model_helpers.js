@@ -53,7 +53,15 @@ function buildSegmentModel(ctx) {
             origin: modelOrigin,
             keepLikelihood: round(clamp(parseNum(values.keepLikelihood, 0), 0, 1), 3),
             suppressLikelihood: round(clamp(parseNum(values.suppressLikelihood, 0), 0, 1), 3),
-            margin: round(clamp(parseNum(values.decisionMargin, 0), 0, 1), 3)
+            reviewLikelihood: round(clamp(parseNum(values.reviewLikelihood, 0), 0, 1), 3),
+            margin: round(clamp(parseNum(values.decisionMargin, 0), 0, 1), 3),
+            corridorDecisionMargin: round(clamp(parseNum(values.corridorDecisionMargin, parseNum(values.decisionMargin, 0)), 0, 1), 3),
+            corridorClassMargin: round(clamp(parseNum(values.corridorClassMargin, parseNum(values.classMargin, 0)), 0, 1), 3),
+            corridorCombinedMargin: round(clamp(parseNum(values.corridorCombinedMargin, 0), 0, 1), 3),
+            uncertaintyScore: round(clamp(parseNum(values.uncertaintyScore, 0), 0, 1), 3),
+            hardReviewCorridor: round(clamp(parseNum(values.hardReviewCorridor, 0), 0, 1), 3),
+            uncertaintyBleedGate: round(clamp(parseNum(values.uncertaintyBleedGate, 0), 0, 1), 3),
+            decisionPenalty: round(clamp(parseNum(values.decisionPenalty, 0), 0, 1), 3)
         },
         classification: {
             contentState: contentState,
@@ -78,7 +86,13 @@ function buildEvidenceMetrics(values) {
         spectralConfidence: round(clamp(parseNum(values.spectralConfidence, 0), 0, 1), 3),
         laughterConfidence: round(clamp(parseNum(values.laughterConfidence, 0), 0, 1), 3),
         overlapPenalty: round(clamp(parseNum(values.overlapPenalty, 0), 0, 1), 3),
+        overlapTrust: round(clamp(parseNum(values.overlapTrust, 0), 0, 1), 3),
         speakerLockScore: round(clamp(parseNum(values.speakerLockScore, 0), 0, 1), 3),
+        speakerMatchP10: round(clamp(parseNum(values.speakerMatchP10, parseNum(values.speakerLockScore, 0)), 0, 1), 3),
+        speakerMatchMedian: round(clamp(parseNum(values.speakerMatchMedian, parseNum(values.speakerLockScore, 0)), 0, 1), 3),
+        voiceFrameRatio: round(clamp(parseNum(values.voiceFrameRatio, 0), 0, 1), 3),
+        inSnippetDropoutRatio: round(clamp(parseNum(values.inSnippetDropoutRatio, 0), 0, 1), 3),
+        mergeHeterogeneity: round(clamp(parseNum(values.mergeHeterogeneity, 0), 0, 1), 3),
         speechEvidence: round(clamp(parseNum(values.speechEvidence, 0), 0, 1), 3),
         laughterEvidence: round(clamp(parseNum(values.laughterEvidence, 0), 0, 1), 3),
         bleedEvidence: round(clamp(parseNum(values.bleedEvidence, 0), 0, 1), 3),
@@ -93,7 +107,6 @@ function buildEvidenceMetrics(values) {
 function normalizeDecisionState(decisionState, alwaysOpenFill, isUninteresting) {
     var state = decisionState ? String(decisionState) : 'review';
     if (isUninteresting) return 'uninteresting';
-    if (alwaysOpenFill && state === 'keep') return 'filled_gap';
     if (state === 'keep' || state === 'review' || state === 'suppress' || state === 'filled_gap' || state === 'uninteresting') {
         return state;
     }
@@ -103,7 +116,6 @@ function normalizeDecisionState(decisionState, alwaysOpenFill, isUninteresting) 
 function normalizeContentState(contentState, alwaysOpenFill, isUninteresting) {
     var state = contentState ? String(contentState) : 'unknown';
     if (isUninteresting) return 'noise';
-    if (alwaysOpenFill && state === 'unknown') return 'silence_fill';
     if (state === 'speech' ||
         state === 'laughter' ||
         state === 'mixed' ||
@@ -138,7 +150,7 @@ function buildProvenance(decisionStage, modelOrigin) {
     if (stage === 'overlap_resolve' || stage.indexOf('bleed_high_confidence') === 0) {
         passesTouched.push('overlap');
     }
-    if (stage.indexOf('postprocess_') === 0 || stage.indexOf('metrics_') === 0 || stage === 'postprocess_pruned') {
+    if (stage.indexOf('postprocess_') === 0 || stage === 'postprocess_pruned') {
         passesTouched.push('postprocess');
     }
     if (!passesTouched.length) {
@@ -165,16 +177,16 @@ function mapSuppressionReason(ctx) {
     if (stage === 'postprocess_pruned' || stage === 'timeline_gap_uninteresting' || stage.indexOf('postprocess_') === 0) {
         return 'postprocess_prune';
     }
-    if (stage.indexOf('metrics_demoted') === 0) return 'postprocess_prune';
-
     var spectral = clamp(parseNum(values.spectralConfidence, 0), 0, 1);
     var peakOver = parseNum(values.peakOverThreshold, 0);
     var meanOver = parseNum(values.meanOverThreshold, 0);
     var overlap = clamp(parseNum(values.overlapPenalty, 0), 0, 1);
+    var overlapTrust = clamp(parseNum(values.overlapTrust, 0), 0, 1);
+    var overlapPressure = overlap * overlapTrust;
     var bleedConf = clamp(parseNum(values.bleedConfidence, parseNum(values.bleedEvidence, 0)), 0, 1);
 
     if (ctx.contentState === 'bleed' || bleedConf >= 0.60) return 'bleed';
-    if (overlap >= 0.60 && bleedConf < 0.60) return 'dominance_loss';
+    if (overlapPressure >= 0.40 && bleedConf < 0.60) return 'dominance_loss';
     if (spectral < 0.20) return 'low_spectral_confidence';
     if (peakOver < 0 && meanOver < 0) return 'low_energy';
     return 'unknown';
@@ -192,7 +204,7 @@ function mapModelOrigin(ctx) {
         return 'overlap_resolve';
     }
     if (stage === 'postprocess_pruned' || stage === 'timeline_gap_uninteresting' ||
-        stage.indexOf('postprocess_') === 0 || stage.indexOf('metrics_') === 0) {
+        stage.indexOf('postprocess_') === 0) {
         return 'postprocess';
     }
     return 'vad';
@@ -418,8 +430,14 @@ function buildUninterestingMetrics() {
         spectralConfidence: 0,
         laughterConfidence: 0,
         overlapPenalty: 0,
+        overlapTrust: 0,
         speakerLockScore: 0,
-        postprocessPenalty: 0,
+        speakerMatchP10: 0,
+        speakerMatchMedian: 0,
+        voiceFrameRatio: 0,
+        inSnippetDropoutRatio: 1,
+        mergeHeterogeneity: 0,
+        decisionPenalty: 0,
         speechEvidence: 0,
         laughterEvidence: 0,
         bleedEvidence: 0,
@@ -429,7 +447,14 @@ function buildUninterestingMetrics() {
         keptSourceRatio: 0,
         keepLikelihood: 0,
         suppressLikelihood: 1,
+        reviewLikelihood: 0,
         decisionMargin: 1,
+        corridorDecisionMargin: 1,
+        corridorClassMargin: 1,
+        corridorCombinedMargin: 1,
+        uncertaintyScore: 1,
+        hardReviewCorridor: 1,
+        uncertaintyBleedGate: 0,
         bleedHighConfidence: 0,
         alwaysOpenFill: 0,
         mergedSegmentCount: 1,

@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 var path = require('path');
 var cutPreviewBuilder = require('../cut_preview_builder');
@@ -24,6 +24,7 @@ describe('Cut Preview Builder Decision States - Merge', function () {
             totalDurationSec: 2.0,
             frameDurationMs: 10,
             rmsProfiles: [previewUtils.makeFilledArray(frameCount, 0.02)],
+            rawRmsProfiles: [previewUtils.makeFilledArray(frameCount, 0.02)],
             spectralResults: [{ confidence: previewUtils.makeFilledArray(frameCount, 0.55) }],
             laughterResults: [{ confidence: previewUtils.makeFilledArray(frameCount, 0.08) }],
             gateSnapshots: [{ speakerDebug: { similarity: previewUtils.makeFilledArray(frameCount, 0.70) } }],

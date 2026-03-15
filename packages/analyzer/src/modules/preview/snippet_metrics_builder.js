@@ -10,6 +10,7 @@ var isFiniteNumber = modelHelpers.isFiniteNumber;
 var averageRange = modelHelpers.averageRange;
 var maxRange = modelHelpers.maxRange;
 var getFrameValue = modelHelpers.getFrameValue;
+var SNIPPET_METRICS_VERSION = 'preview-metrics.v2';
 
 function buildEvidenceMetrics(ctx) {
     ctx = ctx || {};
@@ -25,7 +26,8 @@ function buildEvidenceMetrics(ctx) {
     var gateSnapshots = Array.isArray(ctx.gateSnapshots) ? ctx.gateSnapshots : [];
 
     var rmsTrack = rmsProfiles[trackIndex] || [];
-    var rawRmsTrack = rawRmsProfiles[trackIndex] || rmsTrack;
+    var rawRmsTrack = rawRmsProfiles[trackIndex];
+    if (!rawRmsTrack || typeof rawRmsTrack.length !== 'number') rawRmsTrack = [];
     var spectralTrack = (spectralResults[trackIndex] && spectralResults[trackIndex].confidence)
         ? spectralResults[trackIndex].confidence
         : null;
@@ -48,6 +50,19 @@ function buildEvidenceMetrics(ctx) {
     var laughterConfidence = clamp(averageRange(laughterTrack, startFrame, endFrame, 0), 0, 1);
     var laughterPeakConfidence = clamp(maxRange(laughterTrack, startFrame, endFrame, laughterConfidence), 0, 1);
     var speakerLockScore = clamp(averageRange(speakerSimilarity, startFrame, endFrame, spectralConfidence), 0, 1);
+    var mergedSegmentCount = Math.max(1, Math.round(parseNum(ctx.mergedSegmentCount, 1)));
+    var maxMergedGapSec = Math.max(0, parseNum(ctx.maxMergedGapSec, 0));
+    var snippetWindowStats = computeSnippetWindowStats({
+        startFrame: startFrame,
+        endFrame: endFrame,
+        spectralTrack: spectralTrack,
+        speakerSimilarity: speakerSimilarity,
+        activeMap: ctx.overlapActiveMaps && ctx.overlapActiveMaps[trackIndex],
+        mergedSegmentCount: mergedSegmentCount,
+        maxMergedGapSec: maxMergedGapSec,
+        durationSec: Math.max(0, parseNum(ctx.end, 0) - parseNum(ctx.start, 0)),
+        speakerFallback: speakerLockScore
+    });
 
     var overlapStats = computeOverlapStats(
         trackIndex,
@@ -56,8 +71,16 @@ function buildEvidenceMetrics(ctx) {
         ctx.overlapActiveMaps,
         rmsProfiles
     );
-    var mergedSegmentCount = Math.max(1, Math.round(parseNum(ctx.mergedSegmentCount, 1)));
-    var maxMergedGapSec = Math.max(0, parseNum(ctx.maxMergedGapSec, 0));
+    var overlapTrust = computeOverlapTrust({
+        overlapPenalty: overlapStats.penalty,
+        overlapRatio: overlapStats.overlapRatio,
+        strongerRatio: overlapStats.strongerRatio,
+        spectralConfidence: spectralConfidence,
+        speakerLockScore: speakerLockScore,
+        voiceFrameRatio: snippetWindowStats.voiceFrameRatio,
+        inSnippetDropoutRatio: snippetWindowStats.inSnippetDropoutRatio,
+        params: ctx.params || {}
+    });
 
     var classEvidence = computeClassEvidence({
         peakOverThreshold: peakDb - thresholdDb,
@@ -66,7 +89,13 @@ function buildEvidenceMetrics(ctx) {
         laughterConfidence: laughterConfidence,
         laughterPeakConfidence: laughterPeakConfidence,
         speakerLockScore: speakerLockScore,
+        speakerMatchP10: snippetWindowStats.speakerMatchP10,
+        speakerMatchMedian: snippetWindowStats.speakerMatchMedian,
+        voiceFrameRatio: snippetWindowStats.voiceFrameRatio,
+        inSnippetDropoutRatio: snippetWindowStats.inSnippetDropoutRatio,
+        mergeHeterogeneity: snippetWindowStats.mergeHeterogeneity,
         overlapPenalty: overlapStats.penalty,
+        overlapTrust: overlapTrust,
         overlapRatio: overlapStats.overlapRatio,
         strongerRatio: overlapStats.strongerRatio,
         rawPeakDbFs: rawPeakDb,
@@ -74,8 +103,9 @@ function buildEvidenceMetrics(ctx) {
     });
     var bleedConfidence = clamp(
         classEvidence.bleed * 0.68 +
+        overlapTrust * 0.12 +
         clamp(overlapStats.strongerRatio, 0, 1) * 0.22 +
-        clamp(overlapStats.overlapRatio, 0, 1) * 0.10,
+        clamp(overlapStats.overlapRatio, 0, 1) * 0.08,
         0,
         1
     );
@@ -89,7 +119,13 @@ function buildEvidenceMetrics(ctx) {
             spectralConfidence: round(spectralConfidence, 3),
             laughterConfidence: round(laughterConfidence, 3),
             overlapPenalty: round(overlapStats.penalty, 3),
+            overlapTrust: round(overlapTrust, 3),
             speakerLockScore: round(speakerLockScore, 3),
+            speakerMatchP10: round(snippetWindowStats.speakerMatchP10, 3),
+            speakerMatchMedian: round(snippetWindowStats.speakerMatchMedian, 3),
+            voiceFrameRatio: round(snippetWindowStats.voiceFrameRatio, 3),
+            inSnippetDropoutRatio: round(snippetWindowStats.inSnippetDropoutRatio, 3),
+            mergeHeterogeneity: round(snippetWindowStats.mergeHeterogeneity, 3),
             speechEvidence: round(classEvidence.speech, 3),
             laughterEvidence: round(classEvidence.laughter, 3),
             bleedEvidence: round(classEvidence.bleed, 3),
@@ -105,6 +141,55 @@ function buildEvidenceMetrics(ctx) {
             strongerOverlapRatio: round(overlapStats.strongerRatio, 3),
             dominantTrackIndex: overlapStats.dominantTrackIndex
         }
+    };
+}
+
+function computeSnippetWindowStats(ctx) {
+    ctx = ctx || {};
+    var startFrame = Math.max(0, parseInt(ctx.startFrame, 10) || 0);
+    var endFrame = Math.max(startFrame + 1, parseInt(ctx.endFrame, 10) || (startFrame + 1));
+    var spectralTrack = ctx.spectralTrack;
+    var speakerSimilarity = ctx.speakerSimilarity;
+    var activeMap = ctx.activeMap;
+    var frameCount = Math.max(1, endFrame - startFrame);
+    var voiceFrames = 0;
+    var activeFrames = 0;
+    var speakerSamples = [];
+
+    for (var f = startFrame; f < endFrame; f++) {
+        var spectral = clamp(parseNum(getFrameValue(spectralTrack, f, 0), 0), 0, 1);
+        var speaker = clamp(parseNum(getFrameValue(speakerSimilarity, f, spectral), spectral), 0, 1);
+        if ((spectral >= 0.44) || (speaker >= 0.56)) {
+            voiceFrames++;
+        }
+        if (getFrameValue(activeMap, f, 0) > 0) activeFrames++;
+        speakerSamples.push(speaker);
+    }
+
+    var speakerMatchP10 = computePercentile(speakerSamples, 0.10, parseNum(ctx.speakerFallback, 0));
+    var speakerMatchMedian = computePercentile(speakerSamples, 0.50, parseNum(ctx.speakerFallback, 0));
+    var voiceFrameRatio = clamp(voiceFrames / frameCount, 0, 1);
+    var inSnippetDropoutRatio = clamp(1 - (activeFrames / frameCount), 0, 1);
+    var mergedSegmentCount = Math.max(1, Math.round(parseNum(ctx.mergedSegmentCount, 1)));
+    var maxMergedGapSec = Math.max(0, parseNum(ctx.maxMergedGapSec, 0));
+    var durationSec = Math.max(1e-6, parseNum(ctx.durationSec, frameCount * 0.01));
+    var mergeDensity = clamp((mergedSegmentCount - 1) / 4, 0, 1);
+    var gapDensity = clamp(maxMergedGapSec / Math.max(durationSec * 0.8, 0.05), 0, 1);
+    var mergeHeterogeneity = clamp(
+        mergeDensity * 0.42 +
+        gapDensity * 0.24 +
+        inSnippetDropoutRatio * 0.20 +
+        (1 - voiceFrameRatio) * 0.14,
+        0,
+        1
+    );
+
+    return {
+        voiceFrameRatio: voiceFrameRatio,
+        inSnippetDropoutRatio: inSnippetDropoutRatio,
+        speakerMatchP10: speakerMatchP10,
+        speakerMatchMedian: speakerMatchMedian,
+        mergeHeterogeneity: mergeHeterogeneity
     };
 }
 
@@ -184,6 +269,53 @@ function computeOverlapStats(trackIndex, startFrame, endFrame, activeMaps, rmsPr
     };
 }
 
+function computePercentile(values, p, fallback) {
+    var samples = [];
+    for (var i = 0; i < (values || []).length; i++) {
+        var v = values[i];
+        if (!isFiniteNumber(v)) continue;
+        samples.push(clamp(v, 0, 1));
+    }
+    if (!samples.length) return clamp(parseNum(fallback, 0), 0, 1);
+    samples.sort(function (a, b) { return a - b; });
+    var rank = clamp(parseNum(p, 0), 0, 1) * (samples.length - 1);
+    var lo = Math.floor(rank);
+    var hi = Math.ceil(rank);
+    if (lo === hi) return samples[lo];
+    var w = rank - lo;
+    return clamp(samples[lo] * (1 - w) + samples[hi] * w, 0, 1);
+}
+
+function computeOverlapTrust(ctx) {
+    ctx = ctx || {};
+    var overlapPenalty = clamp(parseNum(ctx.overlapPenalty, 0), 0, 1);
+    var overlapRatio = clamp(parseNum(ctx.overlapRatio, 0), 0, 1);
+    var strongerRatio = clamp(parseNum(ctx.strongerRatio, 0), 0, 1);
+    var spectralConfidence = clamp(parseNum(ctx.spectralConfidence, 0), 0, 1);
+    var speakerLockScore = clamp(parseNum(ctx.speakerLockScore, 0), 0, 1);
+    var voiceFrameRatio = clamp(parseNum(ctx.voiceFrameRatio, 0), 0, 1);
+    var inSnippetDropoutRatio = clamp(parseNum(ctx.inSnippetDropoutRatio, 0), 0, 1);
+    var params = ctx.params || {};
+
+    var trust = clamp(
+        overlapPenalty * 0.40 +
+        strongerRatio * 0.25 +
+        overlapRatio * 0.20 +
+        (1 - speakerLockScore) * 0.10 +
+        (1 - voiceFrameRatio) * 0.05,
+        0,
+        1
+    );
+
+    if (params.independentTrackAnalysis !== false) trust *= 0.84;
+    if (params.enableBleedHandling === false) trust *= 0.72;
+    if (overlapRatio < 0.20) trust *= 0.78;
+    if (spectralConfidence >= 0.56 && speakerLockScore >= 0.62) trust *= 0.70;
+    if (inSnippetDropoutRatio >= 0.30) trust *= 0.88;
+
+    return clamp(trust, 0, 1);
+}
+
 function rankClassEvidence(scores) {
     var firstLabel = 'unknown';
     var secondLabel = 'unknown';
@@ -227,16 +359,26 @@ function computeClassEvidence(ctx) {
     var laughter = clamp(parseNum(ctx.laughterConfidence, 0), 0, 1);
     var laughterPeak = clamp(parseNum(ctx.laughterPeakConfidence, 0), 0, 1);
     var speaker = clamp(parseNum(ctx.speakerLockScore, 0), 0, 1);
+    var speakerMatchP10 = clamp(parseNum(ctx.speakerMatchP10, speaker), 0, 1);
+    var speakerMatchMedian = clamp(parseNum(ctx.speakerMatchMedian, speaker), 0, 1);
+    var voiceFrameRatio = clamp(parseNum(ctx.voiceFrameRatio, spectral), 0, 1);
+    var inSnippetDropoutRatio = clamp(parseNum(ctx.inSnippetDropoutRatio, 0), 0, 1);
+    var mergeHeterogeneity = clamp(parseNum(ctx.mergeHeterogeneity, 0), 0, 1);
     var overlapPenalty = clamp(parseNum(ctx.overlapPenalty, 0), 0, 1);
+    var overlapTrust = clamp(parseNum(ctx.overlapTrust, 0), 0, 1);
     var overlapRatio = clamp(parseNum(ctx.overlapRatio, 0), 0, 1);
     var strongerRatio = clamp(parseNum(ctx.strongerRatio, 0), 0, 1);
+    var contextualOverlap = clamp(overlapPenalty * overlapTrust, 0, 1);
+    var contextualStronger = clamp(strongerRatio * overlapTrust, 0, 1);
 
     var speechScore = clamp(
-        spectral * 0.36 +
-        speaker * 0.20 +
-        energyNorm * 0.28 +
-        rawPeakNorm * 0.08 +
-        (1 - overlapPenalty) * 0.08,
+        spectral * 0.30 +
+        speaker * 0.14 +
+        speakerMatchMedian * 0.11 +
+        voiceFrameRatio * 0.12 +
+        energyNorm * 0.24 +
+        rawPeakNorm * 0.05 +
+        (1 - contextualOverlap) * 0.04,
         0,
         1
     );
@@ -245,16 +387,19 @@ function computeClassEvidence(ctx) {
         laughterPeak * 0.20 +
         energyNorm * 0.16 +
         (1 - speaker) * 0.08 +
-        (1 - overlapPenalty) * 0.08,
+        (1 - contextualOverlap) * 0.08,
         0,
         1
     );
     var bleedScore = clamp(
-        overlapPenalty * 0.40 +
-        strongerRatio * 0.28 +
-        overlapRatio * 0.18 +
-        (1 - speaker) * 0.07 +
-        (1 - spectral) * 0.07,
+        contextualOverlap * 0.36 +
+        contextualStronger * 0.24 +
+        overlapRatio * overlapTrust * 0.14 +
+        (1 - speakerMatchMedian) * 0.10 +
+        (1 - speakerMatchP10) * 0.06 +
+        (1 - spectral) * 0.05 +
+        inSnippetDropoutRatio * 0.06 +
+        mergeHeterogeneity * 0.05,
         0,
         1
     );
@@ -264,7 +409,8 @@ function computeClassEvidence(ctx) {
         clamp((0 - parseNum(ctx.peakOverThreshold, 0)) / 8, 0, 1) * 0.12 +
         (1 - energyNorm) * 0.18 +
         (1 - rawPeakNorm) * 0.12 +
-        (1 - rawMeanNorm) * 0.10,
+        (1 - rawMeanNorm) * 0.10 +
+        mergeHeterogeneity * 0.10,
         0,
         1
     );
@@ -288,8 +434,10 @@ function computeClassEvidence(ctx) {
 }
 
 module.exports = {
+    SNIPPET_METRICS_VERSION: SNIPPET_METRICS_VERSION,
     buildEvidenceMetrics: buildEvidenceMetrics,
     computeOverlapStats: computeOverlapStats,
+    computeOverlapTrust: computeOverlapTrust,
     rankClassEvidence: rankClassEvidence,
     computeClassEvidence: computeClassEvidence
 };

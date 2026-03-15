@@ -25,6 +25,7 @@ module.exports = [
     '../src/modules/preview/tests/cut_preview_builder_fill_review.test.js',
     '../src/modules/preview/tests/cut_preview_builder_timeline_coverage.test.js',
     '../src/modules/preview/tests/cut_preview_builder_state_model.test.js',
+    '../src/modules/preview/tests/cut_preview_decision_engine_uncertainty.test.js',
     '../src/modules/preview/tests/snippet_metrics_builder.test.js',
     '../../../scripts/tests/check_architecture.test.js',
     '../src/core/contracts/tests/analyzer_contracts.test.js',

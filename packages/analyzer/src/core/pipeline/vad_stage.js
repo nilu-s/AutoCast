@@ -129,15 +129,12 @@ function runVadStage(ctx) {
                 } else {
                     vadResult.gateOpen = speakerLockResult;
                 }
-                if (speakerLockResult && speakerLockResult.similarity) {
-                    speakerSimilarity = speakerLockResult.similarity;
-                } else {
-                    speakerSimilarity = buildSpeakerSimilaritySeries(
-                        fingerprintResults[i],
-                        profile,
-                        vadResult.gateOpen ? vadResult.gateOpen.length : 0
-                    );
-                }
+                speakerSimilarity = normalizeSpeakerSimilaritySeries(
+                    speakerLockResult && speakerLockResult.similarity,
+                    fingerprintResults[i],
+                    profile,
+                    vadResult.gateOpen ? vadResult.gateOpen.length : 0
+                );
 
                 trackInfos[i].speakerProfileFrames = profile.frameCount;
             } else {
@@ -534,6 +531,11 @@ function buildSpeakerSimilaritySeries(fingerprint, profile, targetLength) {
         similarity[i] = spectralVad.computeFrameToProfileSimilarity(fingerprint, profile, i);
     }
     return similarity;
+}
+
+function normalizeSpeakerSimilaritySeries(series, fingerprint, profile, targetLength) {
+    if (series && typeof series.length === 'number' && series.length > 0) return series;
+    return buildSpeakerSimilaritySeries(fingerprint, profile, targetLength);
 }
 
 module.exports = {

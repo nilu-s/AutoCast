@@ -43,4 +43,44 @@ describe('Cut Preview State Feature - Normalization', function () {
         assert(state.items[0].decisionState === 'review', 'Unknown decisionState should normalize to review');
         assert(state.items[0].stateModel && state.items[0].stateModel.decisionState === 'review', 'Expected stateModel decision state');
     });
+
+    it('should prefer native stateModel values over legacy fallbacks', function () {
+        var sandbox = {
+            console: {
+                log: function () { },
+                warn: function () { },
+                error: function () { }
+            }
+        };
+        loadScript('apps/panel/src/features/cut-preview/services/cut_preview_state_feature.js', sandbox);
+
+        var feature = sandbox.AutoCastPanelCutPreviewFeature;
+        var state = feature.buildCutPreviewState({
+            totalDurationSec: 1.0,
+            cutPreview: {
+                items: [{
+                    id: 'x2',
+                    trackIndex: 0,
+                    start: 0,
+                    end: 0.5,
+                    decisionState: 'keep',
+                    contentState: 'speech',
+                    stateModel: {
+                        decisionState: 'suppress',
+                        contentState: 'bleed',
+                        quality: { score0to100: 20, confidence0to1: 0.8, margin0to1: 0.7 },
+                        provenance: { stage: 'evidence_suppress', origin: 'overlap_resolve', passesTouched: ['overlap'] }
+                    }
+                }],
+                lanes: []
+            }
+        }, {
+            trackCount: 1,
+            tracks: [{ name: 'Host' }]
+        });
+
+        assert(state.items.length === 1, 'Expected one normalized item');
+        assert(state.items[0].decisionState === 'suppress', 'Expected stateModel decisionState precedence');
+        assert(state.items[0].contentState === 'bleed', 'Expected stateModel contentState precedence');
+    });
 });

@@ -5,12 +5,9 @@ var snippetMetricsBuilder = require('./snippet_metrics_builder');
 var modelHelpers = require('./cut_preview_model_helpers');
 
 var buildEvidenceMetrics = snippetMetricsBuilder.buildEvidenceMetrics;
-var computeScore = decisionEngine.computeScore;
-var inferCoverageDecision = decisionEngine.inferCoverageDecision;
-var applyDecisionPolicy = decisionEngine.applyDecisionPolicy;
-var canAutoKeepAlwaysOpenFill = decisionEngine.canAutoKeepAlwaysOpenFill;
-var classifyType = decisionEngine.classifyType;
-var buildReasons = decisionEngine.buildReasons;
+var evaluatePreviewDecision = decisionEngine.evaluatePreviewDecision;
+var PREVIEW_POLICY_VERSION = decisionEngine.PREVIEW_POLICY_VERSION;
+var SNIPPET_METRICS_VERSION = snippetMetricsBuilder.SNIPPET_METRICS_VERSION;
 
 var buildSegmentModel = modelHelpers.buildSegmentModel;
 var buildSummary = modelHelpers.buildSummary;
@@ -42,7 +39,7 @@ function buildCutPreview(ctx) {
     var overlapSegments = cloneSegmentsByTrack(ctx.overlapSegments);
     var finalSegments = cloneSegmentsByTrack(ctx.finalSegments);
     var rmsProfiles = Array.isArray(ctx.rmsProfiles) ? ctx.rmsProfiles : [];
-    var rawRmsProfiles = Array.isArray(ctx.rawRmsProfiles) ? ctx.rawRmsProfiles : rmsProfiles;
+    var rawRmsProfiles = Array.isArray(ctx.rawRmsProfiles) ? ctx.rawRmsProfiles : [];
     var spectralResults = Array.isArray(ctx.spectralResults) ? ctx.spectralResults : [];
     var laughterResults = Array.isArray(ctx.laughterResults) ? ctx.laughterResults : [];
     var gateSnapshots = Array.isArray(ctx.gateSnapshots) ? ctx.gateSnapshots : [];
@@ -74,7 +71,9 @@ function buildCutPreview(ctx) {
                 avgScore: 0,
                 trackCount: 0,
                 totalDurationSec: 0
-            }
+            },
+            policyVersion: PREVIEW_POLICY_VERSION,
+            metricsVersion: SNIPPET_METRICS_VERSION
         };
     }
 
@@ -108,112 +107,33 @@ function buildCutPreview(ctx) {
             var keptSourceRatio = computeSourceSegmentKeepRatio(overlapSpan.sourceSegments, finalSegments[t]);
             var sourceSuppressedCoverage = computeCoverageByState(overlapSpan.sourceSegments, span.start, span.end, 'suppressed');
             var sourceActiveCoverage = computeCoverageByState(overlapSpan.sourceSegments, span.start, span.end, 'active');
-            var baseDecision = inferCoverageDecision({
-                keepCoverage: keepCoverage,
-                keptSourceRatio: keptSourceRatio,
-                sourceSuppressedCoverage: sourceSuppressedCoverage,
-                sourceActiveCoverage: sourceActiveCoverage
-            });
-
-            var seedMetrics = buildEvidenceMetrics({
+            itemCounter++;
+            var item = buildPreviewItem({
                 trackIndex: t,
-                start: span.start,
-                end: span.end,
+                startSec: span.start,
+                endSec: span.end,
+                mergedSegmentCount: overlapSpan.mergedCount,
+                maxMergedGapSec: overlapSpan.maxGapSec,
+                decisionContext: {
+                    keepCoverage: keepCoverage,
+                    keptSourceRatio: keptSourceRatio,
+                    sourceSuppressedCoverage: sourceSuppressedCoverage,
+                    sourceActiveCoverage: sourceActiveCoverage
+                },
+                alwaysOpenFill: !!(params && params.enforceAlwaysOneTrackOpen && alwaysOpenFillCoverage >= 0.65),
+                alwaysOpenFillRatio: alwaysOpenFillCoverage,
+                origin: alwaysOpenFillCoverage >= 0.5 ? 'always_open_fill' : 'analysis_active',
                 frameDurSec: frameDurSec,
-                thresholdDb: getTrackThresholdDb(trackInfos, t),
+                trackInfos: trackInfos,
                 rmsProfiles: rmsProfiles,
                 rawRmsProfiles: rawRmsProfiles,
                 spectralResults: spectralResults,
                 laughterResults: laughterResults,
                 gateSnapshots: gateSnapshots,
                 overlapActiveMaps: overlapActiveMaps,
-                mergedSegmentCount: overlapSpan.mergedCount,
-                maxMergedGapSec: overlapSpan.maxGapSec
+                params: params,
+                itemCounter: itemCounter
             });
-
-            var decision = applyDecisionPolicy({
-                baseState: baseDecision.decisionState,
-                baseStage: baseDecision.stage,
-                keepCoverage: keepCoverage,
-                keptSourceRatio: keptSourceRatio,
-                sourceSuppressedCoverage: sourceSuppressedCoverage,
-                sourceActiveCoverage: sourceActiveCoverage,
-                metrics: seedMetrics.values
-            });
-
-            var decisionState = decision.decisionState;
-            var decisionStage = decision.stage;
-            var allowAlwaysOpenAutoKeep = false;
-            if (params && params.enforceAlwaysOneTrackOpen && alwaysOpenFillCoverage >= 0.65 && decisionState !== 'keep') {
-                allowAlwaysOpenAutoKeep = canAutoKeepAlwaysOpenFill(decision, seedMetrics.values, params);
-            }
-            if (allowAlwaysOpenAutoKeep) {
-                decisionState = 'keep';
-                decisionStage = 'always_open_fill_blend';
-                decision.decisionState = 'keep';
-                decision.stage = 'always_open_fill_blend';
-            } else if (params && params.enforceAlwaysOneTrackOpen && alwaysOpenFillCoverage >= 0.65 &&
-                decisionStage !== 'always_open_fill_review' && decisionState !== 'keep') {
-                decisionStage = 'always_open_fill_review';
-                decision.stage = 'always_open_fill_review';
-            }
-            var metrics = seedMetrics;
-            applyDecisionMetrics(metrics, decision, {
-                keptSourceRatio: keptSourceRatio,
-                alwaysOpenFillRatio: alwaysOpenFillCoverage
-            });
-
-            var scoreInfo = computeScore(decisionState, span.durationSec, metrics);
-            var typeInfo = classifyType(decisionState, scoreInfo.score, metrics, params);
-            var reasons = buildReasons(decisionState, metrics, scoreInfo, typeInfo, decision);
-            var origin = alwaysOpenFillCoverage >= 0.5 ? 'always_open_fill' : 'analysis_active';
-            var model = buildSegmentModel({
-                decisionState: decisionState,
-                contentState: typeInfo.label,
-                origin: origin,
-                decisionStage: decisionStage,
-                alwaysOpenFill: alwaysOpenFillCoverage >= 0.5,
-                scoreInfo: scoreInfo,
-                typeInfo: typeInfo,
-                metrics: metrics,
-                reasons: reasons,
-                isUninteresting: false
-            });
-
-            itemCounter++;
-            var item = {
-                id: buildItemId(t, span.start, span.end, itemCounter),
-                trackIndex: t,
-                trackName: getTrackName(trackInfos, t),
-                trackColor: null,
-                laneIndex: t,
-                start: round(span.start, 4),
-                end: round(span.end, 4),
-                durationMs: Math.max(1, Math.round(span.durationSec * 1000)),
-                decisionState: model.decisionState,
-                selected: model.decisionState === 'keep' || model.decisionState === 'filled_gap',
-                score: scoreInfo.score,
-                scoreLabel: scoreInfo.label,
-                reasons: reasons,
-                suppressionReason: model.suppressionReason,
-                sourceClipIndex: null,
-                mediaPath: getTrackPath(trackInfos, t),
-                sourceStartSec: round(span.start, 4),
-                sourceEndSec: round(span.end, 4),
-                decisionStage: decisionStage,
-                origin: origin,
-                alwaysOpenFill: alwaysOpenFillCoverage >= 0.5,
-                overlapInfo: metrics.overlapInfo,
-                metrics: metrics.values,
-                evidenceMetrics: model.evidenceMetrics,
-                decision: model.decision,
-                classification: model.classification,
-                explainability: model.explainability,
-                contentState: model.contentState,
-                quality: model.quality,
-                provenance: model.provenance,
-                stateModel: model.stateModel
-            };
 
             items.push(item);
             laneIdBuckets[t].push(item.id);
@@ -240,103 +160,33 @@ function buildCutPreview(ctx) {
 
                 var fillCoverage = computeCoverageByOrigin(finalSegments[t], spanStart, spanEnd, 'always_open_fill');
                 var isAlwaysOpenFill = !!(params && params.enforceAlwaysOneTrackOpen && fillCoverage >= 0.55);
-
-                var finalMetrics = buildEvidenceMetrics({
+                itemCounter++;
+                var addedItem = buildPreviewItem({
                     trackIndex: t,
-                    start: spanStart,
-                    end: spanEnd,
+                    startSec: spanStart,
+                    endSec: spanEnd,
+                    mergedSegmentCount: finalSeg.mergedCount,
+                    maxMergedGapSec: finalSeg.maxGapSec,
+                    decisionContext: {
+                        keepCoverage: 1,
+                        keptSourceRatio: 1,
+                        sourceSuppressedCoverage: 0,
+                        sourceActiveCoverage: 1
+                    },
+                    alwaysOpenFill: isAlwaysOpenFill,
+                    alwaysOpenFillRatio: isAlwaysOpenFill ? fillCoverage : 0,
+                    origin: isAlwaysOpenFill ? 'always_open_fill' : 'analysis_active',
                     frameDurSec: frameDurSec,
-                    thresholdDb: getTrackThresholdDb(trackInfos, t),
+                    trackInfos: trackInfos,
                     rmsProfiles: rmsProfiles,
                     rawRmsProfiles: rawRmsProfiles,
                     spectralResults: spectralResults,
                     laughterResults: laughterResults,
                     gateSnapshots: gateSnapshots,
                     overlapActiveMaps: overlapActiveMaps,
-                    mergedSegmentCount: finalSeg.mergedCount,
-                    maxMergedGapSec: finalSeg.maxGapSec
+                    params: params,
+                    itemCounter: itemCounter
                 });
-                var finalDecision = applyDecisionPolicy({
-                    baseState: 'keep',
-                    baseStage: isAlwaysOpenFill ? 'always_open_fill' : 'postprocess_added',
-                    keepCoverage: 1,
-                    keptSourceRatio: 1,
-                    sourceSuppressedCoverage: 0,
-                    sourceActiveCoverage: 1,
-                    metrics: finalMetrics.values
-                });
-                applyDecisionMetrics(finalMetrics, finalDecision, {
-                    keptSourceRatio: 1,
-                    alwaysOpenFillRatio: isAlwaysOpenFill ? fillCoverage : 0
-                });
-
-                var allowFinalAlwaysOpenAutoKeep = isAlwaysOpenFill
-                    ? canAutoKeepAlwaysOpenFill(finalDecision, finalMetrics.values, params)
-                    : false;
-                var finalState = finalDecision.decisionState;
-                var finalStage = finalDecision.stage;
-                if (isAlwaysOpenFill && allowFinalAlwaysOpenAutoKeep) {
-                    finalState = 'keep';
-                    finalStage = 'always_open_fill';
-                } else if (isAlwaysOpenFill && !allowFinalAlwaysOpenAutoKeep) {
-                    if (finalDecision.bleedHighConfidence || finalState === 'suppress') {
-                        finalState = 'review';
-                    }
-                    finalStage = 'always_open_fill_review';
-                }
-                finalDecision.decisionState = finalState;
-                finalDecision.stage = finalStage;
-                var finalScoreInfo = computeScore(finalState, spanDur, finalMetrics);
-                var finalTypeInfo = classifyType(finalState, finalScoreInfo.score, finalMetrics, params);
-                var finalReasons = buildReasons(finalState, finalMetrics, finalScoreInfo, finalTypeInfo, finalDecision);
-                var finalOrigin = isAlwaysOpenFill ? 'always_open_fill' : 'analysis_active';
-                var finalModel = buildSegmentModel({
-                    decisionState: finalState,
-                    contentState: finalTypeInfo.label,
-                    origin: finalOrigin,
-                    decisionStage: finalStage,
-                    alwaysOpenFill: isAlwaysOpenFill,
-                    scoreInfo: finalScoreInfo,
-                    typeInfo: finalTypeInfo,
-                    metrics: finalMetrics,
-                    reasons: finalReasons,
-                    isUninteresting: false
-                });
-
-                itemCounter++;
-                var addedItem = {
-                    id: buildItemId(t, spanStart, spanEnd, itemCounter),
-                    trackIndex: t,
-                    trackName: getTrackName(trackInfos, t),
-                    trackColor: null,
-                    laneIndex: t,
-                    start: round(spanStart, 4),
-                    end: round(spanEnd, 4),
-                    durationMs: Math.max(1, Math.round(spanDur * 1000)),
-                    decisionState: finalModel.decisionState,
-                    selected: finalModel.decisionState === 'keep' || finalModel.decisionState === 'filled_gap',
-                    score: finalScoreInfo.score,
-                    scoreLabel: finalScoreInfo.label,
-                    reasons: finalReasons,
-                    suppressionReason: finalModel.suppressionReason,
-                    sourceClipIndex: null,
-                    mediaPath: getTrackPath(trackInfos, t),
-                    sourceStartSec: round(spanStart, 4),
-                    sourceEndSec: round(spanEnd, 4),
-                    decisionStage: finalStage,
-                    origin: finalOrigin,
-                    alwaysOpenFill: isAlwaysOpenFill,
-                    overlapInfo: finalMetrics.overlapInfo,
-                    metrics: finalMetrics.values,
-                    evidenceMetrics: finalModel.evidenceMetrics,
-                    decision: finalModel.decision,
-                    classification: finalModel.classification,
-                    explainability: finalModel.explainability,
-                    contentState: finalModel.contentState,
-                    quality: finalModel.quality,
-                    provenance: finalModel.provenance,
-                    stateModel: finalModel.stateModel
-                };
                 items.push(addedItem);
                 laneIdBuckets[t].push(addedItem.id);
             }
@@ -355,107 +205,38 @@ function buildCutPreview(ctx) {
             if (!(fillEnd > fillStart)) continue;
             if (hasMatchingAlwaysOpenFillItem(items, t, fillStart, fillEnd)) continue;
 
-            var fillDur = fillEnd - fillStart;
-            var fillMetrics = buildEvidenceMetrics({
+            var fillKeptSourceRatio = round(
+                computeSourceSegmentKeepRatio(overlapSegments[t] || [], finalSegments[t] || []),
+                3
+            );
+
+            itemCounter++;
+            var fillItem = buildPreviewItem({
                 trackIndex: t,
-                start: fillStart,
-                end: fillEnd,
+                startSec: fillStart,
+                endSec: fillEnd,
+                mergedSegmentCount: 1,
+                maxMergedGapSec: 0,
+                decisionContext: {
+                    keepCoverage: 1,
+                    keptSourceRatio: fillKeptSourceRatio,
+                    sourceSuppressedCoverage: 0,
+                    sourceActiveCoverage: 1
+                },
+                alwaysOpenFill: true,
+                alwaysOpenFillRatio: 1,
+                origin: 'always_open_fill',
                 frameDurSec: frameDurSec,
-                thresholdDb: getTrackThresholdDb(trackInfos, t),
+                trackInfos: trackInfos,
                 rmsProfiles: rmsProfiles,
                 rawRmsProfiles: rawRmsProfiles,
                 spectralResults: spectralResults,
                 laughterResults: laughterResults,
                 gateSnapshots: gateSnapshots,
                 overlapActiveMaps: overlapActiveMaps,
-                mergedSegmentCount: 1,
-                maxMergedGapSec: 0
+                params: params,
+                itemCounter: itemCounter
             });
-
-            var fillKeptSourceRatio = round(
-                computeSourceSegmentKeepRatio(overlapSegments[t] || [], finalSegments[t] || []),
-                3
-            );
-
-            var fillDecision = applyDecisionPolicy({
-                baseState: 'keep',
-                baseStage: 'always_open_fill',
-                keepCoverage: 1,
-                keptSourceRatio: 1,
-                sourceSuppressedCoverage: 0,
-                sourceActiveCoverage: 1,
-                metrics: fillMetrics.values
-            });
-            applyDecisionMetrics(fillMetrics, fillDecision, {
-                keptSourceRatio: fillKeptSourceRatio,
-                alwaysOpenFillRatio: 1
-            });
-
-            var allowFillAutoKeep = canAutoKeepAlwaysOpenFill(fillDecision, fillMetrics.values, params);
-            var fillState = fillDecision.decisionState;
-            var fillStage = fillDecision.stage;
-            if (allowFillAutoKeep) {
-                fillState = 'keep';
-                fillStage = 'always_open_fill';
-            } else {
-                if (fillDecision.bleedHighConfidence || fillState === 'suppress') {
-                    fillState = 'review';
-                }
-                fillStage = 'always_open_fill_review';
-            }
-            fillDecision.decisionState = fillState;
-            fillDecision.stage = fillStage;
-
-            var fillScoreInfo = computeScore(fillState, fillDur, fillMetrics);
-            var fillTypeInfo = classifyType(fillState, fillScoreInfo.score, fillMetrics, params);
-            var fillReasons = buildReasons(fillState, fillMetrics, fillScoreInfo, fillTypeInfo, fillDecision);
-            var fillModel = buildSegmentModel({
-                decisionState: fillState,
-                contentState: fillTypeInfo.label,
-                origin: 'always_open_fill',
-                decisionStage: fillStage,
-                alwaysOpenFill: true,
-                scoreInfo: fillScoreInfo,
-                typeInfo: fillTypeInfo,
-                metrics: fillMetrics,
-                reasons: fillReasons,
-                isUninteresting: false
-            });
-
-            itemCounter++;
-            var fillItem = {
-                id: buildItemId(t, fillStart, fillEnd, itemCounter),
-                trackIndex: t,
-                trackName: getTrackName(trackInfos, t),
-                trackColor: null,
-                laneIndex: t,
-                start: round(fillStart, 4),
-                end: round(fillEnd, 4),
-                durationMs: Math.max(1, Math.round(fillDur * 1000)),
-                decisionState: fillModel.decisionState,
-                selected: fillModel.decisionState === 'keep' || fillModel.decisionState === 'filled_gap',
-                score: fillScoreInfo.score,
-                scoreLabel: fillScoreInfo.label,
-                reasons: fillReasons,
-                suppressionReason: fillModel.suppressionReason,
-                sourceClipIndex: null,
-                mediaPath: getTrackPath(trackInfos, t),
-                sourceStartSec: round(fillStart, 4),
-                sourceEndSec: round(fillEnd, 4),
-                decisionStage: fillStage,
-                origin: 'always_open_fill',
-                alwaysOpenFill: true,
-                overlapInfo: fillMetrics.overlapInfo,
-                metrics: fillMetrics.values,
-                evidenceMetrics: fillModel.evidenceMetrics,
-                decision: fillModel.decision,
-                classification: fillModel.classification,
-                explainability: fillModel.explainability,
-                contentState: fillModel.contentState,
-                quality: fillModel.quality,
-                provenance: fillModel.provenance,
-                stateModel: fillModel.stateModel
-            };
 
             items.push(fillItem);
             laneIdBuckets[t].push(fillItem.id);
@@ -494,7 +275,9 @@ function buildCutPreview(ctx) {
         items: items,
         lanes: lanes,
         summary: summary,
-        stateTimelineByTrack: stateTimelineByTrack
+        stateTimelineByTrack: stateTimelineByTrack,
+        policyVersion: PREVIEW_POLICY_VERSION,
+        metricsVersion: SNIPPET_METRICS_VERSION
     };
 }
 
@@ -594,6 +377,107 @@ function buildConsolidatedPreviewSpans(trackSegs, options) {
     return out;
 }
 
+function buildPreviewItem(ctx) {
+    ctx = ctx || {};
+
+    var trackIndex = Math.max(0, parseInt(ctx.trackIndex, 10) || 0);
+    var startSec = parseNum(ctx.startSec, 0);
+    var endSec = parseNum(ctx.endSec, startSec);
+    var durationSec = Math.max(0, endSec - startSec);
+    var decisionContext = ctx.decisionContext || {};
+    var alwaysOpenFill = !!ctx.alwaysOpenFill;
+    var alwaysOpenFillRatio = Math.max(0, parseNum(ctx.alwaysOpenFillRatio, 0));
+    var origin = ctx.origin || (alwaysOpenFill ? 'always_open_fill' : 'analysis_active');
+    var params = ctx.params || {};
+
+    var metrics = buildEvidenceMetrics({
+        trackIndex: trackIndex,
+        start: startSec,
+        end: endSec,
+        frameDurSec: ctx.frameDurSec,
+        thresholdDb: getTrackThresholdDb(ctx.trackInfos || [], trackIndex),
+        rmsProfiles: ctx.rmsProfiles || [],
+        rawRmsProfiles: ctx.rawRmsProfiles || [],
+        spectralResults: ctx.spectralResults || [],
+        laughterResults: ctx.laughterResults || [],
+        gateSnapshots: ctx.gateSnapshots || [],
+        overlapActiveMaps: ctx.overlapActiveMaps || [],
+        mergedSegmentCount: ctx.mergedSegmentCount,
+        maxMergedGapSec: ctx.maxMergedGapSec,
+        params: params
+    });
+
+    var decision = evaluatePreviewDecision({
+        metrics: metrics.values,
+        keepCoverage: decisionContext.keepCoverage,
+        keptSourceRatio: decisionContext.keptSourceRatio,
+        sourceSuppressedCoverage: decisionContext.sourceSuppressedCoverage,
+        sourceActiveCoverage: decisionContext.sourceActiveCoverage,
+        durationSec: durationSec,
+        alwaysOpenFill: alwaysOpenFill,
+        params: params
+    });
+
+    applyDecisionMetrics(metrics, decision, {
+        keptSourceRatio: decisionContext.keptSourceRatio,
+        alwaysOpenFillRatio: alwaysOpenFillRatio
+    });
+
+    var decisionState = decision.decisionState;
+    var stage = decision.stage;
+    var typeInfo = decision.typeInfo;
+    var scoreInfo = decision.scoreInfo;
+    var reasons = decision.reasons;
+    var model = buildSegmentModel({
+        decisionState: decisionState,
+        contentState: typeInfo.label,
+        origin: origin,
+        decisionStage: stage,
+        alwaysOpenFill: alwaysOpenFill || decisionState === 'filled_gap',
+        scoreInfo: scoreInfo,
+        typeInfo: typeInfo,
+        metrics: metrics,
+        reasons: reasons,
+        isUninteresting: false
+    });
+
+    return {
+        id: buildItemId(trackIndex, startSec, endSec, ctx.itemCounter),
+        trackIndex: trackIndex,
+        trackName: getTrackName(ctx.trackInfos || [], trackIndex),
+        trackColor: null,
+        laneIndex: trackIndex,
+        start: round(startSec, 4),
+        end: round(endSec, 4),
+        durationMs: Math.max(1, Math.round(durationSec * 1000)),
+        decisionState: model.decisionState,
+        selected: model.decisionState === 'keep' || model.decisionState === 'filled_gap',
+        score: scoreInfo.score,
+        scoreLabel: scoreInfo.label,
+        reasons: reasons,
+        suppressionReason: model.suppressionReason,
+        sourceClipIndex: null,
+        mediaPath: getTrackPath(ctx.trackInfos || [], trackIndex),
+        sourceStartSec: round(startSec, 4),
+        sourceEndSec: round(endSec, 4),
+        decisionStage: stage,
+        decisionPolicyVersion: PREVIEW_POLICY_VERSION,
+        decisionMetricsVersion: SNIPPET_METRICS_VERSION,
+        origin: origin,
+        alwaysOpenFill: alwaysOpenFill || decisionState === 'filled_gap',
+        overlapInfo: metrics.overlapInfo,
+        metrics: metrics.values,
+        evidenceMetrics: model.evidenceMetrics,
+        decision: model.decision,
+        classification: model.classification,
+        explainability: model.explainability,
+        contentState: model.contentState,
+        quality: model.quality,
+        provenance: model.provenance,
+        stateModel: model.stateModel
+    };
+}
+
 function applyDecisionMetrics(metrics, decision, extras) {
     metrics = metrics || { values: {} };
     metrics.values = metrics.values || {};
@@ -605,9 +489,16 @@ function applyDecisionMetrics(metrics, decision, extras) {
     metrics.values.keptSourceRatio = round(parseNum(extras.keptSourceRatio, 0), 3);
     metrics.values.keepLikelihood = round(parseNum(decision.keepLikelihood, 0), 3);
     metrics.values.suppressLikelihood = round(parseNum(decision.suppressLikelihood, 0), 3);
+    metrics.values.reviewLikelihood = round(parseNum(decision.reviewLikelihood, 0), 3);
     metrics.values.decisionMargin = round(parseNum(decision.margin, 0), 3);
+    metrics.values.corridorDecisionMargin = round(parseNum(decision.corridorDecisionMargin, parseNum(decision.margin, 0)), 3);
+    metrics.values.corridorClassMargin = round(parseNum(decision.corridorClassMargin, parseNum(metrics.values.classMargin, 0)), 3);
+    metrics.values.corridorCombinedMargin = round(parseNum(decision.corridorCombinedMargin, 0), 3);
+    metrics.values.uncertaintyScore = round(parseNum(decision.uncertaintyScore, 0), 3);
+    metrics.values.hardReviewCorridor = decision.hardReviewCorridor ? 1 : 0;
+    metrics.values.uncertaintyBleedGate = decision.uncertaintyBleedGate ? 1 : 0;
     metrics.values.bleedHighConfidence = decision.bleedHighConfidence ? 1 : 0;
-    metrics.values.postprocessPenalty = round(parseNum(decision.postprocessPenalty, metrics.values.postprocessPenalty), 3);
+    metrics.values.decisionPenalty = round(parseNum(decision.decisionPenalty, 0), 3);
     metrics.values.alwaysOpenFill = alwaysOpenFill;
     metrics.values.alwaysOpenFillRatio = round(alwaysOpenFillRatio, 3);
     return metrics;

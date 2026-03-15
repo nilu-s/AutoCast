@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 var path = require('path');
 var cutPreviewBuilder = require('../cut_preview_builder');
@@ -34,6 +34,7 @@ describe('Cut Preview Builder - Fill Review under Bleed', function () {
             totalDurationSec: 1.3,
             frameDurationMs: 10,
             rmsProfiles: [lowTrack, loudTrack],
+            rawRmsProfiles: [lowTrack, loudTrack],
             spectralResults: [{ confidence: lowSpectral }, { confidence: highSpectral }],
             laughterResults: [{ confidence: previewUtils.makeFilledArray(frameCount, 0.06) }, { confidence: previewUtils.makeFilledArray(frameCount, 0.08) }],
             gateSnapshots: [

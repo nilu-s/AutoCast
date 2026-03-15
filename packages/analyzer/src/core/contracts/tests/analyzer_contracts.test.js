@@ -1,6 +1,8 @@
 'use strict';
 
+var path = require('path');
 var analyzerContracts = require('../analyzer_contracts');
+var fixtures = require(path.join(__dirname, '..', '..', '..', 'tests', 'helpers', 'analyzer_contract_test_fixtures'));
 
 describe('Analyzer Contracts', function () {
     it('should normalize empty track entries to null', function () {
@@ -56,12 +58,7 @@ describe('Analyzer Contracts', function () {
     });
 
     it('should validate required analyze result shape', function () {
-        analyzerContracts.assertAnalyzeResult({
-            tracks: [],
-            segments: [],
-            alignment: {},
-            waveform: {}
-        });
+        analyzerContracts.assertAnalyzeResult(fixtures.makeValidAnalyzeResult());
     });
 
     it('should reject invalid analyze result shape', function () {
@@ -71,6 +68,22 @@ describe('Analyzer Contracts', function () {
                 segments: []
             });
         }, 'Expected missing alignment and waveform to throw');
+    });
+
+    it('should reject analyze result with out-of-range preview metric', function () {
+        var result = fixtures.makeValidAnalyzeResult();
+        result.cutPreview.items[0].metrics.overlapTrust = 1.5;
+        assertThrows(function () {
+            analyzerContracts.assertAnalyzeResult(result);
+        }, 'Expected out-of-range overlapTrust to throw');
+    });
+
+    it('should reject previewModel version mismatch', function () {
+        var result = fixtures.makeValidAnalyzeResult();
+        result.previewModel.metricsVersion = 'preview-metrics.v1';
+        assertThrows(function () {
+            analyzerContracts.assertAnalyzeResult(result);
+        }, 'Expected preview model version mismatch to throw');
     });
 
     it('should validate quick gain result shape', function () {

@@ -23,6 +23,7 @@ function runFinalizeStage(ctx) {
     var progress = ctx.progress || function () { };
 
     progress(80, 'Building cut output...');
+    assertRawRmsProfiles(rawRmsProfiles, rmsProfiles);
 
     progress(90, 'Building waveform preview...');
     var waveform = generateWaveformPreview(rawRmsProfiles, totalDurationSec, params);
@@ -55,6 +56,10 @@ function runFinalizeStage(ctx) {
         tracks: trackInfos,
         segments: resolvedSegments,
         cutPreview: cutPreview,
+        previewModel: {
+            policyVersion: (cutPreview && cutPreview.policyVersion) || null,
+            metricsVersion: (cutPreview && cutPreview.metricsVersion) || null
+        },
         trackStateTimeline: cutPreview && cutPreview.stateTimelineByTrack ? cutPreview.stateTimelineByTrack : [],
         waveform: waveform,
         alignment: alignment,
@@ -81,6 +86,18 @@ function runFinalizeStage(ctx) {
         waveform: waveform,
         cutPreview: cutPreview
     };
+}
+
+function assertRawRmsProfiles(rawRmsProfiles, rmsProfiles) {
+    var normalized = Array.isArray(rmsProfiles) ? rmsProfiles : [];
+    if (!Array.isArray(rawRmsProfiles) || rawRmsProfiles.length < normalized.length) {
+        throw new Error('Finalize stage requires rawRmsProfiles for every RMS track.');
+    }
+    for (var i = 0; i < normalized.length; i++) {
+        if (!rawRmsProfiles[i] || typeof rawRmsProfiles[i].length !== 'number') {
+            throw new Error('Finalize stage missing raw RMS profile for track ' + i + '.');
+        }
+    }
 }
 
 function generateWaveformPreview(rmsProfiles, totalDurationSec, params) {

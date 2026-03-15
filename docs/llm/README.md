@@ -23,8 +23,27 @@ Diese Unterlagen helfen bei drei Fragen:
 - Immer zuerst den betroffenen Einstiegspfad identifizieren (Panel, Analyzer, Contracts).
 - Nur die fuer die Aufgabe relevanten Dateien anfassen.
 - Bei Struktur- oder Refactor-Aenderungen die Guardrails strikt einhalten.
-- Legacy bevorzugt abbauen: neuen Zielansatz klar umsetzen, keine unnötigen Hybridpfade.
+- Legacy aktiv abbauen: neuer Zielansatz wird der echte Runtime-Pfad.
 - Vor Abschluss immer die Repo-Checks ausfuehren.
+
+## Legacy-Policy (hart)
+
+- Standardannahme: der neue Ansatz ersetzt den alten Ansatz.
+- Kein Hybridbetrieb ohne belegbaren Zwang.
+- Nicht zulaessig ohne konkreten Grund:
+  - Dual-Paths (alt + neu) im produktiven Pfad
+  - "just in case"-Fallbacks, Adapter oder Kompatibilitaetsschichten
+  - neue APIs, die intern weiter die Altlogik treiben
+- Altlogik darf nur bleiben, wenn mindestens ein konkreter Grund vorliegt:
+  - aktiv genutzte externe Schnittstelle
+  - echte interne Abhaengigkeit
+  - explizit geforderte Rueckwaertskompatibilitaet
+- Bei Zielkonflikt gilt: schlankere und klarere Architektur vor Kompatibilitaetsvorsicht,
+  solange kein belegter Zwang dagegen spricht.
+- Pflicht pro relevanter Aenderung:
+  - alte Komplexitaet reduzieren
+  - Sonderfaelle reduzieren
+  - Altlogik ersetzen statt umschichten
 
 ## Test-Governance (verbindlich)
 

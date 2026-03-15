@@ -26,7 +26,6 @@
     function normalizeDecisionState(value, alwaysOpenFill, isUninteresting) {
         var state = value ? String(value) : 'review';
         if (isUninteresting) return 'uninteresting';
-        if (alwaysOpenFill && state === 'keep') return 'filled_gap';
         if (state === 'keep' || state === 'review' || state === 'suppress' || state === 'filled_gap' || state === 'uninteresting') {
             return state;
         }
@@ -36,7 +35,6 @@
     function normalizeContentState(value, alwaysOpenFill, isUninteresting) {
         var state = value ? String(value) : 'unknown';
         if (isUninteresting) return 'noise';
-        if (alwaysOpenFill && state === 'unknown') return 'silence_fill';
         if (state === 'speech' || state === 'laughter' || state === 'mixed' || state === 'bleed' ||
             state === 'noise' || state === 'silence_fill' || state === 'unknown') {
             return state;
@@ -116,17 +114,17 @@
         );
 
         var decisionState = normalizeDecisionState(
-            raw && raw.decisionState ? raw.decisionState
-                : (rawDecision && rawDecision.decisionState ? rawDecision.decisionState
-                    : (rawStateModel && rawStateModel.decisionState ? rawStateModel.decisionState : 'review')),
+            rawStateModel && rawStateModel.decisionState ? rawStateModel.decisionState
+                : (raw && raw.decisionState ? raw.decisionState
+                    : (rawDecision && rawDecision.decisionState ? rawDecision.decisionState : 'review')),
             rawAlwaysOpenFill,
             rawUninteresting
         );
 
         var contentState = normalizeContentState(
-            raw && raw.contentState ? raw.contentState
-                : (rawClassification && rawClassification.contentState ? rawClassification.contentState
-                    : (rawStateModel && rawStateModel.contentState ? rawStateModel.contentState : 'unknown')),
+            rawStateModel && rawStateModel.contentState ? rawStateModel.contentState
+                : (raw && raw.contentState ? raw.contentState
+                    : (rawClassification && rawClassification.contentState ? rawClassification.contentState : 'unknown')),
             rawAlwaysOpenFill,
             rawUninteresting
         );
@@ -209,8 +207,14 @@
                 spectralConfidence: 0,
                 laughterConfidence: 0,
                 overlapPenalty: 0,
+                overlapTrust: 0,
                 speakerLockScore: 0,
-                postprocessPenalty: 0,
+                speakerMatchP10: 0,
+                speakerMatchMedian: 0,
+                voiceFrameRatio: 0,
+                inSnippetDropoutRatio: 1,
+                mergeHeterogeneity: 0,
+                decisionPenalty: 0,
                 speechEvidence: 0,
                 laughterEvidence: 0,
                 bleedEvidence: 0,
@@ -220,7 +224,14 @@
                 keptSourceRatio: 0,
                 keepLikelihood: 0,
                 suppressLikelihood: 0,
+                reviewLikelihood: 0,
                 decisionMargin: 0,
+                corridorDecisionMargin: 0,
+                corridorClassMargin: 0,
+                corridorCombinedMargin: 0,
+                uncertaintyScore: 0,
+                hardReviewCorridor: 0,
+                uncertaintyBleedGate: 0,
                 bleedHighConfidence: 0,
                 alwaysOpenFill: 0,
                 mergedSegmentCount: 1,

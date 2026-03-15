@@ -143,6 +143,7 @@
         html += buildMetricCardFn('Kept Src', round(parseNum(metrics.keptSourceRatio, 0), 3));
         html += buildMetricCardFn('Keep Likelihood', round(parseNum(metrics.keepLikelihood, 0), 3));
         html += buildMetricCardFn('Suppress Likelihood', round(parseNum(metrics.suppressLikelihood, 0), 3));
+        html += buildMetricCardFn('Review Likelihood', round(parseNum(metrics.reviewLikelihood, 0), 3));
         html += buildMetricCardFn('Decision Margin', round(parseNum(metrics.decisionMargin, 0), 3));
         html += buildMetricCardFn('Bleed Safety Gate', parseNum(metrics.bleedHighConfidence, 0) >= 0.5 ? 'on' : 'off');
         html += buildMetricCardFn('Always-Open Fill', parseNum(metrics.alwaysOpenFill, 0) >= 0.5 ? 'yes' : 'no');
@@ -158,7 +159,7 @@
         html += buildMetricCardFn('Laughter Conf', round(parseNum(metrics.laughterConfidence, 0), 3));
         html += buildMetricCardFn('Overlap', round(parseNum(metrics.overlapPenalty, 0), 3));
         html += buildMetricCardFn('Speaker Lock', round(parseNum(metrics.speakerLockScore, 0), 3));
-        html += buildMetricCardFn('Postprocess', round(parseNum(metrics.postprocessPenalty, 0), 3));
+        html += buildMetricCardFn('Decision Penalty', round(parseNum(metrics.decisionPenalty, 0), 3));
         html += buildMetricCardFn('Merged Snippets', Math.max(1, Math.round(parseNum(metrics.mergedSegmentCount, 1))));
         html += buildMetricCardFn('Max Merge Gap', round(parseNum(metrics.maxMergedGapMs, 0), 0) + ' ms');
         html += '  </div>';

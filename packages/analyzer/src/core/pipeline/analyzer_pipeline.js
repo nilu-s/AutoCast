@@ -147,6 +147,7 @@ function analyze(trackPaths, userParams, progressCallback) {
     });
 
     resolvedSegments = postprocessResult.resolvedSegments;
+    assertRawRmsProfilesAvailable(rawRmsProfiles, rmsProfiles);
 
     var finalizeResult = finalizeStage.runFinalizeStage({
         params: params,
@@ -174,6 +175,18 @@ function analyze(trackPaths, userParams, progressCallback) {
     });
 
     return result;
+}
+
+function assertRawRmsProfilesAvailable(rawRmsProfiles, rmsProfiles) {
+    var normalized = Array.isArray(rmsProfiles) ? rmsProfiles : [];
+    if (!Array.isArray(rawRmsProfiles) || rawRmsProfiles.length < normalized.length) {
+        throw new Error('Analyzer pipeline requires rawRmsProfiles for preview finalize stage.');
+    }
+    for (var i = 0; i < normalized.length; i++) {
+        if (!rawRmsProfiles[i] || typeof rawRmsProfiles[i].length !== 'number') {
+            throw new Error('Analyzer pipeline missing raw RMS profile for track ' + i + '.');
+        }
+    }
 }
 
 module.exports = {

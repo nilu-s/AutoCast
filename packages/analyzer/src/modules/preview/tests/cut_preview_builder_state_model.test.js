@@ -35,6 +35,7 @@ describe('Cut Preview Builder - State Model', function () {
         assert(item.stateModel.contentState, 'Expected contentState in state model');
         assert(item.stateModel.quality && item.stateModel.quality.score0to100 !== undefined, 'Expected quality object');
         assert(item.stateModel.provenance && item.stateModel.provenance.stage, 'Expected provenance');
+        assert(item.decision && item.decision.decisionState === 'filled_gap', 'Expected native decisionState emission');
         assert(item.metrics && item.metrics.keepLikelihood !== undefined, 'Expected decision metrics');
     });
 });

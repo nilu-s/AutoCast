@@ -1,4 +1,4 @@
-﻿# Engineering Guardrails
+# Engineering Guardrails
 
 Diese Regeln gelten fuer Architekturpflege, Refactors und Strukturarbeiten.
 
@@ -12,21 +12,51 @@ Diese Regeln gelten fuer Architekturpflege, Refactors und Strukturarbeiten.
    - `packages/analyzer/src/analyzer.js`
 5. Vor Abschluss immer `npm run check`.
 
+## Legacy-Ersatzregel (hart, verbindlich)
+
+1. Standardfall: neuer Ansatz ersetzt alten Ansatz vollstaendig.
+2. Nicht erlaubte Standardmuster:
+   - parallele Runtime-Pfade fuer alt und neu
+   - Fallbacks/Adapter nur zur stillen Legacy-Mitnahme
+   - neue APIs, die intern weiter die Altlogik orchestrieren
+3. Altlogik darf nur bleiben bei nachweisbarem Zwang:
+   - aktiv genutzte externe Schnittstelle
+   - echte interne Abhaengigkeit
+   - explizit geforderte Rueckwaertskompatibilitaet
+4. Entscheidungsregel:
+   - Option A: Altlogik teilweise weitertragen, damit mehr Altfaelle laufen.
+   - Option B: neuen Ansatz sauber als Primarpfad umsetzen und Code vereinfachen.
+   - Vorgabe: standardmaessig Option B waehlen, ausser ein konkreter Zwang verlangt A.
+
+## Nachweispflicht fuer verbleibende Legacy
+
+Wenn Legacy bestehen bleibt, muss kurz dokumentiert werden:
+
+1. Was bleibt konkret bestehen (Datei/Modul/Pfad)?
+2. Welcher belegbare Zwang erzwingt das?
+3. Warum ist Entfernung jetzt nicht sicher moeglich?
+4. Wie ist die Stelle isoliert, damit sie die neue Kernlogik nicht aufblaeht?
+
+Ohne diese Nachweise gilt die Legacy-Stelle als Abloesekandidat und soll entfernt werden.
+
+## Pflicht-Check pro relevanter Aenderung
+
+Vor Finalisierung aktiv pruefen:
+
+1. Macht die Aenderung den Code schlanker?
+2. Entfernt sie alte Komplexitaet?
+3. Reduziert sie Sonderfaelle?
+4. Ersetzt sie Altlogik wirklich?
+5. Oder baut sie nur eine neue Schicht um alte Logik?
+
+Wenn Punkt 5 zutrifft, Ansatz anpassen und vereinfachen.
+
 ## Empfohlene Refactor-Reihenfolge
 
 1. Zuerst pure Helper extrahieren.
 2. Dann State/Komponenten trennen.
 3. Danach Orchestrierung vereinfachen.
 4. Abschliessend Tests nachziehen/haerten.
-
-## Legacy-Abbau (verbindlich)
-
-1. Bei neuen Loesungsansaetzen standardmaessig den alten Ansatz ersetzen, nicht parallel mitfuehren.
-2. Alte Heuristiken/Fallbacks entfernen, wenn sie durch den neuen Ansatz fachlich ersetzt sind.
-3. Rueckwaertskompatibilitaet nur dort halten, wo ein konkreter Runtime- oder API-Vertrag sie erzwingt.
-4. Falls Legacy verbleibt:
-   - Grund benennen (z. B. externer Vertrag, Migrationsfenster)
-   - isoliert halten (kein Durchmischen in neuer Kernlogik)
 
 ## Strukturregeln
 

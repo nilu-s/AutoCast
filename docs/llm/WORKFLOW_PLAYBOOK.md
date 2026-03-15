@@ -6,25 +6,56 @@ Konkrete "wenn Aufgabe X, dann Dateien Y" Regeln fuer LLM-Assistenten.
 
 Bei jedem Workflow gilt:
 - Nur die benoetigten Dateien anfassen.
-- Zielstruktur bevorzugen: neue Loesung klar implementieren, nicht stillschweigend alte Pfade mitziehen.
+- Zielstruktur bevorzugen: neue Loesung klar implementieren.
+- Keine stille Legacy-Mitnahme.
 - Danach immer `npm run check`.
 - Neue Tests in das passende `suite_manifest.js` eintragen.
 
-## Migrationsregel (Legacy -> Zielansatz)
+## Abloseregel (Legacy -> Zielansatz, verbindlich)
 
-Bei Refactors/Neudesigns immer explizit trennen:
+Bei Refactors und Neudesigns immer in dieser Reihenfolge arbeiten:
 
-1. Muss bleiben:
-   - vertraglich/runtime-kritische Teile.
-2. Kann entfernt werden:
-   - ersetzte Heuristiken, temporaere Fallbacks, doppelte Pfade.
-3. Historisch gewachsen:
-   - nur behalten, wenn ein konkreter Grund besteht.
+1. Zielansatz benennen:
+   - Was ist der neue Primarpfad zur Laufzeit?
+2. Altlogik markieren:
+   - Welche Heuristiken/Fallbacks/Umwege werden dadurch ersetzt?
+3. Altlogik klassifizieren:
+   - muss bleiben
+   - kann entfernt werden
+   - wird nur aus Gewohnheit mitgetragen
+4. Umsetzung:
+   - neuer Ansatz wird der echte Runtime-Pfad
+   - keine parallelen Altpfade ohne belegbaren Zwang
+5. Bereinigung:
+   - ersetzte Logik entfernen, stilllegen oder klar isolieren
+6. Abschluss:
+   - `npm run check`
 
-Ergebnisvorgabe:
-- Keine unnoetigen Dual-Paths.
-- Keine "just in case"-Kompatibilitaet.
-- Verbleibende Legacy-Stellen kurz begruenden.
+## Nicht zulaessig ohne belegbaren Zwang
+
+- Dual-Paths fuer alt und neu im Produktivpfad.
+- "just in case"-Kompatibilitaet ohne konkrete Abhaengigkeit.
+- neue Abstraktionsschichten, die nur Legacy kaschieren.
+- neue oeffentliche APIs, die intern weiterhin Altlogik fahren.
+
+## Zulaessige Gruende fuer verbleibende Legacy
+
+- Aktiv genutzte externe Schnittstelle.
+- Echte interne Abhaengigkeit.
+- Explizit geforderte Rueckwaertskompatibilitaet.
+
+Ohne einen dieser Gruende gilt Altlogik als Abloesekandidat und soll entfernt werden.
+
+## Pflicht-Output im Abschlussbericht
+
+Bei relevanten Architektur-/Flow-Aenderungen immer explizit nennen:
+
+1. Welche Altlogik entfernt wurde.
+2. Welche Altlogik nicht mehr zentral verwendet wird.
+3. Welche Uebergangsschichten vermieden wurden.
+4. Wo der Code schlanker geworden ist.
+5. Welche Legacy-Teile aus zwingenden Gruenden bleiben mussten.
+6. Warum diese verbleibenden Teile noch existieren.
 
 ## Test-Workflow (systematisch)
 
