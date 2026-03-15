@@ -993,17 +993,17 @@ html, body {
 }
 
 .cp-snippet.cp-state-review {
-    background: linear-gradient(180deg, rgba(255, 193, 7, 0.55), rgba(255, 160, 0, 0.60));
-    border-color: rgba(255, 214, 79, 0.85);
+    background: linear-gradient(180deg, rgba(255, 193, 7, 0.70), rgba(255, 160, 0, 0.75));
+    border-color: rgba(255, 214, 79, 0.95);
     color: #fff;
-    opacity: 0.9;
+    opacity: 1;
 }
 
 .cp-snippet.cp-state-suppress {
-    background: linear-gradient(180deg, rgba(92, 97, 106, 0.15), rgba(54, 58, 66, 0.20));
-    border-color: rgba(115, 121, 131, 0.25);
+    background: linear-gradient(180deg, rgba(92, 97, 106, 0.35), rgba(54, 58, 66, 0.40));
+    border-color: rgba(115, 121, 131, 0.55);
     color: #b1b6bf;
-    opacity: 0.5;
+    opacity: 1;
 }
 
 .cp-snippet.cp-content-speech:not(.cp-state-review),
