@@ -774,6 +774,8 @@ html, body {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .panel.is-review-mode .cut-preview-layout {
@@ -1271,16 +1273,17 @@ html, body {
     border-radius: var(--radius-sm);
     background: #141414;
     padding: 6px 7px;
-    max-height: 420px;
-    min-height: 260px;
-    overflow: auto;
+    overflow: hidden;
     opacity: 0.9;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .panel.is-review-mode .cut-preview-inspector {
     flex: 1;
     min-height: 0;
     max-height: none;
+    overflow-y: auto;
 }
 
 .panel.is-review-mode .cut-preview-review-list {
@@ -1327,9 +1330,10 @@ html, body {
 
 .cp-inspector-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(80px, 1fr));
+    grid-template-columns: repeat(2, 1fr);
     gap: 4px 6px;
     margin-bottom: 4px;
+    width: 100%;
 }
 
 .cp-inspector-row {
