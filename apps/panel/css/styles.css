@@ -1107,8 +1107,7 @@ html, body {
 }
 
 .cp-snippet.cp-unselected {
-    opacity: 0.24;
-    filter: saturate(0.6);
+    filter: saturate(0.8);
     border-style: solid;
 }
 
