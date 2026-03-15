@@ -150,13 +150,13 @@
         tabReview: $('tabReview'),
         btnLoadTracks: $('btnLoadTracks'),
         btnAnalyze: $('btnAnalyze'),
-        btnApply: $('btnApply'),
         btnReset: $('btnReset'),
         paramThreshold: $('paramThreshold'),
         valThreshold: $('valThreshold'),
         paramMinPeak: $('paramMinPeak'),
         valMinPeak: $('valMinPeak'),
-        modeIndicator: $('modeIndicator')
+        modeIndicator: $('modeIndicator'),
+        btnBackToSetup: $('btnBackToSetup')
     };
 
     function bindSlider(slider, display, suffix) {
@@ -437,6 +437,14 @@
                 setStatus('success', 'Review mode');
             }
         }
+    }
+
+    getPanelUiRuntimeFeature().bindTabNavigation(els, onTabClick);
+
+    if (els.btnBackToSetup) {
+        els.btnBackToSetup.addEventListener('click', function() {
+            onTabClick('setup');
+        });
     }
 
     requireFeature(PanelInitFeature, 'AutoCastPanelInitFeature').initializePanel({

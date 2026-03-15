@@ -246,9 +246,6 @@
         if (els.btnAnalyze) {
             els.btnAnalyze.addEventListener('click', options.analyzeTracks);
         }
-        if (els.btnApply) {
-            els.btnApply.addEventListener('click', options.applyEdits);
-        }
         if (els.cutPreviewApplyBtn) {
             els.cutPreviewApplyBtn.addEventListener('click', options.applyEdits);
         }

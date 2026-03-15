@@ -11,7 +11,6 @@ describe('Panel Interaction Feature - Primary Actions', function () {
         var els = {
             btnLoadTracks: vmHelpers.makeEventTarget(),
             btnAnalyze: vmHelpers.makeEventTarget(),
-            btnApply: vmHelpers.makeEventTarget(),
             cutPreviewApplyBtn: vmHelpers.makeEventTarget(),
             btnReset: vmHelpers.makeEventTarget()
         };
@@ -33,13 +32,12 @@ describe('Panel Interaction Feature - Primary Actions', function () {
 
         els.btnLoadTracks.listeners.click();
         els.btnAnalyze.listeners.click();
-        els.btnApply.listeners.click();
         els.cutPreviewApplyBtn.listeners.click();
         els.btnReset.listeners.click();
 
         assert(calls.load === 1, 'Expected load handler once');
         assert(calls.analyze === 1, 'Expected analyze handler once');
-        assert(calls.apply === 2, 'Expected apply handler from two buttons');
+        assert(calls.apply === 1, 'Expected apply handler from one button');
         assert(calls.reset === 1, 'Expected reset handler once');
     });
 });

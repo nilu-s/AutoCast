@@ -125,7 +125,6 @@
             options.hideCutPreview();
         }
 
-        if (els.btnApply) els.btnApply.disabled = true;
         if (els.btnReset) els.btnReset.disabled = true;
         if (els.btnAnalyze) els.btnAnalyze.disabled = false;
 

@@ -62,7 +62,6 @@
             options.renderTracks();
         }
 
-        if (els.btnApply) els.btnApply.disabled = true;
         if (els.cutPreviewApplyBtn) els.cutPreviewApplyBtn.disabled = true;
         if (els.btnReset) els.btnReset.disabled = true;
 
