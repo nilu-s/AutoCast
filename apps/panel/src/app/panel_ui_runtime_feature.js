@@ -63,7 +63,7 @@
         if (setupTab) {
             setupTab.classList.toggle('is-active', mode === 'setup');
             setupTab.classList.toggle('is-completed', mode === 'review');
-            setupTab.disabled = mode === 'review';
+            setupTab.disabled = false;
         }
         if (reviewTab) {
             reviewTab.classList.toggle('is-active', mode === 'review');

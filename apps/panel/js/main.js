@@ -439,8 +439,6 @@
         }
     }
 
-    getPanelUiRuntimeFeature().bindTabNavigation(els, onTabClick);
-
     requireFeature(PanelInitFeature, 'AutoCastPanelInitFeature').initializePanel({
         interactionFeature: requireFeature(CutPreviewInteractionFeature, 'AutoCastPanelInteractionFeature'),
         bindPrimaryActionsOptions: {
