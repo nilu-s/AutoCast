@@ -1052,6 +1052,53 @@ html, body {
 .cp-snippet.cp-content-noise:not(.cp-state-review) { border-color: rgba(139, 165, 188, 0.74); }
 .cp-snippet.cp-content-unknown { border-color: rgba(152, 161, 174, 0.70); }
 
+/* Content type indicator dot for review snippets */
+.cp-snippet.cp-state-review::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    z-index: 2;
+}
+
+.cp-snippet.cp-state-review.cp-content-speech::before {
+    background: #4cc97b;
+    box-shadow: 0 0 2px rgba(0,0,0,0.5);
+}
+
+.cp-snippet.cp-state-review.cp-content-mixed::before {
+    background: #2ecebc;
+    box-shadow: 0 0 2px rgba(0,0,0,0.5);
+}
+
+.cp-snippet.cp-state-review.cp-content-laughter::before {
+    background: #be7dff;
+    box-shadow: 0 0 2px rgba(0,0,0,0.5);
+}
+
+.cp-snippet.cp-state-review.cp-content-silence_fill::before {
+    background: #f8b851;
+    box-shadow: 0 0 2px rgba(0,0,0,0.5);
+}
+
+.cp-snippet.cp-state-review.cp-content-bleed::before {
+    background: #f47676;
+    box-shadow: 0 0 2px rgba(0,0,0,0.5);
+}
+
+.cp-snippet.cp-state-review.cp-content-noise::before {
+    background: #8f88a2;
+    box-shadow: 0 0 2px rgba(0,0,0,0.5);
+}
+
+.cp-snippet.cp-state-review.cp-content-unknown::before {
+    background: #7c8591;
+    box-shadow: 0 0 2px rgba(0,0,0,0.5);
+}
+
 .cp-snippet.cp-selected {
     border-color: rgba(101, 221, 137, 0.98) !important;
     box-shadow: inset 0 0 0 1px rgba(66, 190, 108, 0.55);
