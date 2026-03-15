@@ -1616,14 +1616,14 @@ html, body {
     flex-shrink: 0;
 }
 
-/* --- Cut Preview Review Section --- */
+/* --- Cut Preview Review Section - Compact --- */
 .cpr-section {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 12px;
+    gap: 6px;
+    padding: 8px;
     background: var(--bg-surface);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-sm);
     border: 1px solid var(--border);
 }
 
@@ -1631,12 +1631,12 @@ html, body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding-bottom: 8px;
+    padding-bottom: 4px;
     border-bottom: 1px solid var(--border);
 }
 
 .cpr-title {
-    font-size: var(--font-size-lg);
+    font-size: var(--font-size-sm);
     font-weight: 600;
     color: var(--text-primary);
     margin: 0;
@@ -1644,12 +1644,12 @@ html, body {
 
 .cpr-stats {
     display: flex;
-    gap: 12px;
+    gap: 6px;
 }
 
 .cpr-stat {
-    font-size: var(--font-size-xs);
-    padding: 3px 8px;
+    font-size: 9px;
+    padding: 2px 5px;
     border-radius: var(--radius-sm);
     font-weight: 500;
 }
@@ -1672,11 +1672,11 @@ html, body {
 .cpr-group {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 4px;
 }
 
 .cpr-group-title {
-    font-size: var(--font-size-sm);
+    font-size: 9px;
     font-weight: 600;
     color: var(--text-secondary);
     margin: 0;
@@ -1699,14 +1699,14 @@ html, body {
 .cpr-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 3px;
 }
 
 .cpr-item {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 10px 12px;
+    gap: 3px;
+    padding: 5px 8px;
     background: var(--bg-input);
     border-radius: var(--radius-sm);
     border: 1px solid var(--border);
@@ -1721,8 +1721,8 @@ html, body {
 
 .cpr-item-active {
     border-color: var(--accent);
-    box-shadow: 0 0 0 2px var(--accent-focus), 0 0 12px rgba(55, 141, 237, 0.3);
-    background: rgba(55, 141, 237, 0.08);
+    box-shadow: 0 0 0 1px var(--accent-focus);
+    background: rgba(55, 141, 237, 0.05);
 }
 
 .cpr-item-active .cpr-item-track {
@@ -1736,12 +1736,12 @@ html, body {
 }
 
 .cpr-item-included {
-    border-left: 3px solid var(--success);
+    border-left: 2px solid var(--success);
 }
 
 .cpr-item-excluded {
     opacity: 0.6;
-    border-left: 3px solid var(--danger);
+    border-left: 2px solid var(--danger);
 }
 
 .cpr-item-excluded .cpr-item-header,
@@ -1752,32 +1752,32 @@ html, body {
 .cpr-item-header {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 5px;
     flex-wrap: wrap;
 }
 
 .cpr-item-icon {
-    font-size: 14px;
+    font-size: 11px;
     line-height: 1;
 }
 
 .cpr-item-track {
-    font-size: var(--font-size-xs);
+    font-size: 9px;
     font-weight: 600;
     color: var(--accent);
     background: var(--accent-focus);
-    padding: 2px 6px;
+    padding: 1px 4px;
     border-radius: var(--radius-sm);
 }
 
 .cpr-item-time {
-    font-size: var(--font-size-xs);
+    font-size: 9px;
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
 }
 
 .cpr-item-duration {
-    font-size: var(--font-size-xs);
+    font-size: 9px;
     color: var(--text-muted);
     margin-left: auto;
 }
@@ -1785,14 +1785,14 @@ html, body {
 .cpr-item-meta {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 5px;
     flex-wrap: wrap;
 }
 
 .cpr-item-score {
-    font-size: var(--font-size-xs);
+    font-size: 9px;
     font-weight: 600;
-    padding: 2px 6px;
+    padding: 1px 4px;
     border-radius: var(--radius-sm);
 }
 
@@ -1812,22 +1812,24 @@ html, body {
 }
 
 .cpr-item-content {
-    font-size: var(--font-size-xs);
+    font-size: 9px;
     color: var(--text-secondary);
     text-transform: capitalize;
 }
 
 .cpr-item-actions {
     display: flex;
-    gap: 8px;
-    margin-top: 4px;
+    gap: 5px;
+    margin-top: 2px;
 }
 
 .cpr-btn-include,
 .cpr-btn-exclude {
     flex: 1;
-    font-size: var(--font-size-xs);
-    padding: 6px 10px;
+    font-size: 9px;
+    padding: 3px 6px;
+    height: 20px;
+    min-height: 20px;
 }
 
 .cpr-btn-active {
@@ -1842,15 +1844,15 @@ html, body {
 }
 
 .cpr-empty {
-    padding: 24px;
+    padding: 12px;
     text-align: center;
     color: var(--text-muted);
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-xs);
 }
 
 /* --- Track Grouping in Review List --- */
 .cpr-track-section {
-    margin-bottom: 8px;
+    margin-bottom: 4px;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     background: rgba(255, 255, 255, 0.02);
@@ -1860,8 +1862,8 @@ html, body {
 .cpr-track-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
+    gap: 6px;
+    padding: 5px 8px;
     background: rgba(255, 255, 255, 0.04);
     border-bottom: 1px solid var(--border);
     cursor: pointer;
@@ -1873,35 +1875,35 @@ html, body {
 }
 
 .cpr-track-color {
-    width: 4px;
-    height: 16px;
+    width: 3px;
+    height: 12px;
     border-radius: 2px;
     flex-shrink: 0;
 }
 
 .cpr-track-name {
-    font-size: var(--font-size-sm);
+    font-size: 10px;
     font-weight: 600;
     color: var(--text-primary);
     flex: 1;
 }
 
 .cpr-track-count {
-    font-size: var(--font-size-xs);
+    font-size: 9px;
     color: var(--text-muted);
     background: var(--bg-input);
-    padding: 2px 6px;
-    border-radius: 10px;
-    min-width: 24px;
+    padding: 1px 4px;
+    border-radius: 8px;
+    min-width: 16px;
     text-align: center;
 }
 
 .cpr-track-items {
-    padding: 6px;
+    padding: 4px;
 }
 
 .cpr-track-items .cpr-item {
-    margin-bottom: 4px;
+    margin-bottom: 3px;
 }
 
 .cpr-track-items .cpr-item:last-child {
@@ -1910,9 +1912,9 @@ html, body {
 
 .cpr-item-decision-icon {
     margin-left: auto;
-    font-size: 10px;
-    width: 18px;
-    height: 18px;
+    font-size: 8px;
+    width: 14px;
+    height: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1923,35 +1925,35 @@ html, body {
 /* --- Track Tabs --- */
 .cpr-track-tabs {
     display: flex;
-    gap: 4px;
-    padding: 8px;
+    gap: 2px;
+    padding: 4px;
     background: var(--bg-input);
     border-radius: var(--radius-sm);
-    margin-bottom: 8px;
+    margin-bottom: 4px;
     overflow-x: auto;
     scrollbar-width: thin;
 }
 
 .cpr-track-tabs::-webkit-scrollbar {
-    height: 4px;
+    height: 2px;
 }
 
 .cpr-track-tabs::-webkit-scrollbar-thumb {
     background: var(--border);
-    border-radius: 2px;
+    border-radius: 1px;
 }
 
 .cpr-track-tab {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
+    gap: 3px;
+    padding: 3px 6px;
     background: transparent;
     border: 1px solid transparent;
     border-radius: var(--radius-sm);
     color: var(--text-secondary);
     font-family: var(--font);
-    font-size: var(--font-size-xs);
+    font-size: 9px;
     font-weight: 500;
     cursor: pointer;
     transition: all var(--transition);
@@ -1970,17 +1972,17 @@ html, body {
 }
 
 .cpr-tab-name {
-    max-width: 100px;
+    max-width: 60px;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
 .cpr-tab-badge {
-    font-size: 9px;
-    padding: 2px 5px;
+    font-size: 8px;
+    padding: 1px 3px;
     background: var(--bg-surface);
-    border-radius: 8px;
-    min-width: 16px;
+    border-radius: 4px;
+    min-width: 12px;
     text-align: center;
 }
 
@@ -1990,17 +1992,17 @@ html, body {
 }
 
 .cpr-tab-pending-indicator {
-    font-size: 10px;
+    font-size: 8px;
 }
 
 .cpr-track-content {
-    padding: 4px;
-    max-height: 400px;
+    padding: 2px;
+    max-height: 200px;
     overflow-y: auto;
 }
 
 .cpr-track-content .cpr-item {
-    margin-bottom: 6px;
+    margin-bottom: 3px;
 }
 
 .cpr-track-content .cpr-item:last-child {
