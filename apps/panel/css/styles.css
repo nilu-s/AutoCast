@@ -1847,3 +1847,75 @@ html, body {
     color: var(--text-muted);
     font-size: var(--font-size-md);
 }
+
+/* --- Track Grouping in Review List --- */
+.cpr-track-section {
+    margin-bottom: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.02);
+    overflow: hidden;
+}
+
+.cpr-track-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: rgba(255, 255, 255, 0.04);
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background var(--transition);
+}
+
+.cpr-track-header:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.cpr-track-color {
+    width: 4px;
+    height: 16px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.cpr-track-name {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+    flex: 1;
+}
+
+.cpr-track-count {
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+    background: var(--bg-input);
+    padding: 2px 6px;
+    border-radius: 10px;
+    min-width: 24px;
+    text-align: center;
+}
+
+.cpr-track-items {
+    padding: 6px;
+}
+
+.cpr-track-items .cpr-item {
+    margin-bottom: 4px;
+}
+
+.cpr-track-items .cpr-item:last-child {
+    margin-bottom: 0;
+}
+
+.cpr-item-decision-icon {
+    margin-left: auto;
+    font-size: 10px;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--bg-input);
+}

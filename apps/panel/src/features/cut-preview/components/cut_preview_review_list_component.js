@@ -58,6 +58,12 @@
         return 'cpr-score-weak';
     }
 
+    function getDecisionIcon(decision) {
+        if (decision === 'included') return '✓';
+        if (decision === 'excluded') return '✕';
+        return '⏳';
+    }
+
     function buildReviewItemHtml(item, isActive) {
         var escapeHtml = defaultEscapeHtml;
         var formatClock = defaultFormatClock;
@@ -67,13 +73,14 @@
         var decisionClass = item.decision ? ' cpr-item-' + item.decision : '';
         var scoreClass = getScoreClass(item.score);
         var icon = getContentStateIcon(item.contentState);
+        var decisionIcon = getDecisionIcon(item.decision);
         
         var html = '<div class="cpr-item' + activeClass + decisionClass + '" data-review-item-id="' + escapeHtml(item.id) + '">';
         html += '  <div class="cpr-item-header">';
         html += '    <span class="cpr-item-icon">' + icon + '</span>';
-        html += '    <span class="cpr-item-track">' + escapeHtml(item.trackName) + '</span>';
         html += '    <span class="cpr-item-time">' + escapeHtml(formatClock(item.start)) + ' - ' + escapeHtml(formatClock(item.end)) + '</span>';
         html += '    <span class="cpr-item-duration">' + escapeHtml(formatDuration(item.durationMs)) + '</span>';
+        html += '    <span class="cpr-item-decision-icon">' + decisionIcon + '</span>';
         html += '  </div>';
         html += '  <div class="cpr-item-meta">';
         html += '    <span class="cpr-item-score ' + scoreClass + '">' + escapeHtml(String(item.score)) + ' (' + escapeHtml(item.scoreLabel) + ')</span>';
@@ -91,6 +98,58 @@
             html += '    <button type="button" class="btn btn-sm btn-danger cpr-btn-exclude" data-review-exclude="' + escapeHtml(item.id) + '" title="Exclude from final cut">✕ Exclude</button>';
         } else {
             html += '    <button type="button" class="btn btn-sm btn-secondary cpr-btn-exclude cpr-btn-inactive" data-review-exclude="' + escapeHtml(item.id) + '" title="Already excluded">✕ Excluded</button>';
+        }
+        
+        html += '  </div>';
+        html += '</div>';
+        
+        return html;
+    }
+
+    function groupItemsByTrack(items) {
+        var groups = {};
+        for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            var trackKey = item.trackIndex + '_' + (item.trackName || 'Track ' + (item.trackIndex + 1));
+            if (!groups[trackKey]) {
+                groups[trackKey] = {
+                    trackIndex: item.trackIndex,
+                    trackName: item.trackName || 'Track ' + (item.trackIndex + 1),
+                    items: []
+                };
+            }
+            groups[trackKey].items.push(item);
+        }
+        
+        // Convert to array and sort by track index
+        var result = [];
+        for (var key in groups) {
+            if (Object.prototype.hasOwnProperty.call(groups, key)) {
+                result.push(groups[key]);
+            }
+        }
+        result.sort(function(a, b) {
+            return a.trackIndex - b.trackIndex;
+        });
+        return result;
+    }
+
+    function buildTrackSection(trackGroup, activeSnippetId) {
+        var escapeHtml = defaultEscapeHtml;
+        var items = trackGroup.items || [];
+        
+        if (items.length === 0) return '';
+        
+        var html = '<div class="cpr-track-section">';
+        html += '  <div class="cpr-track-header">';
+        html += '    <span class="cpr-track-color" style="background-color: var(--accent);"></span>';
+        html += '    <span class="cpr-track-name">' + escapeHtml(trackGroup.trackName) + '</span>';
+        html += '    <span class="cpr-track-count">' + items.length + '</span>';
+        html += '  </div>';
+        html += '  <div class="cpr-track-items">';
+        
+        for (var i = 0; i < items.length; i++) {
+            html += buildReviewItemHtml(items[i], items[i].id === activeSnippetId);
         }
         
         html += '  </div>';
@@ -125,39 +184,36 @@
         html += '  </div>';
         html += '</div>';
         
-        // Pending items
+        // Pending items grouped by track
         if (pending.length > 0) {
+            var pendingByTrack = groupItemsByTrack(pending);
             html += '<div class="cpr-group cpr-group-pending">';
-            html += '  <h4 class="cpr-group-title">Pending Review</h4>';
-            html += '  <div class="cpr-list">';
-            for (var i = 0; i < pending.length; i++) {
-                html += buildReviewItemHtml(pending[i], pending[i].id === activeSnippetId);
+            html += '  <h4 class="cpr-group-title">⏳ Pending Review</h4>';
+            for (var i = 0; i < pendingByTrack.length; i++) {
+                html += buildTrackSection(pendingByTrack[i], activeSnippetId);
             }
-            html += '  </div>';
             html += '</div>';
         }
         
-        // Included items
+        // Included items grouped by track
         if (included.length > 0) {
+            var includedByTrack = groupItemsByTrack(included);
             html += '<div class="cpr-group cpr-group-included">';
-            html += '  <h4 class="cpr-group-title">Included</h4>';
-            html += '  <div class="cpr-list">';
-            for (var j = 0; j < included.length; j++) {
-                html += buildReviewItemHtml(included[j], included[j].id === activeSnippetId);
+            html += '  <h4 class="cpr-group-title">✓ Included</h4>';
+            for (var j = 0; j < includedByTrack.length; j++) {
+                html += buildTrackSection(includedByTrack[j], activeSnippetId);
             }
-            html += '  </div>';
             html += '</div>';
         }
         
-        // Excluded items
+        // Excluded items grouped by track
         if (excluded.length > 0) {
+            var excludedByTrack = groupItemsByTrack(excluded);
             html += '<div class="cpr-group cpr-group-excluded">';
-            html += '  <h4 class="cpr-group-title">Excluded</h4>';
-            html += '  <div class="cpr-list">';
-            for (var k = 0; k < excluded.length; k++) {
-                html += buildReviewItemHtml(excluded[k], excluded[k].id === activeSnippetId);
+            html += '  <h4 class="cpr-group-title">✕ Excluded</h4>';
+            for (var k = 0; k < excludedByTrack.length; k++) {
+                html += buildTrackSection(excludedByTrack[k], activeSnippetId);
             }
-            html += '  </div>';
             html += '</div>';
         }
         
@@ -168,6 +224,7 @@
 
     root.AutoCastPanelCutPreviewReviewListComponent = {
         buildReviewSectionHtml: buildReviewSectionHtml,
-        buildReviewItemHtml: buildReviewItemHtml
+        buildReviewItemHtml: buildReviewItemHtml,
+        groupItemsByTrack: groupItemsByTrack
     };
 })(this);
