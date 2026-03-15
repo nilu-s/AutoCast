@@ -993,10 +993,10 @@ html, body {
 }
 
 .cp-snippet.cp-state-review {
-    background: linear-gradient(180deg, rgba(162, 168, 178, 0.45), rgba(120, 126, 136, 0.50));
-    border-color: rgba(181, 188, 198, 0.75);
-    color: #e6e9ee;
-    opacity: 0.8;
+    background: linear-gradient(180deg, rgba(255, 193, 7, 0.55), rgba(255, 160, 0, 0.60));
+    border-color: rgba(255, 214, 79, 0.85);
+    color: #fff;
+    opacity: 0.9;
 }
 
 .cp-snippet.cp-state-suppress {
@@ -1163,7 +1163,7 @@ html, body {
 }
 
 .cp-nav-snippet.cp-state-review {
-    background: rgba(163, 170, 180, 0.45);
+    background: rgba(255, 193, 7, 0.55);
 }
 
 .cp-nav-snippet.cp-state-suppress {
@@ -1661,8 +1661,8 @@ html, body {
 }
 
 .cpr-stat-pending {
-    background: rgba(230, 138, 0, 0.15);
-    color: var(--warning);
+    background: rgba(255, 193, 7, 0.2);
+    color: #ffc107;
 }
 
 .cpr-stat-included {
@@ -2081,7 +2081,8 @@ html, body {
 }
 
 .cpr-decision-pending {
-    border-top: 2px solid var(--warning);
+    border-top: 2px solid #ffc107;
+    background: rgba(255, 193, 7, 0.08);
 }
 
 .cpr-card-header {
