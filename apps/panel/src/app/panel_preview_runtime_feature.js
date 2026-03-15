@@ -367,6 +367,11 @@
                 state.reviewState = initializeReviewState();
             }
 
+            // Ensure active track index is initialized
+            if (state.reviewActiveTrackIndex === undefined) {
+                state.reviewActiveTrackIndex = 0;
+            }
+
             reviewFeature.renderReviewSection(
                 els.cutPreviewReviewList,
                 state.cutPreview,
@@ -375,7 +380,7 @@
                 {
                     reviewListComponent: reviewListComponent,
                     reviewStore: getReviewStore(),
-                    expandedState: state.reviewExpandedState || { groups: {}, tracks: {} }
+                    activeTrackIndex: state.reviewActiveTrackIndex
                 }
             );
         }
@@ -394,6 +399,10 @@
                     // Force immediate render to show highlight
                     requestCutPreviewRender(true);
                     renderReviewSection();
+                },
+                onSelectTrack: function(trackIndex) {
+                    // Track selection handled in state
+                    state.reviewActiveTrackIndex = trackIndex;
                 },
                 onIncludeSnippet: function(itemId) {
                     if (!state.reviewState) state.reviewState = initializeReviewState();

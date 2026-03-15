@@ -106,26 +106,36 @@
         return html;
     }
 
-    function groupItemsByTrack(items) {
-        var groups = {};
-        for (var i = 0; i < items.length; i++) {
-            var item = items[i];
-            var trackKey = item.trackIndex + '_' + (item.trackName || 'Track ' + (item.trackIndex + 1));
-            if (!groups[trackKey]) {
-                groups[trackKey] = {
+    function getTracksWithReviewItems(reviewItems) {
+        var tracks = {};
+        var allItems = (reviewItems.pending || [])
+            .concat(reviewItems.included || [])
+            .concat(reviewItems.excluded || []);
+        
+        for (var i = 0; i < allItems.length; i++) {
+            var item = allItems[i];
+            var trackKey = item.trackIndex;
+            if (!tracks[trackKey]) {
+                tracks[trackKey] = {
                     trackIndex: item.trackIndex,
                     trackName: item.trackName || 'Track ' + (item.trackIndex + 1),
-                    items: []
+                    items: [],
+                    pendingCount: 0,
+                    includedCount: 0,
+                    excludedCount: 0
                 };
             }
-            groups[trackKey].items.push(item);
+            tracks[trackKey].items.push(item);
+            if (item.decision === 'included') tracks[trackKey].includedCount++;
+            else if (item.decision === 'excluded') tracks[trackKey].excludedCount++;
+            else tracks[trackKey].pendingCount++;
         }
         
         // Convert to array and sort by track index
         var result = [];
-        for (var key in groups) {
-            if (Object.prototype.hasOwnProperty.call(groups, key)) {
-                result.push(groups[key]);
+        for (var key in tracks) {
+            if (Object.prototype.hasOwnProperty.call(tracks, key)) {
+                result.push(tracks[key]);
             }
         }
         result.sort(function(a, b) {
@@ -134,39 +144,34 @@
         return result;
     }
 
-    function buildTrackSection(trackGroup, activeSnippetId, isExpanded) {
+    function buildTrackTabs(tracks, activeTrackIndex) {
         var escapeHtml = defaultEscapeHtml;
-        var items = trackGroup.items || [];
+        var html = '<div class="cpr-track-tabs">';
         
-        if (items.length === 0) return '';
-        
-        var expanded = isExpanded !== false; // default to expanded
-        var sectionId = 'cpr-track-' + trackGroup.trackIndex;
-        var toggleIcon = expanded ? '▼' : '▶';
-        
-        var html = '<div class="cpr-track-section" data-track-section="' + trackGroup.trackIndex + '">';
-        html += '  <div class="cpr-track-header" data-track-toggle="' + trackGroup.trackIndex + '">';
-        html += '    <span class="cpr-track-toggle-icon">' + toggleIcon + '</span>';
-        html += '    <span class="cpr-track-color" style="background-color: var(--accent);"></span>';
-        html += '    <span class="cpr-track-name">' + escapeHtml(trackGroup.trackName) + '</span>';
-        html += '    <span class="cpr-track-count">' + items.length + '</span>';
-        html += '  </div>';
-        html += '  <div class="cpr-track-items' + (expanded ? '' : ' is-collapsed') + '" data-track-items="' + trackGroup.trackIndex + '">';
-        
-        for (var i = 0; i < items.length; i++) {
-            html += buildReviewItemHtml(items[i], items[i].id === activeSnippetId);
+        for (var i = 0; i < tracks.length; i++) {
+            var track = tracks[i];
+            var isActive = track.trackIndex === activeTrackIndex;
+            var activeClass = isActive ? ' is-active' : '';
+            var hasPending = track.pendingCount > 0;
+            var badgeClass = hasPending ? ' cpr-tab-badge-pending' : '';
+            
+            html += '<button type="button" class="cpr-track-tab' + activeClass + '" data-review-track="' + track.trackIndex + '">';
+            html += '<span class="cpr-tab-name">' + escapeHtml(track.trackName) + '</span>';
+            html += '<span class="cpr-tab-badge' + badgeClass + '">' + track.items.length + '</span>';
+            if (hasPending) {
+                html += '<span class="cpr-tab-pending-indicator">⏳</span>';
+            }
+            html += '</button>';
         }
         
-        html += '  </div>';
         html += '</div>';
-        
         return html;
     }
 
     function buildReviewSectionHtml(input) {
         var reviewItems = input && input.reviewItems ? input.reviewItems : { pending: [], included: [], excluded: [] };
         var activeSnippetId = input && input.activeSnippetId ? input.activeSnippetId : null;
-        var expandedState = input && input.expandedState ? input.expandedState : { groups: {}, tracks: {} };
+        var activeTrackIndex = input && input.activeTrackIndex !== undefined ? input.activeTrackIndex : 0;
         var escapeHtml = defaultEscapeHtml;
         
         var pending = reviewItems.pending || [];
@@ -178,12 +183,12 @@
             return '<div class="cpr-empty">No review items available.</div>';
         }
         
-        // Default expanded states
-        var groupExpanded = {
-            pending: expandedState.groups && expandedState.groups.pending !== undefined ? expandedState.groups.pending : true,
-            included: expandedState.groups && expandedState.groups.included !== undefined ? expandedState.groups.included : false,
-            excluded: expandedState.groups && expandedState.groups.excluded !== undefined ? expandedState.groups.excluded : false
-        };
+        var tracks = getTracksWithReviewItems(reviewItems);
+        
+        // Ensure active track index is valid
+        if (activeTrackIndex >= tracks.length) {
+            activeTrackIndex = 0;
+        }
         
         var html = '<div class="cpr-section">';
         
@@ -197,56 +202,35 @@
         html += '  </div>';
         html += '</div>';
         
-        // Pending items grouped by track
-        if (pending.length > 0) {
-            var pendingByTrack = groupItemsByTrack(pending);
-            var isPendingExpanded = groupExpanded.pending;
-            html += '<div class="cpr-group cpr-group-pending">';
-            html += '  <h4 class="cpr-group-title' + (isPendingExpanded ? '' : ' is-collapsed') + '" data-group-toggle="pending">⏳ Pending Review <span class="cpr-group-toggle-icon">▼</span></h4>';
-            html += '  <div class="cpr-group-content' + (isPendingExpanded ? '' : ' is-collapsed') + '" data-group-content="pending">';
-            for (var i = 0; i < pendingByTrack.length; i++) {
-                var trackExpanded = expandedState.tracks && expandedState.tracks[pendingByTrack[i].trackIndex] !== undefined 
-                    ? expandedState.tracks[pendingByTrack[i].trackIndex] 
-                    : true;
-                html += buildTrackSection(pendingByTrack[i], activeSnippetId, trackExpanded);
-            }
-            html += '  </div>';
-            html += '</div>';
-        }
+        // Track tabs
+        html += buildTrackTabs(tracks, activeTrackIndex);
         
-        // Included items grouped by track
-        if (included.length > 0) {
-            var includedByTrack = groupItemsByTrack(included);
-            var isIncludedExpanded = groupExpanded.included;
-            html += '<div class="cpr-group cpr-group-included">';
-            html += '  <h4 class="cpr-group-title' + (isIncludedExpanded ? '' : ' is-collapsed') + '" data-group-toggle="included">✓ Included <span class="cpr-group-toggle-icon">▼</span></h4>';
-            html += '  <div class="cpr-group-content' + (isIncludedExpanded ? '' : ' is-collapsed') + '" data-group-content="included">';
-            for (var j = 0; j < includedByTrack.length; j++) {
-                var trackExpandedIncl = expandedState.tracks && expandedState.tracks[includedByTrack[j].trackIndex] !== undefined 
-                    ? expandedState.tracks[includedByTrack[j].trackIndex] 
-                    : false;
-                html += buildTrackSection(includedByTrack[j], activeSnippetId, trackExpandedIncl);
+        // Items for active track
+        html += '<div class="cpr-track-content">';
+        var activeTrack = tracks[activeTrackIndex];
+        if (activeTrack && activeTrack.items.length > 0) {
+            // Group by decision status within the track
+            var trackPending = [];
+            var trackIncluded = [];
+            var trackExcluded = [];
+            
+            for (var i = 0; i < activeTrack.items.length; i++) {
+                var item = activeTrack.items[i];
+                if (item.decision === 'included') trackIncluded.push(item);
+                else if (item.decision === 'excluded') trackExcluded.push(item);
+                else trackPending.push(item);
             }
-            html += '  </div>';
-            html += '</div>';
-        }
-        
-        // Excluded items grouped by track
-        if (excluded.length > 0) {
-            var excludedByTrack = groupItemsByTrack(excluded);
-            var isExcludedExpanded = groupExpanded.excluded;
-            html += '<div class="cpr-group cpr-group-excluded">';
-            html += '  <h4 class="cpr-group-title' + (isExcludedExpanded ? '' : ' is-collapsed') + '" data-group-toggle="excluded">✕ Excluded <span class="cpr-group-toggle-icon">▼</span></h4>';
-            html += '  <div class="cpr-group-content' + (isExcludedExpanded ? '' : ' is-collapsed') + '" data-group-content="excluded">';
-            for (var k = 0; k < excludedByTrack.length; k++) {
-                var trackExpandedExcl = expandedState.tracks && expandedState.tracks[excludedByTrack[k].trackIndex] !== undefined 
-                    ? expandedState.tracks[excludedByTrack[k].trackIndex] 
-                    : false;
-                html += buildTrackSection(excludedByTrack[k], activeSnippetId, trackExpandedExcl);
+            
+            // Show pending first, then included, then excluded
+            var orderedItems = trackPending.concat(trackIncluded).concat(trackExcluded);
+            
+            for (var j = 0; j < orderedItems.length; j++) {
+                html += buildReviewItemHtml(orderedItems[j], orderedItems[j].id === activeSnippetId);
             }
-            html += '  </div>';
-            html += '</div>';
+        } else {
+            html += '<div class="cpr-empty">No review items for this track.</div>';
         }
+        html += '</div>';
         
         html += '</div>';
         
@@ -256,6 +240,6 @@
     root.AutoCastPanelCutPreviewReviewListComponent = {
         buildReviewSectionHtml: buildReviewSectionHtml,
         buildReviewItemHtml: buildReviewItemHtml,
-        groupItemsByTrack: groupItemsByTrack
+        getTracksWithReviewItems: getTracksWithReviewItems
     };
 })(this);

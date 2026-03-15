@@ -1920,58 +1920,89 @@ html, body {
     background: var(--bg-input);
 }
 
-/* --- Collapsible Groups --- */
-.cpr-group-title {
-    cursor: pointer;
-    user-select: none;
+/* --- Track Tabs --- */
+.cpr-track-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 8px;
+    background: var(--bg-input);
+    border-radius: var(--radius-sm);
+    margin-bottom: 8px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.cpr-track-tabs::-webkit-scrollbar {
+    height: 4px;
+}
+
+.cpr-track-tabs::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 2px;
+}
+
+.cpr-track-tab {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 6px;
+    padding: 6px 12px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-family: var(--font);
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition);
+    white-space: nowrap;
 }
 
-.cpr-group-toggle-icon {
-    font-size: 10px;
-    transition: transform 0.2s ease;
+.cpr-track-tab:hover {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
 }
 
-.cpr-group-title.is-collapsed .cpr-group-toggle-icon {
-    transform: rotate(-90deg);
+.cpr-track-tab.is-active {
+    background: var(--accent-focus);
+    border-color: var(--accent);
+    color: var(--accent);
 }
 
-.cpr-group-content {
-    transition: max-height 0.3s ease, opacity 0.2s ease;
-    max-height: 2000px;
-    opacity: 1;
+.cpr-tab-name {
+    max-width: 100px;
     overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.cpr-group-content.is-collapsed {
-    max-height: 0;
-    opacity: 0;
-}
-
-/* --- Collapsible Track Sections --- */
-.cpr-track-toggle-icon {
-    font-size: 10px;
-    width: 16px;
+.cpr-tab-badge {
+    font-size: 9px;
+    padding: 2px 5px;
+    background: var(--bg-surface);
+    border-radius: 8px;
+    min-width: 16px;
     text-align: center;
-    transition: transform 0.2s ease;
-    color: var(--text-muted);
 }
 
-.cpr-track-header.is-collapsed .cpr-track-toggle-icon {
-    transform: rotate(-90deg);
+.cpr-tab-badge-pending {
+    background: rgba(230, 138, 0, 0.2);
+    color: var(--warning);
 }
 
-.cpr-track-items {
-    transition: max-height 0.3s ease, opacity 0.2s ease;
-    max-height: 1000px;
-    opacity: 1;
-    overflow: hidden;
+.cpr-tab-pending-indicator {
+    font-size: 10px;
 }
 
-.cpr-track-items.is-collapsed {
-    max-height: 0;
-    opacity: 0;
-    padding: 0;
+.cpr-track-content {
+    padding: 4px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.cpr-track-content .cpr-item {
+    margin-bottom: 6px;
+}
+
+.cpr-track-content .cpr-item:last-child {
+    margin-bottom: 0;
 }
