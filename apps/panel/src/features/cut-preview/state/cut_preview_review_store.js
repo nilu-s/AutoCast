@@ -54,7 +54,8 @@
         
         for (var i = 0; i < cutPreview.items.length; i++) {
             var item = cutPreview.items[i];
-            if (item.decisionState !== 'review') continue;
+            // Only show items that were originally in review state
+            if (item.decisionState !== 'review' && !state.reviewDecisions[item.id]) continue;
             
             var decision = state.reviewDecisions[item.id];
             var enrichedItem = {
@@ -94,15 +95,16 @@
         
         for (var i = 0; i < cutPreview.items.length; i++) {
             var item = cutPreview.items[i];
-            if (item.decisionState !== 'review') continue;
+            // Only apply to items that are in review or have a review decision
+            if (item.decisionState !== 'review' && !state.reviewDecisions[item.id]) continue;
             
             var decision = state.reviewDecisions[item.id];
             if (decision === 'included') {
                 item.selected = true;
-                item.decisionState = 'keep';
+                // Keep decisionState as 'review' so it stays in review list
             } else if (decision === 'excluded') {
                 item.selected = false;
-                item.decisionState = 'suppress';
+                // Keep decisionState as 'review' so it stays in review list
             }
         }
         
