@@ -340,6 +340,15 @@
                     if (item) {
                         state.reviewActiveTrackIndex = item.trackIndex;
                         renderReviewSection();
+                        // Scroll to the selected snippet in the review list
+                        setTimeout(function() {
+                            if (els.cutPreviewReviewList) {
+                                var snippetEl = els.cutPreviewReviewList.querySelector('[data-review-item-id="' + itemId + '"]');
+                                if (snippetEl) {
+                                    snippetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                }
+                            }
+                        }, 50);
                     }
                 }
             });
@@ -409,6 +418,15 @@
                     renderCutPreview();
                     // Also re-render review list to show active state
                     renderReviewSection();
+                    // Scroll to the selected snippet in the review list
+                    setTimeout(function() {
+                        if (els.cutPreviewReviewList) {
+                            var snippetEl = els.cutPreviewReviewList.querySelector('[data-review-item-id="' + itemId + '"]');
+                            if (snippetEl) {
+                                snippetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
+                        }
+                    }, 50);
                 },
                 onSelectTrack: function(trackIndex) {
                     // Track selection handled in state
