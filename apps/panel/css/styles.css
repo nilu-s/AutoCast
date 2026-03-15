@@ -1000,10 +1000,10 @@ html, body {
 }
 
 .cp-snippet.cp-state-suppress {
-    background: linear-gradient(180deg, rgba(92, 97, 106, 0.35), rgba(54, 58, 66, 0.40));
-    border-color: rgba(115, 121, 131, 0.55);
+    background: linear-gradient(180deg, rgba(92, 97, 106, 0.15), rgba(54, 58, 66, 0.20));
+    border-color: rgba(115, 121, 131, 0.25);
     color: #b1b6bf;
-    opacity: 1;
+    opacity: 0.3;
 }
 
 .cp-snippet.cp-content-speech:not(.cp-state-review),
