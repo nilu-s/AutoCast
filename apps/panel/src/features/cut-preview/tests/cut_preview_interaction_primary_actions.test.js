@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 var vmHelpers = require('../../../shared/tests/panel_test_vm_utils');
 
@@ -13,7 +13,6 @@ describe('Panel Interaction Feature - Primary Actions', function () {
             btnAnalyze: vmHelpers.makeEventTarget(),
             btnApply: vmHelpers.makeEventTarget(),
             cutPreviewApplyBtn: vmHelpers.makeEventTarget(),
-            cutPreviewBackBtn: vmHelpers.makeEventTarget(),
             btnReset: vmHelpers.makeEventTarget()
         };
 
@@ -21,9 +20,6 @@ describe('Panel Interaction Feature - Primary Actions', function () {
             load: 0,
             analyze: 0,
             apply: 0,
-            cancel: 0,
-            page: '',
-            status: '',
             reset: 0
         };
 
@@ -32,9 +28,6 @@ describe('Panel Interaction Feature - Primary Actions', function () {
             loadTracksFromHost: function () { calls.load++; },
             analyzeTracks: function () { calls.analyze++; },
             applyEdits: function () { calls.apply++; },
-            cancelPendingCutPreviewRender: function () { calls.cancel++; },
-            setPanelPageMode: function (mode) { calls.page = mode; },
-            setStatus: function (_type, text) { calls.status = text; },
             resetUI: function () { calls.reset++; }
         });
 
@@ -42,15 +35,11 @@ describe('Panel Interaction Feature - Primary Actions', function () {
         els.btnAnalyze.listeners.click();
         els.btnApply.listeners.click();
         els.cutPreviewApplyBtn.listeners.click();
-        els.cutPreviewBackBtn.listeners.click();
         els.btnReset.listeners.click();
 
         assert(calls.load === 1, 'Expected load handler once');
         assert(calls.analyze === 1, 'Expected analyze handler once');
         assert(calls.apply === 2, 'Expected apply handler from two buttons');
-        assert(calls.cancel === 1, 'Expected review cancel once');
-        assert(calls.page === 'setup', 'Expected setup page mode on back');
-        assert(calls.status === 'Review closed', 'Expected review closed status');
         assert(calls.reset === 1, 'Expected reset handler once');
     });
 });

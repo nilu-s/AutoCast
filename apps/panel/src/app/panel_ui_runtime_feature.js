@@ -52,6 +52,35 @@
         if (els.cutPreviewSection) {
             els.cutPreviewSection.style.display = reviewMode ? 'block' : 'none';
         }
+        updateTabNav(els, mode);
+    }
+
+    function updateTabNav(els, mode) {
+        if (!els.tabNav) return;
+        els.tabNav.style.display = 'flex';
+        var setupTab = els.tabSetup;
+        var reviewTab = els.tabReview;
+        if (setupTab) {
+            setupTab.classList.toggle('is-active', mode === 'setup');
+            setupTab.classList.toggle('is-completed', mode === 'review');
+            setupTab.disabled = mode === 'review';
+        }
+        if (reviewTab) {
+            reviewTab.classList.toggle('is-active', mode === 'review');
+            reviewTab.disabled = mode === 'setup';
+        }
+    }
+
+    function bindTabNavigation(els, onTabClick) {
+        if (!els.tabNav) return;
+        els.tabNav.addEventListener('click', function(evt) {
+            var btn = evt.target.closest('.tab-btn');
+            if (!btn || btn.disabled) return;
+            var tab = btn.getAttribute('data-tab');
+            if (tab && typeof onTabClick === 'function') {
+                onTabClick(tab);
+            }
+        });
     }
 
     function hideCutPreview(options) {
@@ -92,6 +121,7 @@
         setPanelPageMode: setPanelPageMode,
         hideCutPreview: hideCutPreview,
         updateModeIndicator: updateModeIndicator,
-        bindSlider: bindSlider
+        bindSlider: bindSlider,
+        bindTabNavigation: bindTabNavigation
     };
 })(this);

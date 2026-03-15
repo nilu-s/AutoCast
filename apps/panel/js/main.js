@@ -139,13 +139,15 @@
         cutPreviewTimeline: $('cutPreviewTimeline'),
         cutPreviewNavigator: $('cutPreviewNavigator'),
         cutPreviewInspector: $('cutPreviewInspector'),
-        cutPreviewBackBtn: $('cutPreviewBackBtn'),
         cutPreviewApplyBtn: $('cutPreviewApplyBtn'),
         cutPreviewZoom: $('cutPreviewZoom'),
         cutPreviewFitBtn: $('cutPreviewFitBtn'),
         cutPreviewZoomLabel: $('cutPreviewZoomLabel'),
         cutPreviewVolumeMaster: $('cutPreviewVolumeMaster'),
         cutPreviewVolumeMasterLabel: $('cutPreviewVolumeMasterLabel'),
+        tabNav: $('tabNav'),
+        tabSetup: $('tabSetup'),
+        tabReview: $('tabReview'),
         btnLoadTracks: $('btnLoadTracks'),
         btnAnalyze: $('btnAnalyze'),
         btnApply: $('btnApply'),
@@ -423,6 +425,21 @@
     function bindCutPreviewControls() {
         return previewRuntime.bindCutPreviewControls();
     }
+
+    function onTabClick(tab) {
+        if (tab === 'setup' && state.panelPageMode === 'review') {
+            cancelPendingCutPreviewRender();
+            setPanelPageMode('setup');
+            setStatus('idle', 'Review closed');
+        } else if (tab === 'review' && state.panelPageMode === 'setup') {
+            if (state.analysisResult) {
+                setPanelPageMode('review');
+                setStatus('success', 'Review mode');
+            }
+        }
+    }
+
+    getPanelUiRuntimeFeature().bindTabNavigation(els, onTabClick);
 
     requireFeature(PanelInitFeature, 'AutoCastPanelInitFeature').initializePanel({
         interactionFeature: requireFeature(CutPreviewInteractionFeature, 'AutoCastPanelInteractionFeature'),

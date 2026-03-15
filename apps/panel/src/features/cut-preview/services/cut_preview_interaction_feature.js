@@ -252,13 +252,7 @@
         if (els.cutPreviewApplyBtn) {
             els.cutPreviewApplyBtn.addEventListener('click', options.applyEdits);
         }
-        if (els.cutPreviewBackBtn) {
-            els.cutPreviewBackBtn.addEventListener('click', function () {
-                options.cancelPendingCutPreviewRender();
-                options.setPanelPageMode('setup');
-                options.setStatus('idle', 'Review closed');
-            });
-        }
+
         if (els.btnReset) {
             els.btnReset.addEventListener('click', options.resetUI);
         }

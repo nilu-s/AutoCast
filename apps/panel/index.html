@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AutoCast</title>
-    <link rel="stylesheet" href="css/styles.css?v=2">
+    <link rel="stylesheet" href="css/styles.css?v=3">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 
@@ -28,6 +28,19 @@
             </div>
         </header>
 
+        <!-- Tab Navigation -->
+        <nav id="tabNav" class="tab-nav" style="display: none;">
+            <button type="button" class="tab-btn" data-tab="setup" id="tabSetup">
+                <span class="tab-step">1</span>
+                <span class="tab-label">Setup</span>
+            </button>
+            <span class="tab-connector"></span>
+            <button type="button" class="tab-btn" data-tab="review" id="tabReview">
+                <span class="tab-step">2</span>
+                <span class="tab-label">Review</span>
+            </button>
+        </nav>
+
         <!-- Status Bar -->
         <div id="statusBar" class="status-bar status-idle">
             <span id="statusIcon" class="status-icon">&#9679;</span>
@@ -35,7 +48,7 @@
         </div>
 
         <!-- Main Content -->
-        <div class="content-wrapper">
+        <div class="content-wrapper" id="mainContent">
 
             <!-- Tracks -->
             <section id="tracksSection" class="section">
@@ -105,7 +118,6 @@
                     <div class="cut-preview-head-right">
                         <div id="cutPreviewMeta" class="cut-preview-meta"></div>
                         <div class="cut-preview-page-actions">
-                            <button id="cutPreviewBackBtn" class="btn btn-secondary btn-sm" type="button">Zurueck zu Setup</button>
                             <button id="cutPreviewApplyBtn" class="btn btn-accent btn-sm" type="button">Apply Edits</button>
                         </div>
                     </div>
@@ -185,7 +197,7 @@
     <script src="src/app/panel_controller.js?v=1"></script>
     <script src="src/app/panel_bootstrap.js?v=1"></script>
     <script src="src/app/panel_init_feature.js?v=1"></script>
-    <script src="src/app/panel_ui_runtime_feature.js?v=1"></script>
+    <script src="src/app/panel_ui_runtime_feature.js?v=2"></script>
     <script src="src/app/panel_flow_runtime_feature.js?v=1"></script>
     <script src="src/app/panel_state_runtime_feature.js?v=1"></script>
     <script src="src/app/panel_preview_runtime_feature.js?v=1"></script>
@@ -216,7 +228,7 @@
     <script src="src/features/apply-edits/services/apply_edits_runner_feature.js?v=1"></script>
     <script src="src/features/settings/state/settings_store.js?v=1"></script>
     <script src="src/features/settings/services/settings_feature.js?v=1"></script>
-    <script src="js/main.js?v=11"></script>
+    <script src="js/main.js?v=12"></script>
 </body>
 
 </html>

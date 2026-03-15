@@ -183,6 +183,99 @@ html, body {
     50% { opacity: 0.4; transform: scale(0.9); }
 }
 
+/* --- Tab Navigation --- */
+.tab-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    padding: 12px 16px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border);
+}
+
+.tab-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-family: var(--font);
+    font-size: var(--font-size-md);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition);
+    border-radius: var(--radius-sm);
+}
+
+.tab-btn:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--bg-surface-hover);
+}
+
+.tab-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.tab-btn.is-active {
+    color: var(--accent);
+    background: var(--accent-focus);
+}
+
+.tab-btn.is-completed {
+    color: var(--success);
+}
+
+.tab-btn.is-completed .tab-step {
+    background: var(--success);
+    color: #fff;
+}
+
+.tab-step {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--bg-input);
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    transition: all var(--transition);
+}
+
+.tab-btn.is-active .tab-step {
+    background: var(--accent);
+    color: #fff;
+}
+
+.tab-connector {
+    width: 40px;
+    height: 2px;
+    background: var(--border);
+    margin: 0 8px;
+    position: relative;
+}
+
+.tab-connector::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    width: 0;
+    background: var(--success);
+    transition: width 0.3s ease;
+}
+
+.panel.is-review-mode .tab-connector::after {
+    width: 100%;
+}
+
 /* --- Sections --- */
 .section {
     background: var(--bg-surface);
