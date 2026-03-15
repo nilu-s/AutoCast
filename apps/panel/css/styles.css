@@ -1721,7 +1721,18 @@ html, body {
 
 .cpr-item-active {
     border-color: var(--accent);
-    box-shadow: 0 0 0 2px var(--accent-focus);
+    box-shadow: 0 0 0 2px var(--accent-focus), 0 0 12px rgba(55, 141, 237, 0.3);
+    background: rgba(55, 141, 237, 0.08);
+}
+
+.cpr-item-active .cpr-item-track {
+    background: var(--accent);
+    color: white;
+}
+
+.cpr-item-active .cpr-item-time {
+    color: var(--accent);
+    font-weight: 600;
 }
 
 .cpr-item-included {

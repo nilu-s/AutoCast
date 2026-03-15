@@ -388,8 +388,10 @@
                 state: state,
                 reviewState: state.reviewState,
                 onSelectSnippet: function(itemId) {
+                    // Set active snippet and ensure it's visible in viewport
                     setActiveSnippet(itemId, true);
-                    renderCutPreview();
+                    // Force immediate render to show highlight
+                    requestCutPreviewRender(true);
                     renderReviewSection();
                 },
                 onIncludeSnippet: function(itemId) {
