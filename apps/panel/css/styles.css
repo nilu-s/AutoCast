@@ -744,6 +744,9 @@ html, body {
 
 .cut-preview-main {
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .cut-preview-side {
@@ -759,8 +762,12 @@ html, body {
 
 .cut-preview-review-list {
     flex-shrink: 0;
-    max-height: 50%;
+    max-height: 280px;
     overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: #141414;
+    padding: 8px;
 }
 
 .cut-preview-inspector {
