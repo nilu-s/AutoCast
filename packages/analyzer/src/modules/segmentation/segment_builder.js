@@ -12,9 +12,9 @@
  */
 var SEGMENT_DEFAULTS = {
     /** Minimum segment duration in ms. Shorter segments are discarded. */
-    minSegmentMs: 300,
+    minSegmentMs: 260,
     /** Minimum gap between segments in ms. Closer gaps are merged. */
-    minGapMs: 250,
+    minGapMs: 180,
     /** Frame duration in ms (must match RMS calculator) */
     frameDurationMs: 10
 };

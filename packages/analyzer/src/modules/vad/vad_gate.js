@@ -16,7 +16,7 @@ var VAD_DEFAULTS = {
     /** Threshold in dB above estimated floor. Higher = stricter gate. */
     thresholdAboveFloorDb: 9,
     /** Absolute minimum threshold in dBFS. */
-    absoluteThresholdDb: -56,
+    absoluteThresholdDb: -50,
     /** Attack in frames (10 ms default frame -> 2 = 20 ms). */
     attackFrames: 2,
     /** Release in frames. */
