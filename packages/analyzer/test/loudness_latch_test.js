@@ -407,7 +407,234 @@ function testThresholds() {
     return allPassed;
 }
 
+/**
+ * Phase 16: Window-Coverage Tests
+ * Testet Window-Logik: latchWindowMs, minCumulativeActiveMs, minCoveragePercent
+ */
+function testWindowCoverage() {
+    var tests = [];
+    var allPassed = true;
+
+    // Test 1: latchWindowMs - Sliding window size
+    (function() {
+        var frameCount = 300; // 6000ms at 20ms/frame
+        var vadResults = new Array(frameCount).fill(0);
+        var rmsProfiles = [];
+        
+        // Pattern: 2 seconds active, 2 seconds silent, 2 seconds active
+        // With 4000ms window, should maintain coverage
+        for (var i = 0; i < 100; i++) rmsProfiles.push(-45); // 2000ms active
+        for (var i = 100; i < 200; i++) rmsProfiles.push(-60); // 2000ms silent
+        for (var i = 200; i < 300; i++) rmsProfiles.push(-45); // 2000ms active
+        
+        var params = {
+            enableLoudnessLatch: true,
+            loudnessLatchOpenThresholdDb: -48,
+            loudnessLatchKeepThresholdDb: -52,
+            loudnessLatchOpenMinDurationMs: 100,
+            loudnessLatchWindowMs: 4000, // 4 second window
+            loudnessLatchMinCumulativeActiveMs: 1200,
+            loudnessLatchMinCoveragePercent: 35,
+            loudnessLatchCloseConfirmMs: 1000,
+            frameDurationMs: 20
+        };
+        
+        var result = loudnessLatch.applyLoudnessLatch(vadResults, rmsProfiles, params);
+        // Should have open frames during both active periods
+        var firstPeriodOpen = result.slice(5, 100).some(function(r) { return r === 1; });
+        var secondPeriodOpen = result.slice(205, 300).some(function(r) { return r === 1; });
+        
+        tests.push({
+            name: 'LATCH_WINDOW: 4s window covers active periods',
+            passed: firstPeriodOpen && secondPeriodOpen
+        });
+        if (!(firstPeriodOpen && secondPeriodOpen)) allPassed = false;
+    })();
+
+    // Test 2: minCumulativeActiveMs - Minimum active time required
+    (function() {
+        var frameCount = 200;
+        var vadResults = new Array(frameCount).fill(0);
+        var rmsProfiles = [];
+        
+        // Short active burst: 500ms (below 1200ms min)
+        for (var i = 0; i < 25; i++) rmsProfiles.push(-45); // 500ms active
+        for (var i = 25; i < 200; i++) rmsProfiles.push(-60); // rest silent
+        
+        var params = {
+            enableLoudnessLatch: true,
+            loudnessLatchOpenThresholdDb: -48,
+            loudnessLatchKeepThresholdDb: -52,
+            loudnessLatchOpenMinDurationMs: 100,
+            loudnessLatchWindowMs: 4000,
+            loudnessLatchMinCumulativeActiveMs: 1200, // 1.2 seconds
+            loudnessLatchMinCoveragePercent: 35,
+            loudnessLatchCloseConfirmMs: 1000,
+            frameDurationMs: 20
+        };
+        
+        var result = loudnessLatch.applyLoudnessLatch(vadResults, rmsProfiles, params);
+        // With only 500ms active, should close after closeConfirmMs
+        var lastFramesClosed = result.slice(150).every(function(r) { return r === 0; });
+        
+        tests.push({
+            name: 'MIN_CUMULATIVE: Below min active time closes gate',
+            passed: lastFramesClosed
+        });
+        if (!lastFramesClosed) allPassed = false;
+    })();
+
+    // Test 3: minCumulativeActiveMs - Sufficient active time keeps gate open
+    (function() {
+        var frameCount = 300;
+        var vadResults = new Array(frameCount).fill(0);
+        var rmsProfiles = [];
+        
+        // Long active burst: 3 seconds (above 1200ms min)
+        for (var i = 0; i < 150; i++) rmsProfiles.push(-45); // 3000ms active
+        for (var i = 150; i < 200; i++) rmsProfiles.push(-60); // 1000ms silent (below closeConfirmMs)
+        for (var i = 200; i < 300; i++) rmsProfiles.push(-45); // 2000ms active again
+        
+        var params = {
+            enableLoudnessLatch: true,
+            loudnessLatchOpenThresholdDb: -48,
+            loudnessLatchKeepThresholdDb: -52,
+            loudnessLatchOpenMinDurationMs: 100,
+            loudnessLatchWindowMs: 4000,
+            loudnessLatchMinCumulativeActiveMs: 1200,
+            loudnessLatchMinCoveragePercent: 35,
+            loudnessLatchCloseConfirmMs: 1000,
+            frameDurationMs: 20
+        };
+        
+        var result = loudnessLatch.applyLoudnessLatch(vadResults, rmsProfiles, params);
+        // With sufficient cumulative active time, gate should stay open
+        var hasOpenFrames = result.slice(100, 250).some(function(r) { return r === 1; });
+        
+        tests.push({
+            name: 'MIN_CUMULATIVE: Above min active time keeps gate open',
+            passed: hasOpenFrames
+        });
+        if (!hasOpenFrames) allPassed = false;
+    })();
+
+    // Test 4: minCoveragePercent - Coverage below threshold closes gate
+    (function() {
+        var frameCount = 300;
+        var vadResults = new Array(frameCount).fill(0);
+        var rmsProfiles = [];
+        
+        // Sparse activity: 1 second active in 4 second window = 25% (below 35%)
+        for (var i = 0; i < 50; i++) rmsProfiles.push(-45); // 1000ms active
+        for (var i = 50; i < 250; i++) rmsProfiles.push(-60); // 4000ms silent
+        
+        var params = {
+            enableLoudnessLatch: true,
+            loudnessLatchOpenThresholdDb: -48,
+            loudnessLatchKeepThresholdDb: -52,
+            loudnessLatchOpenMinDurationMs: 100,
+            loudnessLatchWindowMs: 4000,
+            loudnessLatchMinCumulativeActiveMs: 1200,
+            loudnessLatchMinCoveragePercent: 35, // 35% required
+            loudnessLatchCloseConfirmMs: 1000,
+            frameDurationMs: 20
+        };
+        
+        var result = loudnessLatch.applyLoudnessLatch(vadResults, rmsProfiles, params);
+        // With only 25% coverage, should close after closeConfirmMs
+        var lastFramesClosed = result.slice(250).every(function(r) { return r === 0; });
+        
+        tests.push({
+            name: 'MIN_COVERAGE: Below 35% coverage closes gate',
+            passed: lastFramesClosed
+        });
+        if (!lastFramesClosed) allPassed = false;
+    })();
+
+    // Test 5: minCoveragePercent - Coverage above threshold keeps gate open
+    (function() {
+        var frameCount = 300;
+        var vadResults = new Array(frameCount).fill(0);
+        var rmsProfiles = [];
+        
+        // Dense activity: 3 seconds active in 4 second window = 75% (above 35%)
+        for (var i = 0; i < 150; i++) rmsProfiles.push(-45); // 3000ms active
+        for (var i = 150; i < 200; i++) rmsProfiles.push(-60); // 1000ms silent
+        for (var i = 200; i < 300; i++) rmsProfiles.push(-45); // 2000ms active
+        
+        var params = {
+            enableLoudnessLatch: true,
+            loudnessLatchOpenThresholdDb: -48,
+            loudnessLatchKeepThresholdDb: -52,
+            loudnessLatchOpenMinDurationMs: 100,
+            loudnessLatchWindowMs: 4000,
+            loudnessLatchMinCumulativeActiveMs: 1200,
+            loudnessLatchMinCoveragePercent: 35,
+            loudnessLatchCloseConfirmMs: 1000,
+            frameDurationMs: 20
+        };
+        
+        var result = loudnessLatch.applyLoudnessLatch(vadResults, rmsProfiles, params);
+        // With 75% coverage, gate should stay open through silent period
+        var middleFramesOpen = result.slice(150, 200).some(function(r) { return r === 1; });
+        
+        tests.push({
+            name: 'MIN_COVERAGE: Above 35% coverage keeps gate open',
+            passed: middleFramesOpen
+        });
+        if (!middleFramesOpen) allPassed = false;
+    })();
+
+    // Test 6: Combined window parameters interaction
+    (function() {
+        var frameCount = 400;
+        var vadResults = new Array(frameCount).fill(0);
+        var rmsProfiles = [];
+        
+        // Complex pattern: active, silent, active, long silent
+        for (var i = 0; i < 100; i++) rmsProfiles.push(-45); // 2000ms active
+        for (var i = 100; i < 150; i++) rmsProfiles.push(-60); // 1000ms silent
+        for (var i = 150; i < 250; i++) rmsProfiles.push(-45); // 2000ms active
+        for (var i = 250; i < 400; i++) rmsProfiles.push(-60); // 3000ms silent (exceeds window)
+        
+        var params = {
+            enableLoudnessLatch: true,
+            loudnessLatchOpenThresholdDb: -48,
+            loudnessLatchKeepThresholdDb: -52,
+            loudnessLatchOpenMinDurationMs: 100,
+            loudnessLatchWindowMs: 4000,
+            loudnessLatchMinCumulativeActiveMs: 1200,
+            loudnessLatchMinCoveragePercent: 35,
+            loudnessLatchCloseConfirmMs: 1000,
+            frameDurationMs: 20
+        };
+        
+        var result = loudnessLatch.applyLoudnessLatch(vadResults, rmsProfiles, params);
+        // Should be open during active periods and short silent gap
+        // Should close after long silent period exceeds window
+        var firstActiveOpen = result.slice(10, 100).some(function(r) { return r === 1; });
+        var secondActiveOpen = result.slice(160, 250).some(function(r) { return r === 1; });
+        var finalFramesClosed = result.slice(380).every(function(r) { return r === 0; });
+        
+        tests.push({
+            name: 'WINDOW_COMBINED: All window parameters work together',
+            passed: firstActiveOpen && secondActiveOpen && finalFramesClosed
+        });
+        if (!(firstActiveOpen && secondActiveOpen && finalFramesClosed)) allPassed = false;
+    })();
+
+    // Print results
+    console.log('\n=== Phase 16: Window-Coverage Tests ===');
+    tests.forEach(function(test) {
+        console.log((test.passed ? '✓' : '✗') + ' ' + test.name);
+    });
+    console.log('========================================\n');
+
+    return allPassed;
+}
+
 module.exports = {
     testStateMachine: testStateMachine,
-    testThresholds: testThresholds
+    testThresholds: testThresholds,
+    testWindowCoverage: testWindowCoverage
 };
