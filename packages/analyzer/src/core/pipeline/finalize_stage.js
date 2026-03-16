@@ -108,6 +108,10 @@ function generateWaveformPreview(rmsProfiles, totalDurationSec, params) {
 
     for (var t = 0; t < trackCount; t++) {
         var rms = rmsProfiles[t];
+        if (!rms) {
+            waveform.push([]);
+            continue;
+        }
         var frameCount = rms.length;
         var step = Math.max(1, Math.floor(frameCount / resolution));
         var points = [];

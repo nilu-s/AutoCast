@@ -25,6 +25,10 @@ function computeGainMatching(rmsProfiles) {
     var medians = [];
 
     for (var t = 0; t < trackCount; t++) {
+        if (!rmsProfiles[t]) {
+            medians.push(0);
+            continue;
+        }
         var noiseInfo = rmsCalc.estimateNoiseFloor(rmsProfiles[t]);
 
         // Use the 70th percentile as "typical speech level"
@@ -95,6 +99,10 @@ function computeGainMatching(rmsProfiles) {
 function applyGainToRMS(rmsProfiles, gains) {
     var result = [];
     for (var t = 0; t < rmsProfiles.length; t++) {
+        if (!rmsProfiles[t]) {
+            result.push(null);
+            continue;
+        }
         var gain = gains[t];
         var normalized = new Float64Array(rmsProfiles[t].length);
         for (var i = 0; i < rmsProfiles[t].length; i++) {

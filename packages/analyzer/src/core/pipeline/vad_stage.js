@@ -207,6 +207,7 @@ function runVadStage(ctx) {
 
         var minFrames = Infinity;
         for (var ti = 0; ti < trackCount; ti++) {
+            if (!rmsProfiles[ti]) continue;
             if (rmsProfiles[ti].length < minFrames) minFrames = rmsProfiles[ti].length;
         }
 

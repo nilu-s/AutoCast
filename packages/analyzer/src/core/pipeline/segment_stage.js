@@ -15,6 +15,10 @@ function runSegmentStage(ctx) {
     var i;
 
     for (i = 0; i < trackCount; i++) {
+        if (!vadResults[i]) {
+            allSegments.push([]);
+            continue;
+        }
         var segments = segmentBuilder.buildSegments(vadResults[i].gateOpen, i, {
             minSegmentMs: params.minSegmentMs,
             minGapMs: params.minGapMs,
