@@ -995,10 +995,9 @@ html, body {
 }
 
 .cp-snippet.cp-state-review {
-    background: linear-gradient(180deg, rgba(255, 193, 7, 0.70), rgba(255, 160, 0, 0.75));
-    border-color: rgba(255, 214, 79, 0.95);
-    color: #fff;
-    opacity: 0.85;
+    background: linear-gradient(180deg, rgba(255, 193, 7, 0.42), rgba(255, 160, 0, 0.45));
+    border-color: rgba(255, 214, 79, 0.57);
+    color: rgba(255, 255, 255, 0.6);
 }
 
 .cp-snippet.cp-state-suppress {
@@ -1118,7 +1117,8 @@ html, body {
 
 .cp-snippet.cp-focused {
     transform: translateY(-1px);
-    box-shadow: 0 0 0 2px rgba(55,141,237,0.65), inset 0 0 0 1px rgba(255,255,255,0.25);
+    opacity: 1 !important;
+    box-shadow: 0 0 0 2px rgba(55,141,237,1), inset 0 0 0 1px rgba(255,255,255,0.25);
 }
 
 .cp-snippet.cp-snippet-always-open::after {
@@ -1136,7 +1136,8 @@ html, body {
 }
 
 .cp-snippet.cp-playing {
-    box-shadow: 0 0 0 2px rgba(76, 178, 244, 0.75), 0 0 14px rgba(76, 178, 244, 0.25);
+    opacity: 1 !important;
+    box-shadow: 0 0 0 2px rgba(76, 178, 244, 1), 0 0 14px rgba(76, 178, 244, 0.25);
 }
 
 .cp-snippet-compact .cp-snippet-label {
@@ -1215,6 +1216,7 @@ html, body {
 
 .cp-nav-snippet.cp-state-review {
     background: rgba(255, 193, 7, 0.55) !important;
+    opacity: 0.6;
 }
 
 .cp-nav-snippet.cp-state-suppress {

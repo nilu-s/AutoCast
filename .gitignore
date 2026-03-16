@@ -21,6 +21,7 @@ Thumbs.db
 
 # Audio and Logs
 *.wav
+!packages/analyzer/test/test_data/**/*.wav
 *.log
 *.tmp
 analysis_debug.json
