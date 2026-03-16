@@ -1,0 +1,21 @@
+{
+  "drifts": [
+    {
+      "file": "packages/analyzer/src/core/pipeline/analyzer_pipeline.js",
+      "param": "useOptimizedPipeline",
+      "should_be": "enableOptimizedVAD",
+      "status": "pending",
+      "line": "if (params.useOptimizedPipeline !== false)"
+    },
+    {
+      "file": "packages/analyzer/src/core/pipeline/vad_stage_optimized.js",
+      "param": "bleedDetection",
+      "should_be": "enableBleedHandling",
+      "status": "pending",
+      "line": "bleedEnabled: params.bleedDetection !== false"
+    }
+  ],
+  "missing_in_defaults": [],
+  "unused_in_defaults": [],
+  "timestamp": "2026-03-16T14:54:00Z"
+}

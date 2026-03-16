@@ -9,6 +9,7 @@ var rmsStage = require('./rms_stage');
 var featureStage = require('./feature_stage');
 var vadStage = require('./vad_stage');
 var optimizedVadStage = require('./vad_stage_optimized');
+var loudnessLatch = require('../../modules/vad/loudness_latch');
 var segmentStage = require('./segment_stage');
 var overlapStage = require('./overlap_stage');
 var postprocessStage = require('./postprocess_stage');
@@ -75,7 +76,7 @@ function analyze(trackPaths, userParams, progressCallback) {
 
     // Use optimized VAD stage for real podcast audio if enabled
     var vadResult;
-    if (params.useOptimizedPipeline !== false) {
+    if (params.enableOptimizedVAD !== false) {
         vadResult = optimizedVadStage.runOptimizedVadStage({
             params: params,
             trackCount: trackCount,
@@ -102,6 +103,11 @@ function analyze(trackPaths, userParams, progressCallback) {
     var vadResults = vadResult.vadResults;
     var gateSnapshots = vadResult.gateSnapshots;
     var bleedEnabled = vadResult.bleedEnabled;
+
+    // Apply Loudness Latch if enabled
+    if (params.enableLoudnessLatch) {
+        vadResults = loudnessLatch.applyLoudnessLatch(vadResults, rmsProfiles, params);
+    }
 
     analyzerExtensions.invokeHook(extensions, 'onAfterVad', {
         vadResults: vadResults,
