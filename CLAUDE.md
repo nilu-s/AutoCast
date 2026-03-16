@@ -33,6 +33,7 @@ AutoCast ist ein CEP-Plugin fuer Adobe Premiere Pro:
 - Keine zusaetzlichen Fallbacks oder Adapter "just in case".
 - Wenn ein neuer Ansatz einen alten ersetzt, alte Logik aktiv entfernen oder entkoppeln.
 - Legacy-Verhalten nur behalten, wenn konkret erforderlich; Begruendung kurz dokumentieren.
+- **VAD Refactor abgeschlossen:** vad_stage_optimized.js entfernt, Loudness-Latch aktiv (enableLoudnessLatch: true)
 
 ## Wo anfangen bei typischen Aufgaben
 
@@ -40,6 +41,7 @@ AutoCast ist ein CEP-Plugin fuer Adobe Premiere Pro:
 - Feature-Logik Panel: `apps/panel/src/features/*`
 - Analyzer-Pipeline: `packages/analyzer/src/core/pipeline/*`
 - Analyzer-Module: `packages/analyzer/src/modules/*`
+- Loudness-Latch: `packages/analyzer/src/modules/vad/loudness_latch.js`
 - Postprocess-Fassade: `packages/analyzer/src/modules/postprocess/analyzer_postprocess.js`
 - Postprocess Gap-Passes: `packages/analyzer/src/modules/postprocess/postprocess_gap_passes.js`
 - Postprocess Continuity-Passes: `packages/analyzer/src/modules/postprocess/postprocess_continuity_passes.js`
