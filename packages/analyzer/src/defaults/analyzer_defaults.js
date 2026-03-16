@@ -215,7 +215,6 @@ var ANALYSIS_DEFAULTS = {
 
     // Optimized pipeline parameters
     enablePreprocess: true,
-    enableOptimizedVAD: true,
     speechLowHz: 200,
     speechHighHz: 4000,
 
