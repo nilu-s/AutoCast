@@ -1,0 +1,72 @@
+{
+  "features": [
+    {
+      "name": "VAD Gate Activity Detection",
+      "description": "Core voice activity detection using thresholdAboveFloorDb",
+      "params": ["thresholdAboveFloorDb", "absoluteThresholdDb", "attackFrames", "releaseFrames", "holdFrames", "closeConfirmMs", "adaptiveNoiseFloor"]
+    },
+    {
+      "name": "Track Threshold Customization",
+      "description": "Per-track threshold configuration via perTrackThresholdDb",
+      "params": ["perTrackThresholdDb"]
+    },
+    {
+      "name": "Track Loudness Bias",
+      "description": "Automatic loudness adjustment based on track gain analysis",
+      "params": ["enableTrackLoudnessBias", "trackLoudnessBiasStrength"]
+    },
+    {
+      "name": "Spectral VAD",
+      "description": "Spectral analysis refinement for better voice detection",
+      "params": ["useSpectralVAD", "spectralMinConfidence", "spectralSoftMargin", "spectralScoreOpen", "spectralScoreClose", "spectralRmsWeight", "spectralHoldFrames"]
+    },
+    {
+      "name": "Speaker Profile Building",
+      "description": "Builds speaker profiles from fingerprint data",
+      "params": ["primarySpeakerLock", "speakerProfileMinConfidence", "speakerProfileMinFrames"]
+    },
+    {
+      "name": "Speaker Lock Gate",
+      "description": "Locks voice activity to primary speaker profiles",
+      "params": ["speakerMatchThreshold", "speakerMatchSoftMargin", "speakerMatchHoldFrames"]
+    },
+    {
+      "name": "Laughter Rescue",
+      "description": "Rescues voice segments using laughter detection",
+      "params": ["useLaughterDetection", "laughterMinConfidence", "laughterHoldFrames", "laughterBurstAbsoluteFloorDb", "laughterMinRelativeToThresholdDb", "laughterMinStreakFrames", "laughterStreakWindowFrames", "laughterBaseSupportWindowFrames", "laughterMinBaseSupportFrames"]
+    },
+    {
+      "name": "Bleed Suppression",
+      "description": "Suppresses microphone bleed from other tracks",
+      "params": ["enableBleedHandling", "bleedSuppressionDb", "bleedSuppressionSimilarityThreshold", "bleedSuppressionProtectConfidence"]
+    },
+    {
+      "name": "In-Speech Dropout Healing",
+      "description": "Heals short dropouts within speech segments",
+      "params": ["enableInSpeechDropoutHeal", "maxInSpeechDropoutMs", "dropoutHealMinRelativeDb", "dropoutHealAbsoluteFloorDb", "dropoutHealMinEnergyCoverage"]
+    },
+    {
+      "name": "Laughter Continuity Recovery",
+      "description": "Recovers speech continuity using laughter patterns",
+      "params": ["enableLaughterContinuityRecovery", "laughterRecoveryEdgeMinConfidence", "laughterRecoveryGapMinConfidence", "laughterRecoveryMaxGapMs", "laughterRecoveryLongGapMaxMs", "laughterRecoveryLongGapMinConfidence", "laughterRecoveryLongGapMinCoverage", "laughterRecoveryLongGapEdgeMinConfidence", "laughterRecoveryMaxEdgeExtendMs", "laughterRecoveryMinGapCoverage", "laughterRecoveryMinGapHits", "laughterAbsoluteFloorDb", "laughterRecoveryBaseSupportWindowMs", "laughterRecoveryMinBaseSupportFrames", "laughterBurstMaxTransientPenalty"]
+    },
+    {
+      "name": "Laughter Burst Reinforce",
+      "description": "Reinforces laughter bursts in voice activity",
+      "params": ["enableLaughterBurstReinforce", "laughterBurstSeedMinConfidence", "laughterBurstExtendMinConfidence", "laughterBurstRelativeWindowMs", "laughterBurstRelativeSeedDelta", "laughterBurstRelativeSeedMinConfidence", "laughterBurstRelativeExtendDelta", "laughterBurstRelativeExtendMinConfidence", "laughterBurstMinKeepMs", "laughterBurstMaxGapMs", "laughterBurstMaxSideExtendMs", "laughterBurstAbsoluteFloorDb", "laughterBurstMinRelativeToThresholdDb", "laughterBurstBaseSupportWindowMs", "laughterBurstMinBaseSupportFrames", "laughterBurstMaxTransientPenalty"]
+    },
+    {
+      "name": "Always One Track Open",
+      "description": "Ensures at least one track is always open during analysis",
+      "params": ["enforceAlwaysOneTrackOpen", "alwaysOpenDominanceWindowMs", "alwaysOpenStickinessDb"]
+    },
+    {
+      "name": "Debug Snapshots",
+      "description": "Captures gate snapshots at various processing stages",
+      "params": ["debugMode"]
+    }
+  ],
+  "totalFeatures": 13,
+  "sourceFile": "packages/analyzer/src/core/pipeline/vad_stage.js",
+  "analyzedAt": "2026-03-16T15:28:00Z"
+}

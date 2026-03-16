@@ -727,11 +727,11 @@
 
 ## Status-Tracking
 
-**Abgeschlossene Phasen:** 4
-**Aktuelle Phase:** 5
-**Letzte Aktion:** bleedDetection → enableBleedHandling (Phase 4 COMPLETE)
+**Abgeschlossene Phasen:** 9
+**Aktuelle Phase:** 10
+**Letzte Aktion:** Preprocessing-Option funktioniert (Phase 9 COMPLETE)
 **Status:** ✅ FORTSCHRITT
 
 **Cron-Job:** 89dc60cc-db28-4c41-ad51-63eeea16d48d
-**Nächster Schritt:** Phase 5 starten (Parameter-Drift Report aktualisieren & Push)
+**Nächster Schritt:** Phase 10 starten (Pipeline auf einheitlichen Pfad umstellen & Push)
 **Manuelles GO erforderlich in:** Phase 24
