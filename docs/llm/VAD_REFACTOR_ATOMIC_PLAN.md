@@ -727,11 +727,11 @@
 
 ## Status-Tracking
 
-**Abgeschlossene Phasen:** 14
-**Aktuelle Phase:** 15
-**Letzte Aktion:** State-Machine Test implementiert (Phase 14 COMPLETE)
+**Abgeschlossene Phasen:** 15
+**Aktuelle Phase:** 16
+**Letzte Aktion:** Threshold Test implementiert (Phase 15 COMPLETE)
 **Status:** ✅ FORTSCHRITT
 
 **Cron-Job:** 89dc60cc-db28-4c41-ad51-63eeea16d48d
-**Nächster Schritt:** Phase 15 starten (Loudness-Latch Threshold Test)
+**Nächster Schritt:** Phase 16 starten (Loudness-Latch Window Test)
 **Manuelles GO erforderlich in:** Phase 24
