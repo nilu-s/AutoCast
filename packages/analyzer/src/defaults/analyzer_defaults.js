@@ -5,9 +5,9 @@ var ANALYSIS_DEFAULTS = {
     frameDurationMs: 10,
     rmsSmoothing: 5,
 
-    // VAD / Gate
-    thresholdAboveFloorDb: 0,
-    absoluteThresholdDb: -64,
+    // VAD / Gate (tuned for real podcast audio)
+    thresholdAboveFloorDb: 9,
+    absoluteThresholdDb: -50,
     attackFrames: 1,
     releaseFrames: 6,
     holdFrames: 24,
@@ -25,7 +25,7 @@ var ANALYSIS_DEFAULTS = {
     localNoisePercentile: 0.15,
     localNoiseSampleStride: 2,
     maxAdaptiveFloorRiseDb: 8,
-    enableHardSilenceCut: true,
+    enableHardSilenceCut: false,
     hardSilenceCutDb: -51,
     hardSilenceLookaroundMs: 220,
     hardSilencePeakDeltaDb: 8,

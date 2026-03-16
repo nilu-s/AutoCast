@@ -66,27 +66,27 @@ function runOptimizedVadStage(ctx) {
             if (trackThreshold > 18) trackThreshold = 18;
         }
 
-        // Use optimized defaults for real audio
+        // Use defaults from analyzer_defaults.js (respect user params)
         var optimizedDefaults = {
             thresholdAboveFloorDb: trackThreshold,
             absoluteThresholdDb: params.absoluteThresholdDb,
-            attackFrames: params.attackFrames || 2,  // Faster attack
-            releaseFrames: params.releaseFrames || 8,  // Slower release for speech
-            holdFrames: params.holdFrames || 3,
+            attackFrames: params.attackFrames,
+            releaseFrames: params.releaseFrames,
+            holdFrames: params.holdFrames,
             closeConfirmMs: params.closeConfirmMs,
             closeConfirmDynamic: params.closeConfirmDynamic,
             closeConfirmMinMs: params.closeConfirmMinMs,
             closeConfirmMaxMs: params.closeConfirmMaxMs,
             closeConfirmDynamicSlopeDb: params.closeConfirmDynamicSlopeDb,
-            smoothingWindow: params.rmsSmoothing || 3,  // More smoothing
-            hysteresisDb: params.hysteresisDb || 2.0,  // Slightly more hysteresis
-            frameDurationMs: params.frameDurationMs || 10,
-            adaptiveNoiseFloor: params.adaptiveNoiseFloor !== false,  // Enable by default
-            localNoiseWindowMs: params.localNoiseWindowMs || 500,
-            noiseFloorUpdateMs: params.noiseFloorUpdateMs || 100,
-            localNoisePercentile: params.localNoisePercentile || 15,  // Lower percentile for noise floor
-            maxAdaptiveFloorRiseDb: params.maxAdaptiveFloorRiseDb || 12,
-            localNoiseSampleStride: params.localNoiseSampleStride || 1,
+            smoothingWindow: params.rmsSmoothing,
+            hysteresisDb: params.hysteresisDb,
+            frameDurationMs: params.frameDurationMs,
+            adaptiveNoiseFloor: params.adaptiveNoiseFloor,
+            localNoiseWindowMs: params.localNoiseWindowMs,
+            noiseFloorUpdateMs: params.noiseFloorUpdateMs,
+            localNoisePercentile: params.localNoisePercentile,
+            maxAdaptiveFloorRiseDb: params.maxAdaptiveFloorRiseDb,
+            localNoiseSampleStride: params.localNoiseSampleStride,
             enableHardSilenceCut: params.enableHardSilenceCut,
             hardSilenceCutDb: params.hardSilenceCutDb,
             hardSilenceLookaroundMs: params.hardSilenceLookaroundMs,
@@ -121,13 +121,13 @@ function runOptimizedVadStage(ctx) {
             var spectralRefine = spectralVad.refineGateWithSpectral(
                 vadResult.gateOpen,
                 smoothedConf,
-                params.spectralMinConfidence || 0.15,  // Lower threshold for real audio
+                params.spectralMinConfidence,
                 {
-                    softMargin: params.spectralSoftMargin || 0.10,
-                    openScore: params.spectralScoreOpen || 0.55,
-                    closeScore: params.spectralScoreClose || 0.40,
-                    rmsWeight: params.spectralRmsWeight || 0.45,  // Slightly less RMS weight
-                    holdFrames: params.spectralHoldFrames || 3,
+                    softMargin: params.spectralSoftMargin,
+                    openScore: params.spectralScoreOpen,
+                    closeScore: params.spectralScoreClose,
+                    rmsWeight: params.spectralRmsWeight,
+                    holdFrames: params.spectralHoldFrames,
                     returnDebug: params.debugMode
                 }
             );
