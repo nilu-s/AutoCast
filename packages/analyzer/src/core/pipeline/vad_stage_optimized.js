@@ -170,7 +170,7 @@ function runOptimizedVadStage(ctx) {
     return {
         vadResults: vadResults,
         gateSnapshots: gateSnapshots,
-        bleedEnabled: params.bleedDetection !== false
+        bleedEnabled: params.enableBleedHandling !== false
     };
 }
 

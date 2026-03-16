@@ -4,14 +4,14 @@
       "file": "packages/analyzer/src/core/pipeline/analyzer_pipeline.js",
       "param": "useOptimizedPipeline",
       "should_be": "enableOptimizedVAD",
-      "status": "pending",
+      "status": "fixed",
       "line": "if (params.useOptimizedPipeline !== false)"
     },
     {
       "file": "packages/analyzer/src/core/pipeline/vad_stage_optimized.js",
       "param": "bleedDetection",
       "should_be": "enableBleedHandling",
-      "status": "pending",
+      "status": "fixed",
       "line": "bleedEnabled: params.bleedDetection !== false"
     }
   ],
