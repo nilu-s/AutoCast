@@ -219,7 +219,7 @@ var ANALYSIS_DEFAULTS = {
     speechHighHz: 4000,
 
     // Loudness Latch (preparation for Phase 19-24)
-    enableLoudnessLatch: false,
+    enableLoudnessLatch: true,
     loudnessLatchOpenThresholdDb: -48,
     loudnessLatchKeepThresholdDb: -52,
     loudnessLatchOpenMinDurationMs: 100,
