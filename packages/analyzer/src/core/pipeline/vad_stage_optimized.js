@@ -46,8 +46,10 @@ function runOptimizedVadStage(ctx) {
 
         // Apply pre-processing if raw audio available
         var processedRmsProfile = rmsProfiles[i];
-        if (enablePreprocess && audioData[i]) {
-            var preprocessed = preprocess.preprocess(audioData[i], trackInfos[i].sampleRate);
+        if (enablePreprocess && audioData[i] && audioData[i].samples) {
+            var preprocessed = preprocess.preprocess(audioData[i].samples, trackInfos[i].sampleRate, {
+                noiseGate: false  // Don't use noise gate - VAD handles silence detection
+            });
             // Re-compute RMS profile from pre-processed audio
             var rmsResult = rmsCalc.calculateRMS(preprocessed, trackInfos[i].sampleRate, params.frameDurationMs || 10);
             processedRmsProfile = rmsResult.rms;
@@ -101,10 +103,10 @@ function runOptimizedVadStage(ctx) {
         var laughterDebug = null;
 
         // Use optimized spectral VAD if enabled
-        if (enableOptimizedVAD && audioData[i]) {
+        if (enableOptimizedVAD && audioData[i] && audioData[i].samples) {
             var preprocessed = enablePreprocess ? 
-                preprocess.preprocess(audioData[i], trackInfos[i].sampleRate) : 
-                audioData[i];
+                preprocess.preprocess(audioData[i].samples, trackInfos[i].sampleRate, { noiseGate: false }) : 
+                audioData[i].samples;
             
             var optResult = optimizedVad.computeOptimizedSpectralVAD(preprocessed, trackInfos[i].sampleRate, {
                 frameDurationMs: 20,  // Longer window for stability
@@ -167,10 +169,10 @@ function runOptimizedVadStage(ctx) {
             var fp = fingerprintResults[i];
             var conf = spectralResults[i] ? spectralResults[i].confidence : null;
             
-            if (!conf && enableOptimizedVAD && audioData[i]) {
+            if (!conf && enableOptimizedVAD && audioData[i] && audioData[i].samples) {
                 var preprocessed = enablePreprocess ? 
-                    preprocess.preprocess(audioData[i], trackInfos[i].sampleRate) : 
-                    audioData[i];
+                    preprocess.preprocess(audioData[i].samples, trackInfos[i].sampleRate, { noiseGate: false }) : 
+                    audioData[i].samples;
                 var optResult = optimizedVad.computeOptimizedSpectralVAD(preprocessed, trackInfos[i].sampleRate);
                 conf = optimizedVad.smoothConfidence(optResult.confidence, 3);
             }
@@ -227,6 +229,7 @@ function runOptimizedVadStage(ctx) {
         vadResults[i] = {
             gateOpen: vadResult.gateOpen,
             thresholdDb: vadResult.thresholdDb,
+            thresholdLinear: vadResult.thresholdLinear,
             noiseFloorDb: vadResult.noiseFloorDb,
             speakerProfile: speakerProfiles[i] || null
         };
