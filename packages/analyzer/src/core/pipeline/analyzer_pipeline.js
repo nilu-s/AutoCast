@@ -8,6 +8,7 @@ var readTracksStage = require('./read_tracks_stage');
 var rmsStage = require('./rms_stage');
 var featureStage = require('./feature_stage');
 var vadStage = require('./vad_stage');
+var optimizedVadStage = require('./vad_stage_optimized');
 var segmentStage = require('./segment_stage');
 var overlapStage = require('./overlap_stage');
 var postprocessStage = require('./postprocess_stage');
@@ -72,16 +73,32 @@ function analyze(trackPaths, userParams, progressCallback) {
 
     audioData = null;
 
-    var vadResult = vadStage.runVadStage({
-        params: params,
-        trackCount: trackCount,
-        trackInfos: trackInfos,
-        rmsProfiles: rmsProfiles,
-        spectralResults: spectralResults,
-        fingerprintResults: fingerprintResults,
-        laughterResults: laughterResults,
-        progress: progress
-    });
+    // Use optimized VAD stage for real podcast audio if enabled
+    var vadResult;
+    if (params.useOptimizedPipeline !== false) {
+        vadResult = optimizedVadStage.runOptimizedVadStage({
+            params: params,
+            trackCount: trackCount,
+            trackInfos: trackInfos,
+            rmsProfiles: rmsProfiles,
+            spectralResults: spectralResults,
+            fingerprintResults: fingerprintResults,
+            laughterResults: laughterResults,
+            audioData: readResult.audioData,  // Pass raw audio for pre-processing
+            progress: progress
+        });
+    } else {
+        vadResult = vadStage.runVadStage({
+            params: params,
+            trackCount: trackCount,
+            trackInfos: trackInfos,
+            rmsProfiles: rmsProfiles,
+            spectralResults: spectralResults,
+            fingerprintResults: fingerprintResults,
+            laughterResults: laughterResults,
+            progress: progress
+        });
+    }
 
     var vadResults = vadResult.vadResults;
     var gateSnapshots = vadResult.gateSnapshots;
