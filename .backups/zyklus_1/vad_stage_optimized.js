@@ -9,8 +9,12 @@
  * 3. Better defaults tuned for real audio
  */
 
+var rmsCalc = require('../../modules/energy/rms_calculator');
 var vadGate = require('../../modules/vad/vad_gate');
 var spectralVad = require('../../modules/vad/spectral_vad');
+var optimizedVad = require('../../modules/vad/spectral_vad_optimized');
+var preprocess = require('../../modules/preprocess/audio_preprocess');
+var continuityEnforcer = require('./continuity_enforcer');
 var runtimeUtils = require('../utils/runtime_utils');
 
 function runOptimizedVadStage(ctx) {
@@ -23,6 +27,7 @@ function runOptimizedVadStage(ctx) {
     var spectralResults = ctx.spectralResults || [];
     var fingerprintResults = ctx.fingerprintResults || [];
     var laughterResults = ctx.laughterResults || [];
+    var audioData = ctx.audioData || [];  // Raw audio for pre-processing
     var progress = ctx.progress || function () { };
 
     progress(50, 'Detecting voice activity (optimized)...');
@@ -32,11 +37,23 @@ function runOptimizedVadStage(ctx) {
     var speakerProfiles = [];
     var i;
 
+    // Enable optimized processing by default for real audio
+    var enablePreprocess = params.enablePreprocess !== false;
+    var enableOptimizedVAD = params.enableOptimizedVAD !== false;
+
     for (i = 0; i < trackCount; i++) {
         progress(50 + Math.round((i / trackCount) * 15), 'VAD for track ' + (i + 1) + '/' + trackCount);
 
-        // Use RMS profile directly from RMS stage (preprocessing already done there)
+        // Apply pre-processing if raw audio available
         var processedRmsProfile = rmsProfiles[i];
+        if (enablePreprocess && audioData[i] && audioData[i].samples) {
+            var preprocessed = preprocess.preprocess(audioData[i].samples, trackInfos[i].sampleRate, {
+                noiseGate: false  // Don't use noise gate - VAD handles silence detection
+            });
+            // Re-compute RMS profile from pre-processed audio
+            var rmsResult = rmsCalc.calculateRMS(preprocessed, trackInfos[i].sampleRate, params.frameDurationMs || 10);
+            processedRmsProfile = rmsResult.rms;
+        }
 
         var trackThreshold = params.thresholdAboveFloorDb;
         if (params.perTrackThresholdDb && params.perTrackThresholdDb[i] !== undefined) {
@@ -85,8 +102,43 @@ function runOptimizedVadStage(ctx) {
         var speakerSimilarity = null;
         var laughterDebug = null;
 
-        // Use spectral results from feature stage (no duplicate calculation)
-        if (params.useSpectralVAD && spectralResults[i]) {
+        // Use optimized spectral VAD if enabled
+        if (enableOptimizedVAD && audioData[i] && audioData[i].samples) {
+            var preprocessed = enablePreprocess ? 
+                preprocess.preprocess(audioData[i].samples, trackInfos[i].sampleRate, { noiseGate: false }) : 
+                audioData[i].samples;
+            
+            var optResult = optimizedVad.computeOptimizedSpectralVAD(preprocessed, trackInfos[i].sampleRate, {
+                frameDurationMs: 20,  // Longer window for stability
+                speechLowHz: 200,     // Extended low end
+                speechHighHz: 4000    // Extended high end
+            });
+            
+            // Smooth the confidence values
+            var smoothedConf = optimizedVad.smoothConfidence(optResult.confidence, 3);
+            
+            // Refine gate with optimized confidence
+            var spectralRefine = spectralVad.refineGateWithSpectral(
+                vadResult.gateOpen,
+                smoothedConf,
+                params.spectralMinConfidence,
+                {
+                    softMargin: params.spectralSoftMargin,
+                    openScore: params.spectralScoreOpen,
+                    closeScore: params.spectralScoreClose,
+                    rmsWeight: params.spectralRmsWeight,
+                    holdFrames: params.spectralHoldFrames,
+                    returnDebug: params.debugMode
+                }
+            );
+
+            if (spectralRefine && spectralRefine.gateOpen) {
+                vadResult.gateOpen = spectralRefine.gateOpen;
+                spectralDebug = spectralRefine;
+            } else {
+                vadResult.gateOpen = spectralRefine;
+            }
+        } else if (params.useSpectralVAD && spectralResults[i]) {
             // Fallback to standard spectral VAD
             var standardRefine = spectralVad.refineGateWithSpectral(
                 vadResult.gateOpen,
@@ -113,9 +165,17 @@ function runOptimizedVadStage(ctx) {
         var gateAfterSpectral = cloneUint8Array(vadResult.gateOpen);
 
         // Speaker profile building with optimized thresholds
-        if (params.primarySpeakerLock && fingerprintResults[i]) {
+        if (params.enableSpeakerProfile && fingerprintResults[i]) {
             var fp = fingerprintResults[i];
             var conf = spectralResults[i] ? spectralResults[i].confidence : null;
+            
+            if (!conf && enableOptimizedVAD && audioData[i] && audioData[i].samples) {
+                var preprocessed = enablePreprocess ? 
+                    preprocess.preprocess(audioData[i].samples, trackInfos[i].sampleRate, { noiseGate: false }) : 
+                    audioData[i].samples;
+                var optResult = optimizedVad.computeOptimizedSpectralVAD(preprocessed, trackInfos[i].sampleRate);
+                conf = optimizedVad.smoothConfidence(optResult.confidence, 3);
+            }
             
             if (conf) {
                 var profile = spectralVad.buildSpeakerProfile(fp, vadResult.gateOpen, conf, {
@@ -130,20 +190,28 @@ function runOptimizedVadStage(ctx) {
             }
         }
 
-        // Laughter detection results already computed in feature stage
-        if (params.useLaughterDetection && laughterResults[i] && laughterResults[i].confidence) {
-            var confArray = laughterResults[i].confidence;
-            var sum = 0;
-            for (var ci = 0; ci < confArray.length; ci++) {
-                sum += confArray[ci];
-            }
+        // Laughter detection
+        if (params.detectLaughter && laughterResults[i]) {
+            var laughterConf = laughterDetector.computeLaughterConfidence(
+                laughterResults[i].samples,
+                trackInfos[i].sampleRate,
+                params.frameDurationMs || 10
+            );
+            
             laughterDebug = {
-                meanConfidence: confArray.length > 0 ? sum / confArray.length : 0
+                meanConfidence: laughterConf.confidence.reduce(function(a, b) { return a + b; }, 0) / 
+                                laughterConf.confidence.length
             };
         }
 
-        // Continuity enforcement (handled by vad_stage.js in unified pipeline)
-        // Note: This will be fully removed when vad_stage_optimized becomes a thin wrapper
+        // Continuity enforcement
+        if (params.continuityEnforcement) {
+            vadResult.gateOpen = continuityEnforcer.enforceContinuity(vadResult.gateOpen, {
+                minGapMs: params.continuityMinGapMs,
+                minSegmentMs: params.continuityMinSegmentMs,
+                frameDurationMs: params.frameDurationMs
+            });
+        }
 
         // Store gate snapshots for debugging
         if (params.debugMode) {

@@ -3,6 +3,7 @@
 var rmsCalc = require('../../modules/energy/rms_calculator');
 var gainNormalizer = require('../../modules/energy/gain_normalizer');
 var runtimeUtils = require('../utils/runtime_utils');
+var preprocess = require('../../modules/preprocess/audio_preprocess');
 
 function runRmsStage(ctx) {
     ctx = ctx || {};
@@ -23,8 +24,15 @@ function runRmsStage(ctx) {
     for (i = 0; i < trackCount; i++) {
         progress(20 + Math.round((i / trackCount) * 10), 'RMS for track ' + (i + 1) + '/' + trackCount);
 
+        var samples = audioData[i].samples;
+        if (params.enablePreprocess) {
+            samples = preprocess.preprocess(samples, audioData[i].sampleRate, {
+                noiseGate: false
+            });
+        }
+
         var rmsResult = rmsCalc.calculateRMS(
-            audioData[i].samples,
+            samples,
             audioData[i].sampleRate,
             params.frameDurationMs
         );

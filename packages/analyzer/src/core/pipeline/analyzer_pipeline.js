@@ -84,7 +84,6 @@ function analyze(trackPaths, userParams, progressCallback) {
             spectralResults: spectralResults,
             fingerprintResults: fingerprintResults,
             laughterResults: laughterResults,
-            audioData: readResult.audioData,  // Pass raw audio for pre-processing
             progress: progress
         });
     } else {

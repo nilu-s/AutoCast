@@ -213,27 +213,6 @@ var ANALYSIS_DEFAULTS = {
     debugMode: false,
     debugMaxFrames: 5000,
 
-    // Optimized pipeline parameters
-    enablePreprocess: true,
-    enableOptimizedVAD: true,
-    speechLowHz: 200,
-    speechHighHz: 4000,
-
-    // Loudness Latch (preparation for Phase 19-24)
-    enableLoudnessLatch: false,
-    loudnessLatchOpenThresholdDb: -48,
-    loudnessLatchKeepThresholdDb: -52,
-    loudnessLatchOpenMinDurationMs: 100,
-    loudnessLatchWindowMs: 4000,
-    loudnessLatchMinCumulativeActiveMs: 1200,
-    loudnessLatchMinCoveragePercent: 35,
-    loudnessLatchCloseConfirmMs: 1000,
-
-    // Parameter aliases for vad_stage_optimized compatibility
-    // enableSpeakerProfile -> primarySpeakerLock (use primarySpeakerLock)
-    // detectLaughter -> useLaughterDetection (use useLaughterDetection)
-    // continuityEnforcement -> enableInSpeechDropoutHeal (use enableInSpeechDropoutHeal)
-
     // Optional extension modules (path strings or inline extension objects)
     extensions: null
 };

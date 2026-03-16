@@ -61,3 +61,11 @@ AutoCast ist ein CEP-Plugin fuer Adobe Premiere Pro:
 - `docs/llm/WORKFLOW_PLAYBOOK.md`
 - `docs/llm/GUARDRAILS.md`
 - `docs/llm/DOMAIN_GLOSSARY.md`
+- `docs/llm/VAD_REFACTOR_PHASES.md` - Aktiver Refactor-Plan (36 Phasen)
+
+## Aktive Refactors
+
+### VAD Pipeline Refactor (36 Phasen, 10-Min-Zyklen)
+- **Status:** Siehe `docs/llm/VAD_REFACTOR_PHASES.md`
+- **Ziel:** vad_stage_optimized.js bereinigen, Loudness-Latch einführen
+- **Cron-Job:** Liest CLAUDE.md + VAD_REFACTOR_PHASES.md vor jeder Phase
