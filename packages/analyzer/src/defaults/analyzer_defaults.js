@@ -67,13 +67,15 @@ var ANALYSIS_DEFAULTS = {
     preTriggerJoinGapMs: 1200,
     preTriggerMinPeakDeltaDb: 4.0,
     preTriggerAbsorbGapMs: 380,
+    // REDUCED: 1400ms -> 600ms to preserve more individual segments
     enableSameTrackGapMerge: true,
-    sameTrackGapMergeMaxMs: 1400,
+    sameTrackGapMergeMaxMs: 600,
     sameTrackGapMergeMaxOtherOverlapRatio: 0.20,
     sameTrackGapMergeMinPeakAboveThresholdDb: 3.0,
     // Cut preview consolidation: merge overlapping / short-gap snippets and classify merged span.
+    // REDUCED: 1000ms -> 250ms to preserve individual segments in UI
     previewSegmentMergeEnabled: true,
-    previewSegmentMergeGapMs: 1000,
+    previewSegmentMergeGapMs: 250,
     enableDominantTrackStickiness: true,
     dominantTrackHoldMs: 2000,
     dominantTrackReturnWindowMs: 5000,
