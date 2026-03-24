@@ -20,6 +20,9 @@ function analyze(trackPaths, userParams, progressCallback) {
     params = analyzerParams.enforceSingleModeParams(params);
     var extensions = analyzerExtensions.loadExtensions(params.extensions);
     var progress = progressCallback || function () { };
+    var memorySnapshots = [];
+
+    recordMemorySnapshot(params, memorySnapshots, 'start');
 
     var readResult = readTracksStage.runReadTracksStage({
         trackPaths: trackPaths,
@@ -33,6 +36,7 @@ function analyze(trackPaths, userParams, progressCallback) {
     var alignment = readResult.alignment;
     var totalDurationSec = readResult.totalDurationSec;
     var effectiveOffsetsSec = readResult.effectiveOffsetsSec;
+    recordMemorySnapshot(params, memorySnapshots, 'afterReadTracks');
 
     analyzerExtensions.invokeHook(extensions, 'onAfterReadTracks', {
         trackPaths: trackPaths,
@@ -53,6 +57,7 @@ function analyze(trackPaths, userParams, progressCallback) {
     var rmsProfiles = rmsResult.rmsProfiles;
     var rawRmsProfiles = rmsResult.rawRmsProfiles;
     var gainInfo = rmsResult.gainInfo;
+    recordMemorySnapshot(params, memorySnapshots, 'afterRms');
 
     analyzerExtensions.invokeHook(extensions, 'onAfterRms', {
         rmsProfiles: rmsProfiles,
@@ -71,6 +76,7 @@ function analyze(trackPaths, userParams, progressCallback) {
     var spectralResults = featureResult.spectralResults;
     var fingerprintResults = featureResult.fingerprintResults;
     var laughterResults = featureResult.laughterResults;
+    recordMemorySnapshot(params, memorySnapshots, 'afterFeatures');
 
     audioData = null;
 
@@ -96,6 +102,7 @@ function analyze(trackPaths, userParams, progressCallback) {
     var vadResults = vadResult.vadResults;
     var gateSnapshots = vadResult.gateSnapshots;
     var bleedEnabled = vadResult.bleedEnabled;
+    recordMemorySnapshot(params, memorySnapshots, 'afterVad');
 
     // Apply Loudness Latch if enabled
     if (params.enableLoudnessLatch) {
@@ -148,6 +155,7 @@ function analyze(trackPaths, userParams, progressCallback) {
     var overlapResolvedSegments = arbitrationResult.overlapResolvedSegments;
     var allSegments = arbitrationResult.allSegments;
     vadResults = arbitrationResult.vadResults;
+    recordMemorySnapshot(params, memorySnapshots, 'afterArbitration');
 
     for (var ti = 0; ti < trackCount; ti++) {
         if (vadResults[ti] && vadResults[ti].gateOpen) {
@@ -176,6 +184,7 @@ function analyze(trackPaths, userParams, progressCallback) {
     });
 
     resolvedSegments = postprocessResult.resolvedSegments;
+    recordMemorySnapshot(params, memorySnapshots, 'afterPostprocess');
 
     // Segment Padding (Editorial Policy)
     progress(93, 'Applying segment padding...');
@@ -215,6 +224,11 @@ function analyze(trackPaths, userParams, progressCallback) {
     });
 
     var result = finalizeResult.result;
+    recordMemorySnapshot(params, memorySnapshots, 'afterFinalize');
+
+    if (params.debugMode) {
+        result.debugMemory = memorySnapshots;
+    }
 
     analyzerExtensions.invokeHook(extensions, 'onFinalizeResult', {
         result: result,
@@ -240,4 +254,18 @@ function assertRawRmsProfilesAvailable(rawRmsProfiles, rmsProfiles) {
 module.exports = {
     analyze: analyze
 };
+
+function recordMemorySnapshot(params, out, stage) {
+    if (!params || !params.debugMode) return;
+    if (!Array.isArray(out)) return;
+
+    var mem = process.memoryUsage();
+    out.push({
+        stage: stage,
+        heapUsed: mem.heapUsed,
+        heapTotal: mem.heapTotal,
+        rss: mem.rss,
+        external: mem.external
+    });
+}
 

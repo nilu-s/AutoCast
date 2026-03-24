@@ -1,28 +1,24 @@
 /**
- * AutoCast – Streaming WAV File Reader
- * 
- * Parses WAV files (PCM 16-bit, 24-bit, 32-bit float) in chunks.
- * No external dependencies. Supports mono and stereo (stereo downmixed to mono).
- * 
- * Usage:
- *   const reader = new WavStreamReader(filePath);
- *   await reader.open();
- *   for await (const chunk of reader.readChunks(chunkSizeSamples)) {
- *     // chunk.samples: Float32Array
- *     // chunk.sampleOffset: number
- *   }
- *   reader.close();
+ * AutoCast - Streaming WAV File Reader
+ *
+ * Parses WAV files (PCM 16-bit, 24-bit, 32-bit int/float) in chunks.
+ * Supports mono and stereo (stereo is downmixed to mono).
  */
 
 'use strict';
 
-const fs = require('fs').promises;
-const path = require('path');
+var fs = require('fs');
+var fsp = fs.promises;
+var path = require('path');
+
+var DEFAULT_CHUNK_SAMPLES = 65536;
 
 class WavStreamReader {
     constructor(filePath) {
         this.filePath = path.resolve(filePath);
-        this.fileHandle = null;
+        this.fileHandle = null; // fs.promises.FileHandle (async mode)
+        this.fd = null; // number (sync mode)
+
         this.sampleRate = 0;
         this.channels = 0;
         this.bitDepth = 0;
@@ -32,183 +28,340 @@ class WavStreamReader {
         this.bytesPerSample = 0;
         this.totalSamples = 0;
         this.currentSampleOffset = 0;
+
         this.readBuffer = null;
     }
 
     async open() {
-        this.fileHandle = await fs.open(this.filePath, 'r');
-        
-        // Read RIFF header (first 12 bytes)
-        const headerBuf = Buffer.alloc(12);
-        await this.fileHandle.read(headerBuf, 0, 12, 0);
-        
-        const riff = headerBuf.toString('ascii', 0, 4);
+        await this.closeAsync();
+        this.fileHandle = await fsp.open(this.filePath, 'r');
+        this.fd = this.fileHandle.fd;
+        await this._parseHeaderAsync();
+        this.currentSampleOffset = 0;
+    }
+
+    openSync() {
+        this.close();
+        this.fd = fs.openSync(this.filePath, 'r');
+        this.fileHandle = null;
+        this._parseHeaderSync();
+        this.currentSampleOffset = 0;
+    }
+
+    async _parseHeaderAsync() {
+        var header = Buffer.alloc(12);
+        var headerRead = await this.fileHandle.read(header, 0, 12, 0);
+        if (headerRead.bytesRead < 12) {
+            throw new Error('Invalid WAV header (too short): ' + this.filePath);
+        }
+        this._validateRiffHeader(header);
+
+        var chunks = await this._scanChunksAsync();
+        await this._applyChunkMetadataAsync(chunks.fmtChunk, chunks.dataChunk);
+    }
+
+    _parseHeaderSync() {
+        var header = Buffer.alloc(12);
+        var headerRead = fs.readSync(this.fd, header, 0, 12, 0);
+        if (headerRead < 12) {
+            throw new Error('Invalid WAV header (too short): ' + this.filePath);
+        }
+        this._validateRiffHeader(header);
+
+        var chunks = this._scanChunksSync();
+        this._applyChunkMetadataSync(chunks.fmtChunk, chunks.dataChunk);
+    }
+
+    _validateRiffHeader(headerBuf) {
+        var riff = headerBuf.toString('ascii', 0, 4);
         if (riff !== 'RIFF') {
-            throw new Error(`Not a valid WAV file (expected RIFF, got "${riff}"): ${this.filePath}`);
+            throw new Error('Not a valid WAV file (expected RIFF, got "' + riff + '"): ' + this.filePath);
         }
-        
-        const wave = headerBuf.toString('ascii', 8, 12);
+
+        var wave = headerBuf.toString('ascii', 8, 12);
         if (wave !== 'WAVE') {
-            throw new Error(`Not a valid WAV file (expected WAVE, got "${wave}"): ${this.filePath}`);
+            throw new Error('Not a valid WAV file (expected WAVE, got "' + wave + '"): ' + this.filePath);
+        }
+    }
+
+    async _scanChunksAsync() {
+        var fmtChunk = null;
+        var dataChunk = null;
+        var offset = 12;
+        var header = Buffer.alloc(8);
+
+        while (!fmtChunk || !dataChunk) {
+            var result = await this.fileHandle.read(header, 0, 8, offset);
+            if (result.bytesRead < 8) break;
+
+            var chunkId = header.toString('ascii', 0, 4);
+            var chunkSize = header.readUInt32LE(4);
+            var chunkDataOffset = offset + 8;
+
+            if (chunkId === 'fmt ') {
+                fmtChunk = { offset: chunkDataOffset, size: chunkSize };
+            } else if (chunkId === 'data') {
+                dataChunk = { offset: chunkDataOffset, size: chunkSize };
+            }
+
+            offset += 8 + chunkSize + (chunkSize % 2);
         }
 
-        // Find chunks by reading header section
-        const fmtChunk = await this._findChunk('fmt ');
-        const dataChunk = await this._findChunk('data');
-        
-        if (!fmtChunk) throw new Error(`No fmt chunk found in: ${this.filePath}`);
-        if (!dataChunk) throw new Error(`No data chunk found in: ${this.filePath}`);
+        return { fmtChunk: fmtChunk, dataChunk: dataChunk };
+    }
 
-        // Parse fmt chunk
-        const fmtBuf = Buffer.alloc(fmtChunk.size);
-        await this.fileHandle.read(fmtBuf, 0, fmtChunk.size, fmtChunk.offset);
-        
+    _scanChunksSync() {
+        var fmtChunk = null;
+        var dataChunk = null;
+        var offset = 12;
+        var header = Buffer.alloc(8);
+
+        while (!fmtChunk || !dataChunk) {
+            var bytesRead = fs.readSync(this.fd, header, 0, 8, offset);
+            if (bytesRead < 8) break;
+
+            var chunkId = header.toString('ascii', 0, 4);
+            var chunkSize = header.readUInt32LE(4);
+            var chunkDataOffset = offset + 8;
+
+            if (chunkId === 'fmt ') {
+                fmtChunk = { offset: chunkDataOffset, size: chunkSize };
+            } else if (chunkId === 'data') {
+                dataChunk = { offset: chunkDataOffset, size: chunkSize };
+            }
+
+            offset += 8 + chunkSize + (chunkSize % 2);
+        }
+
+        return { fmtChunk: fmtChunk, dataChunk: dataChunk };
+    }
+
+    async _applyChunkMetadataAsync(fmtChunk, dataChunk) {
+        if (!fmtChunk) throw new Error('No fmt chunk found in: ' + this.filePath);
+        if (!dataChunk) throw new Error('No data chunk found in: ' + this.filePath);
+
+        var fmtBuf = await this._readExactAsync(fmtChunk.size, fmtChunk.offset);
+        this._parseFmtChunk(fmtBuf);
+
+        this.dataOffset = dataChunk.offset;
+        this.dataSize = dataChunk.size;
+        this.bytesPerSample = (this.bitDepth / 8) * this.channels;
+
+        if (!this.bytesPerSample || this.bytesPerSample < 1) {
+            throw new Error('Invalid WAV format: bytesPerSample=' + this.bytesPerSample + ' for ' + this.filePath);
+        }
+
+        this.totalSamples = Math.floor(this.dataSize / this.bytesPerSample);
+    }
+
+    _applyChunkMetadataSync(fmtChunk, dataChunk) {
+        if (!fmtChunk) throw new Error('No fmt chunk found in: ' + this.filePath);
+        if (!dataChunk) throw new Error('No data chunk found in: ' + this.filePath);
+
+        var fmtBuf = this._readExactSync(fmtChunk.size, fmtChunk.offset);
+        this._parseFmtChunk(fmtBuf);
+
+        this.dataOffset = dataChunk.offset;
+        this.dataSize = dataChunk.size;
+        this.bytesPerSample = (this.bitDepth / 8) * this.channels;
+
+        if (!this.bytesPerSample || this.bytesPerSample < 1) {
+            throw new Error('Invalid WAV format: bytesPerSample=' + this.bytesPerSample + ' for ' + this.filePath);
+        }
+
+        this.totalSamples = Math.floor(this.dataSize / this.bytesPerSample);
+    }
+
+    _parseFmtChunk(fmtBuf) {
+        if (fmtBuf.length < 16) {
+            throw new Error('Invalid fmt chunk (too short): ' + this.filePath);
+        }
+
         this.audioFormat = fmtBuf.readUInt16LE(0);
         this.channels = fmtBuf.readUInt16LE(2);
         this.sampleRate = fmtBuf.readUInt32LE(4);
         this.bitDepth = fmtBuf.readUInt16LE(14);
-        
+
         if (this.audioFormat !== 1 && this.audioFormat !== 3) {
-            throw new Error(`Unsupported audio format (${this.audioFormat}). Only PCM (1) and IEEE Float (3) are supported.`);
+            throw new Error('Unsupported audio format (' + this.audioFormat + '). Only PCM (1) and IEEE Float (3) are supported.');
         }
-        
-        this.dataOffset = dataChunk.offset;
-        this.dataSize = dataChunk.size;
-        this.bytesPerSample = (this.bitDepth / 8) * this.channels;
-        this.totalSamples = Math.floor(this.dataSize / this.bytesPerSample);
-        
-        // Pre-allocate read buffer for efficiency
-        this.readBuffer = Buffer.alloc(65536 * this.bytesPerSample);
     }
 
-    async *_findChunk(chunkId) {
-        // Scan file for chunk - we read in larger blocks for efficiency
-        const scanBuf = Buffer.alloc(4096);
-        let offset = 12; // Start after RIFF header
-        
-        while (offset < this.dataSize + 1024) { // reasonable upper bound
-            const { bytesRead } = await this.fileHandle.read(scanBuf, 0, 4096, offset);
-            if (bytesRead < 8) break;
-            
-            let localOffset = 0;
-            while (localOffset < bytesRead - 8) {
-                const id = scanBuf.toString('ascii', localOffset, localOffset + 4);
-                const size = scanBuf.readUInt32LE(localOffset + 4);
-                
-                if (id === chunkId) {
-                    return { offset: offset + localOffset + 8, size: size };
-                }
-                
-                localOffset += 8 + size;
-                if (size % 2 !== 0) localOffset += 1; // padding
-            }
-            
-            offset += bytesRead;
+    async _readExactAsync(size, offset) {
+        var buf = Buffer.alloc(size);
+        var result = await this.fileHandle.read(buf, 0, size, offset);
+        if (result.bytesRead < size) {
+            throw new Error('Unexpected EOF while reading WAV chunk in: ' + this.filePath);
         }
-        
-        return null;
+        return buf;
+    }
+
+    _readExactSync(size, offset) {
+        var buf = Buffer.alloc(size);
+        var bytesRead = fs.readSync(this.fd, buf, 0, size, offset);
+        if (bytesRead < size) {
+            throw new Error('Unexpected EOF while reading WAV chunk in: ' + this.filePath);
+        }
+        return buf;
     }
 
     async *readChunks(samplesPerChunk) {
-        if (!this.fileHandle) throw new Error('Reader not opened. Call open() first.');
-        
-        samplesPerChunk = samplesPerChunk || 65536;
-        const bytesPerChunk = samplesPerChunk * this.bytesPerSample;
-        
-        let remainingSamples = this.totalSamples - this.currentSampleOffset;
-        
-        while (remainingSamples > 0) {
-            const samplesToRead = Math.min(samplesPerChunk, remainingSamples);
-            const bytesToRead = samplesToRead * this.bytesPerSample;
-            
-            const fileOffset = this.dataOffset + (this.currentSampleOffset * this.bytesPerSample);
-            const { bytesRead } = await this.fileHandle.read(
-                this.readBuffer, 0, bytesToRead, fileOffset
-            );
-            
-            if (bytesRead === 0) break;
-            
-            const samples = this._decodeSamples(this.readBuffer, bytesRead);
-            
+        if (!this.fileHandle) {
+            throw new Error('Reader not opened in async mode. Call open() first.');
+        }
+
+        samplesPerChunk = samplesPerChunk || DEFAULT_CHUNK_SAMPLES;
+        this._ensureReadBuffer(samplesPerChunk * this.bytesPerSample);
+
+        while (this.currentSampleOffset < this.totalSamples) {
+            var samplesToRead = Math.min(samplesPerChunk, this.totalSamples - this.currentSampleOffset);
+            var bytesToRead = samplesToRead * this.bytesPerSample;
+            var fileOffset = this.dataOffset + (this.currentSampleOffset * this.bytesPerSample);
+            var readResult = await this.fileHandle.read(this.readBuffer, 0, bytesToRead, fileOffset);
+
+            if (readResult.bytesRead <= 0) break;
+
+            var validBytes = readResult.bytesRead - (readResult.bytesRead % this.bytesPerSample);
+            if (validBytes <= 0) break;
+
+            var samples = this._decodeSamples(this.readBuffer, validBytes);
+            var start = this.currentSampleOffset;
+            this.currentSampleOffset += samples.length;
+
             yield {
                 samples: samples,
-                sampleOffset: this.currentSampleOffset,
+                sampleOffset: start,
                 sampleCount: samples.length
             };
-            
+        }
+    }
+
+    *readChunksSync(samplesPerChunk) {
+        if (this.fd === null || this.fd === undefined) {
+            throw new Error('Reader not opened in sync mode. Call openSync() first.');
+        }
+
+        samplesPerChunk = samplesPerChunk || DEFAULT_CHUNK_SAMPLES;
+        this._ensureReadBuffer(samplesPerChunk * this.bytesPerSample);
+
+        while (this.currentSampleOffset < this.totalSamples) {
+            var samplesToRead = Math.min(samplesPerChunk, this.totalSamples - this.currentSampleOffset);
+            var bytesToRead = samplesToRead * this.bytesPerSample;
+            var fileOffset = this.dataOffset + (this.currentSampleOffset * this.bytesPerSample);
+            var bytesRead = fs.readSync(this.fd, this.readBuffer, 0, bytesToRead, fileOffset);
+
+            if (bytesRead <= 0) break;
+
+            var validBytes = bytesRead - (bytesRead % this.bytesPerSample);
+            if (validBytes <= 0) break;
+
+            var samples = this._decodeSamples(this.readBuffer, validBytes);
+            var start = this.currentSampleOffset;
             this.currentSampleOffset += samples.length;
-            remainingSamples = this.totalSamples - this.currentSampleOffset;
+
+            yield {
+                samples: samples,
+                sampleOffset: start,
+                sampleCount: samples.length
+            };
+        }
+    }
+
+    _ensureReadBuffer(minBytes) {
+        if (!this.readBuffer || this.readBuffer.length < minBytes) {
+            this.readBuffer = Buffer.alloc(minBytes);
         }
     }
 
     _decodeSamples(buffer, byteLength) {
-        const numRawSamples = byteLength / (this.bitDepth / 8);
-        let rawSamples;
-        
+        var numRawSamples = byteLength / (this.bitDepth / 8);
+        var rawSamples;
+        var i;
+
         if (this.audioFormat === 3 && this.bitDepth === 32) {
-            // 32-bit float
-            rawSamples = new Float32Array(buffer.buffer, buffer.byteOffset, numRawSamples);
+            rawSamples = new Float32Array(numRawSamples);
+            for (i = 0; i < numRawSamples; i++) {
+                rawSamples[i] = buffer.readFloatLE(i * 4);
+            }
         } else if (this.audioFormat === 1 && this.bitDepth === 16) {
-            // 16-bit PCM
-            const num = byteLength / 2;
-            rawSamples = new Float32Array(num);
-            for (let i = 0; i < num; i++) {
+            rawSamples = new Float32Array(numRawSamples);
+            for (i = 0; i < numRawSamples; i++) {
                 rawSamples[i] = buffer.readInt16LE(i * 2) / 32768.0;
             }
         } else if (this.audioFormat === 1 && this.bitDepth === 24) {
-            // 24-bit PCM
-            const num = byteLength / 3;
-            rawSamples = new Float32Array(num);
-            for (let i = 0; i < num; i++) {
-                const b0 = buffer[i * 3];
-                const b1 = buffer[i * 3 + 1];
-                const b2 = buffer[i * 3 + 2];
-                let val = (b0 | (b1 << 8) | (b2 << 16));
+            rawSamples = new Float32Array(numRawSamples);
+            for (i = 0; i < numRawSamples; i++) {
+                var b0 = buffer[i * 3];
+                var b1 = buffer[i * 3 + 1];
+                var b2 = buffer[i * 3 + 2];
+                var val = b0 | (b1 << 8) | (b2 << 16);
                 if (val & 0x800000) val |= 0xFF000000;
                 rawSamples[i] = val / 8388608.0;
             }
         } else if (this.audioFormat === 1 && this.bitDepth === 32) {
-            // 32-bit PCM integer
-            const num = byteLength / 4;
-            rawSamples = new Float32Array(num);
-            for (let i = 0; i < num; i++) {
+            rawSamples = new Float32Array(numRawSamples);
+            for (i = 0; i < numRawSamples; i++) {
                 rawSamples[i] = buffer.readInt32LE(i * 4) / 2147483648.0;
             }
         } else {
-            throw new Error(`Unsupported bit depth: ${this.bitDepth}-bit (format ${this.audioFormat})`);
+            throw new Error('Unsupported bit depth: ' + this.bitDepth + '-bit (format ' + this.audioFormat + ')');
         }
-        
-        // Stereo -> Mono downmix
-        if (this.channels === 1) {
-            return rawSamples;
-        } else if (this.channels === 2) {
-            const monoLength = Math.floor(rawSamples.length / 2);
-            const mono = new Float32Array(monoLength);
-            for (let i = 0; i < monoLength; i++) {
+
+        if (this.channels === 1) return rawSamples;
+
+        var monoLength = Math.floor(rawSamples.length / this.channels);
+        var mono = new Float32Array(monoLength);
+        if (this.channels === 2) {
+            for (i = 0; i < monoLength; i++) {
                 mono[i] = (rawSamples[i * 2] + rawSamples[i * 2 + 1]) * 0.5;
             }
             return mono;
-        } else {
-            // Multi-channel: take first channel
-            const monoLength = Math.floor(rawSamples.length / this.channels);
-            const mono = new Float32Array(monoLength);
-            for (let i = 0; i < monoLength; i++) {
-                mono[i] = rawSamples[i * this.channels];
-            }
-            return mono;
         }
+
+        for (i = 0; i < monoLength; i++) {
+            mono[i] = rawSamples[i * this.channels];
+        }
+        return mono;
     }
 
     get durationSec() {
+        if (!this.sampleRate) return 0;
         return this.totalSamples / this.sampleRate;
     }
 
     close() {
         if (this.fileHandle) {
-            this.fileHandle.close();
+            try {
+                this.fileHandle.close();
+            } catch (e) {
+                // ignore close errors in best-effort sync close
+            }
             this.fileHandle = null;
         }
+
+        if (this.fd !== null && this.fd !== undefined) {
+            try {
+                fs.closeSync(this.fd);
+            } catch (e2) {
+                // ignore close errors
+            }
+            this.fd = null;
+        }
+
+        this.readBuffer = null;
+    }
+
+    async closeAsync() {
+        if (this.fileHandle) {
+            await this.fileHandle.close();
+            this.fileHandle = null;
+        } else if (this.fd !== null && this.fd !== undefined) {
+            fs.closeSync(this.fd);
+        }
+
+        this.fd = null;
+        this.readBuffer = null;
     }
 }
 
-module.exports = { WavStreamReader };
+module.exports = { WavStreamReader: WavStreamReader };

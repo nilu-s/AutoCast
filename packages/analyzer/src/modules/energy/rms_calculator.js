@@ -48,6 +48,79 @@ function calculateRMS(samples, sampleRate, frameDurationMs) {
 }
 
 /**
+ * Create a state object for chunk-based RMS accumulation.
+ * @param {number} sampleRate
+ * @param {number} [frameDurationMs=10]
+ * @returns {{ frameSize: number, frameDurationMs: number, sampleRate: number, sumSq: number, maxAbs: number, samplesInFrame: number, completedFrames: number }}
+ */
+function createRMSStreamingState(sampleRate, frameDurationMs) {
+    frameDurationMs = frameDurationMs || 10;
+
+    return {
+        frameSize: Math.round((frameDurationMs / 1000) * sampleRate),
+        frameDurationMs: frameDurationMs,
+        sampleRate: sampleRate,
+        sumSq: 0,
+        maxAbs: 0,
+        samplesInFrame: 0,
+        completedFrames: 0
+    };
+}
+
+/**
+ * Calculate per-frame RMS from a chunk, preserving frame continuity across chunks.
+ *
+ * @param {Float32Array} chunkSamples
+ * @param {number} sampleRate
+ * @param {number} [frameDurationMs=10]
+ * @param {object} [previousState]
+ * @returns {{ rmsChunk: Float64Array, peakChunk: Float64Array, newState: object }}
+ */
+function calculateRMSStreaming(chunkSamples, sampleRate, frameDurationMs, previousState) {
+    var state = previousState || createRMSStreamingState(sampleRate, frameDurationMs);
+    var rmsValues = [];
+    var peakValues = [];
+    var i;
+
+    if (state.frameSize <= 0) {
+        throw new Error('Invalid frame size for RMS streaming.');
+    }
+
+    if (!chunkSamples || chunkSamples.length === 0) {
+        return {
+            rmsChunk: new Float64Array(0),
+            peakChunk: new Float64Array(0),
+            newState: state
+        };
+    }
+
+    for (i = 0; i < chunkSamples.length; i++) {
+        var val = chunkSamples[i];
+        state.sumSq += val * val;
+
+        var absVal = Math.abs(val);
+        if (absVal > state.maxAbs) state.maxAbs = absVal;
+
+        state.samplesInFrame++;
+
+        if (state.samplesInFrame === state.frameSize) {
+            rmsValues.push(Math.sqrt(state.sumSq / state.frameSize));
+            peakValues.push(state.maxAbs);
+            state.sumSq = 0;
+            state.maxAbs = 0;
+            state.samplesInFrame = 0;
+            state.completedFrames++;
+        }
+    }
+
+    return {
+        rmsChunk: Float64Array.from(rmsValues),
+        peakChunk: Float64Array.from(peakValues),
+        newState: state
+    };
+}
+
+/**
  * Convert linear RMS value to dBFS.
  * @param {number} linear - Linear RMS value (0 to 1)
  * @returns {number} dBFS value (negative, -Infinity for silence)
@@ -155,6 +228,8 @@ function estimateNoiseFloor(rmsArray) {
 
 module.exports = {
     calculateRMS: calculateRMS,
+    createRMSStreamingState: createRMSStreamingState,
+    calculateRMSStreaming: calculateRMSStreaming,
     linearToDb: linearToDb,
     dbToLinear: dbToLinear,
     smoothRMS: smoothRMS,

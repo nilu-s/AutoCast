@@ -57,10 +57,12 @@ function runVadStage(ctx) {
         var speakerSimilarity = null;
         var laughterDebug = null;
 
+        // Spectral confidence now comes from chunk-streamed feature extraction.
         if (params.useSpectralVAD && spectralResults[i]) {
+            var spectralConfidence = spectralResults[i].confidence;
             var spectralRefine = spectralVad.refineGateWithSpectral(
                 vadResult.gateOpen,
-                spectralResults[i].confidence,
+                spectralConfidence,
                 params.spectralMinConfidence,
                 {
                     softMargin: params.spectralSoftMargin,

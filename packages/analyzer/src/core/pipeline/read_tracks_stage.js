@@ -2,7 +2,10 @@
 
 var path = require('path');
 var wavReader = require('../../modules/io/wav_reader');
+var WavStreamReader = require('../../modules/io/wav_stream_reader').WavStreamReader;
 var runtimeUtils = require('../utils/runtime_utils');
+
+var DEFAULT_STREAM_CHUNK_SAMPLES = 65536;
 
 function runReadTracksStage(ctx) {
     ctx = ctx || {};
@@ -16,11 +19,12 @@ function runReadTracksStage(ctx) {
         throw new Error('No tracks provided for analysis.');
     }
 
-    progress(5, 'Reading audio files...');
+    progress(5, 'Reading audio file metadata...');
 
     var trackInfos = [];
     var audioData = [];
     var i;
+    var streamChunkSamples = Math.max(1024, params.streamChunkSizeSamples || DEFAULT_STREAM_CHUNK_SAMPLES);
 
     for (i = 0; i < trackCount; i++) {
         var p = trackPaths[i];
@@ -34,28 +38,47 @@ function runReadTracksStage(ctx) {
                 bitDepth: 16
             });
             audioData.push({
+                path: null,
                 sampleRate: 48000,
                 channels: 1,
                 bitDepth: 16,
+                durationSec: 0,
+                totalSamples: 0,
                 samples: new Float32Array(0),
-                durationSec: 0
+                streamChunkSamples: streamChunkSamples
             });
             continue;
         }
 
         var absPath = path.resolve(p);
-        progress(5 + Math.round((i / trackCount) * 10), 'Reading: ' + path.basename(absPath));
+        progress(5 + Math.round((i / trackCount) * 10), 'Reading header: ' + path.basename(absPath));
 
-        var wav = wavReader.readWav(absPath);
-        trackInfos.push({
-            path: absPath,
-            name: path.basename(absPath, path.extname(absPath)),
-            durationSec: wav.durationSec,
-            sampleRate: wav.sampleRate,
-            channels: wav.channels,
-            bitDepth: wav.bitDepth
-        });
-        audioData.push(wav);
+        var streamReader = new WavStreamReader(absPath);
+        try {
+            streamReader.openSync();
+
+            trackInfos.push({
+                path: absPath,
+                name: path.basename(absPath, path.extname(absPath)),
+                durationSec: streamReader.durationSec,
+                sampleRate: streamReader.sampleRate,
+                channels: streamReader.channels,
+                bitDepth: streamReader.bitDepth
+            });
+
+            audioData.push({
+                path: absPath,
+                sampleRate: streamReader.sampleRate,
+                channels: streamReader.channels,
+                bitDepth: streamReader.bitDepth,
+                durationSec: streamReader.durationSec,
+                totalSamples: streamReader.totalSamples,
+                samples: null,
+                streamChunkSamples: streamChunkSamples
+            });
+        } finally {
+            streamReader.close();
+        }
     }
 
     progress(15, 'Checking track alignment...');
