@@ -1,0 +1,35 @@
+[
+  {
+    "trackIndex": 0,
+    "trackName": "Speaker A",
+    "clipName": "packages/analyzer/test/test_data/SpeakerA - 1/speach.wav",
+    "start": 0,
+    "end": 5.0,
+    "inPoint": 0,
+    "outPoint": 5.0,
+    "duration": 5.0,
+    "contentType": "speech"
+  },
+  {
+    "trackIndex": 1,
+    "trackName": "Speaker B",
+    "clipName": "packages/analyzer/test/test_data/SpeakerB - 1/speach.wav",
+    "start": 0,
+    "end": 5.0,
+    "inPoint": 0,
+    "outPoint": 5.0,
+    "duration": 5.0,
+    "contentType": "speech"
+  },
+  {
+    "trackIndex": 2,
+    "trackName": "Lachen",
+    "clipName": "packages/analyzer/test/test_data/Lachen - gemeinsam - 2/lachen.wav",
+    "start": 0,
+    "end": 4.0,
+    "inPoint": 0,
+    "outPoint": 4.0,
+    "duration": 4.0,
+    "contentType": "review"
+  }
+]

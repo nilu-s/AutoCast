@@ -5,7 +5,7 @@ var path = require('path');
 var childProcess = require('child_process');
 
 var ROOT = path.resolve(__dirname, '..', '..');
-var EVAL_SCRIPT_PATH = path.join(ROOT, 'scripts', 'evaluate_pipeline.js');
+var EVAL_SCRIPT_PATH = path.join(ROOT, 'scripts', 'evaluate_pipeline_wrapper.js');
 var REPORT_DIR = path.join(ROOT, 'reports', 'autoresearch');
 var RUNS_DIR = path.join(REPORT_DIR, 'runs');
 var TASKS_DIR = path.join(REPORT_DIR, 'tasks');

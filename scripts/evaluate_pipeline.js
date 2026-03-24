@@ -162,9 +162,20 @@ function buildTrackSetup(segments) {
 
     var trackCount = maxTrackIndex + 1;
     var trackPaths = [];
+    var AUDIO_FALLBACK_DIR = path.join(__dirname, '..', 'test_data_real', 'podcastExample');
     for (var t = 0; t < trackCount; t++) {
         if (trackToClip.hasOwnProperty(t)) {
-            trackPaths[t] = path.join(__dirname, '..', trackToClip[t]);
+            var clipName = trackToClip[t];
+            var primaryPath = path.join(__dirname, '..', clipName);
+            var fallbackPath = path.join(AUDIO_FALLBACK_DIR, clipName);
+            if (fs.existsSync(primaryPath)) {
+                trackPaths[t] = primaryPath;
+            } else if (fs.existsSync(fallbackPath)) {
+                trackPaths[t] = fallbackPath;
+            } else {
+                console.error('Audio file not found: ' + clipName + ' (looked in root and ' + AUDIO_FALLBACK_DIR + ')');
+                trackPaths[t] = null;
+            }
         } else {
             trackPaths[t] = null;
         }

@@ -127,10 +127,10 @@ var ANALYSIS_DEFAULTS = {
 
 
     // Cross-track bleed suppression
-    enableBleedHandling: false,
-    bleedSuppressionDb: 18,
-    bleedSuppressionSimilarityThreshold: 0.90,
-    bleedSuppressionProtectConfidence: 0.34,
+    enableBleedHandling: true,
+    bleedSuppressionDb: 12,
+    bleedSuppressionSimilarityThreshold: 0.85,
+    bleedSuppressionProtectConfidence: 0.28,
 
     // Alignment check
     alignmentToleranceSec: 0.5,
