@@ -2,6 +2,11 @@
 
 (function (root) {
     var PANEL_CONTRACT_VERSION = 'autocast.panel.v1';
+    var CONTENT_TYPES = {
+        speech: true,
+        review: true,
+        ignore: true
+    };
 
     function isObject(value) {
         return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -60,7 +65,49 @@
         if (!Array.isArray(result.segments)) return { ok: false, message: 'Analyze result missing segments array.' };
         if (!isObject(result.alignment)) return { ok: false, message: 'Analyze result missing alignment object.' };
         if (!isObject(result.waveform)) return { ok: false, message: 'Analyze result missing waveform object.' };
+        var segmentError = validateSegments(result.segments, 'segments');
+        if (segmentError) return { ok: false, message: segmentError };
         return { ok: true, value: result };
+    }
+
+    function validateSegments(segments, labelPrefix) {
+        for (var i = 0; i < segments.length; i++) {
+            var segOrTrack = segments[i];
+            var label = labelPrefix + '[' + i + ']';
+            if (Array.isArray(segOrTrack)) {
+                var arrError = validateSegmentArray(segOrTrack, label);
+                if (arrError) return arrError;
+                continue;
+            }
+            var segError = validateSegment(segOrTrack, label);
+            if (segError) return segError;
+        }
+        return null;
+    }
+
+    function validateSegmentArray(segments, labelPrefix) {
+        for (var i = 0; i < segments.length; i++) {
+            var err = validateSegment(segments[i], labelPrefix + '[' + i + ']');
+            if (err) return err;
+        }
+        return null;
+    }
+
+    function validateSegment(segment, label) {
+        if (!isObject(segment)) return 'Analyze result segment ' + label + ' must be an object.';
+
+        var start = segment.start;
+        var end = segment.end;
+        if (!isFiniteNumber(start) || !isFiniteNumber(end) || !(end > start)) {
+            return 'Analyze result segment ' + label + ' must define a valid [start,end] range.';
+        }
+        if (!isFiniteNumber(segment.trackIndex) || segment.trackIndex < 0) {
+            return 'Analyze result segment ' + label + '.trackIndex must be a non-negative number.';
+        }
+        if (typeof segment.contentType !== 'string' || !CONTENT_TYPES[segment.contentType]) {
+            return 'Analyze result segment ' + label + '.contentType must be speech, review or ignore.';
+        }
+        return null;
     }
 
     function validateQuickGainResult(result) {

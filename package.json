@@ -13,12 +13,15 @@
                     "check:arch":  "node scripts/check_architecture.js",
                     "check:llm":  "node scripts/check_llm_requirements.js",
                     "check":  "npm run check:syntax && npm run check:structure && npm run check:arch && npm run check:llm && npm test",
+                    "eval:pipeline":  "node scripts/evaluate_pipeline.js",
+                    "autoresearch:orchestrate":  "node scripts/autoresearch/orchestrator.js",
                     "test:wav":  "node packages/analyzer/test/run_single_test.js packages/analyzer/src/modules/io/tests/wav_reader.test.js",
                     "test:rms":  "node packages/analyzer/test/run_single_test.js packages/analyzer/src/modules/energy/tests/rms_calculator.test.js",
                     "test:segments":  "node packages/analyzer/test/run_single_test.js packages/analyzer/src/modules/segmentation/tests/segment_builder_core.test.js",
                     "test:overlap":  "node packages/analyzer/test/run_single_test.js packages/analyzer/src/modules/overlap/tests/overlap_resolver.test.js",
                     "generate-test-data":  "node packages/analyzer/test/generate_test_wav.js",
-                    "analyze":  "node packages/analyzer/src/analyzer.js"
+                    "analyze":  "node packages/analyzer/src/analyzer.js",
+                    "autoresearch:evaluate":  "node scripts/evaluate_pipeline.js"
                 },
     "keywords":  [
                      "premiere",

@@ -10,7 +10,7 @@
 var path = require('path');
 var fs = require('fs');
 var wavLoader = require('../utils/wav_loader');
-var laughterDetector = require('../../src/modules/vad/laughter_detector');
+
 var spectralVad = require('../../src/modules/vad/spectral_vad');
 var vadGate = require('../../src/modules/vad/vad_gate');
 var segmentBuilder = require('../../src/modules/segmentation/segment_builder');
@@ -80,58 +80,7 @@ function computeMaxConfidence(confidence) {
     return max;
 }
 
-// ============================================================================
-// Laughter Detection Tests
-// ============================================================================
 
-describe('Real Audio - Laughter Detection', function () {
-    
-    it('should detect laughter in real audio files', function () {
-        var categories = ['Lachen - 1', 'Lachen - 2', 'Lachen - gemeinsam'];
-        var detectedCount = 0;
-        var totalCount = 0;
-        
-        categories.forEach(function(cat) {
-            var files = wavLoader.loadTestData(cat);
-            files.forEach(function(file) {
-                totalCount++;
-                var result = laughterDetector.computeLaughterConfidence(
-                    file.samples, file.sampleRate, FRAME_MS
-                );
-                var meanConf = computeMeanConfidence(result.confidence);
-                if (meanConf > 0.3) detectedCount++;
-            });
-        });
-        
-        assert(detectedCount > 0, 'Should detect laughter in at least some files');
-        console.log('  Detected laughter in ' + detectedCount + '/' + totalCount + ' files');
-    });
-    
-    it('should distinguish laughter from speech', function () {
-        var laughterFiles = wavLoader.loadTestData('Lachen - 1');
-        var speechFiles = wavLoader.loadTestData('Ja');
-        
-        if (laughterFiles.length === 0 || speechFiles.length === 0) {
-            console.log('  Skip: Not enough test files');
-            return;
-        }
-        
-        var laughterConf = laughterDetector.computeLaughterConfidence(
-            laughterFiles[0].samples, laughterFiles[0].sampleRate, FRAME_MS
-        );
-        var speechConf = laughterDetector.computeLaughterConfidence(
-            speechFiles[0].samples, speechFiles[0].sampleRate, FRAME_MS
-        );
-        
-        var laughterMean = computeMeanConfidence(laughterConf.confidence);
-        var speechMean = computeMeanConfidence(speechConf.confidence);
-        
-        console.log('  Laughter confidence: ' + laughterMean.toFixed(3));
-        console.log('  Speech confidence: ' + speechMean.toFixed(3));
-        
-        assert(laughterMean > speechMean * 0.5, 'Laughter should have comparable or higher confidence than speech');
-    });
-});
 
 // ============================================================================
 // Filler Sounds (Mhm) Tests

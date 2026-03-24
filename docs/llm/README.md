@@ -17,6 +17,8 @@ Diese Unterlagen helfen bei drei Fragen:
 4. `docs/llm/WORKFLOW_PLAYBOOK.md`
 5. `docs/llm/GUARDRAILS.md`
 6. `docs/llm/DOMAIN_GLOSSARY.md`
+7. `docs/llm/AGENT_SYSTEM.md`
+8. `docs/llm/autoresearch/README.md` (wenn kontinuierliche Agentenoptimierung genutzt wird)
 
 ## Arbeitsmodus fuer Assistenten
 
@@ -64,3 +66,11 @@ npm run check
 ```
 
 `npm run check` umfasst Syntax-, Struktur-, Architektur-, LLM-Requirements- und Test-Checks.
+
+## Autoresearch
+
+Fuer cronjob-basierte, agentische Optimierungszyklen:
+
+- `docs/llm/AGENT_SYSTEM.md`
+- `docs/llm/autoresearch/README.md`
+- `docs/llm/autoresearch/PROGRAM_AUTORESEARCH.md`

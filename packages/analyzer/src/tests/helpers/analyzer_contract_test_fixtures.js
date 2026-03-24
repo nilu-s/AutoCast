@@ -43,8 +43,14 @@ function makeValidMetricPatch() {
 
 function makeValidAnalyzeResult() {
     return {
-        tracks: [],
-        segments: [],
+        tracks: [{ index: 0 }],
+        segments: [[{
+            start: 0,
+            end: 1,
+            trackIndex: 0,
+            state: 'active',
+            contentType: 'speech'
+        }]],
         alignment: {},
         waveform: {},
         cutPreview: {

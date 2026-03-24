@@ -150,3 +150,22 @@ npm run check
 
 Wenn neue Testdateien entstehen:
 - In das passende `suite_manifest.js` eintragen.
+
+## 8) Autoresearch Methodenlauf (cron/agentisch)
+
+Bearbeite:
+- `scripts/autoresearch/orchestrator.js`
+- `docs/llm/autoresearch/runtime/config.json`
+- `docs/llm/autoresearch/runtime/method_catalog.json`
+- `docs/llm/autoresearch/agents/*`
+
+Regel:
+- Pro priorisiertem Task mindestens zwei Methoden-Hypothesen testen, wenn verfuegbar.
+- Jede Methode muss echte Codeaenderungen enthalten (keine reinen Reports).
+- Nach jeder Methode:
+  - `npm run check`
+  - `node scripts/evaluate_pipeline.js`
+
+Akzeptanz:
+- Objective stabil/steigend.
+- Keine harte Regression der Kernmetriken ohne dokumentierten Tradeoff.

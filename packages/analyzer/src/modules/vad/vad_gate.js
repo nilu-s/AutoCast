@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AutoCast - Voice Activity Detection Gate
  *
  * Per-track noise gate with adaptive thresholding, attack/release,
@@ -39,17 +39,15 @@ var VAD_DEFAULTS = {
     hysteresisDb: 2,
     /** Frame duration used to derive adaptive floor windows. */
     frameDurationMs: 10,
-    /** Enable local, rolling floor adaptation. */
-    adaptiveNoiseFloor: true,
-    /** Rolling floor window size. */
-    localNoiseWindowMs: 1800,
-    /** How often to recompute the local floor. */
-    noiseFloorUpdateMs: 500,
-    /** Quantile for local floor estimation. */
+    /** Enable local floor tracking to reduce noise-floor drift false positives. */
+    adaptiveNoiseFloor: false,
+    /** Rolling local floor window size in ms (used when adaptiveNoiseFloor=true). */
+    localNoiseWindowMs: 1200,
+    /** Recompute local floor every N ms (used when adaptiveNoiseFloor=true). */
+    noiseFloorUpdateMs: 200,
+    /** Percentile in local window used as floor candidate (used when adaptiveNoiseFloor=true). */
     localNoisePercentile: 0.15,
-    /** Sub-sampling stride for local floor percentile windows (performance). */
-    localNoiseSampleStride: 2,
-    /** Maximum floor rise above global floor (in dB). */
+    /** Max rise in dB above global floor for adaptive local floor. */
     maxAdaptiveFloorRiseDb: 8,
     /** Include per-frame arrays useful for analyzer diagnostics. */
     debugMode: false,
@@ -86,18 +84,8 @@ function detectActivity(rmsArray, params) {
     // 2) Global floor estimate.
     var noiseInfo = rmsCalc.estimateNoiseFloor(rmsArray);
 
-    // 3) Per-frame adaptive floor (optional), bounded against global floor.
-    var floorByFrame = createFilledArray(frameCount, noiseInfo.noiseFloorLinear);
-    if (params.adaptiveNoiseFloor && frameCount > 0) {
-        floorByFrame = estimateAdaptiveNoiseFloor(smoothed, noiseInfo.noiseFloorLinear, {
-            frameDurationMs: frameDurationMs,
-            localNoiseWindowMs: params.localNoiseWindowMs,
-            noiseFloorUpdateMs: params.noiseFloorUpdateMs,
-            localNoisePercentile: params.localNoisePercentile,
-            maxAdaptiveFloorRiseDb: params.maxAdaptiveFloorRiseDb,
-            localNoiseSampleStride: params.localNoiseSampleStride
-        });
-    }
+    // 3) Build per-frame floor (global baseline + optional local drift tracking).
+    var floorByFrame = buildFloorByFrame(smoothed, noiseInfo, params, frameDurationMs);
 
     // 4) Compute per-frame thresholds and hysteresis gate decisions.
     var hysteresisDb = (params.hysteresisDb !== undefined) ? params.hysteresisDb : 4;
@@ -272,103 +260,7 @@ function applyRelease(gateArray, releaseFrames) {
     return result;
 }
 
-function estimateAdaptiveNoiseFloor(smoothedRms, globalFloorLinear, cfg) {
-    var len = smoothedRms.length;
-    var floors = new Float64Array(len);
-    if (len === 0) return floors;
 
-    var frameDurationMs = cfg.frameDurationMs || 10;
-    var windowFrames = Math.max(8, Math.round((cfg.localNoiseWindowMs || 1500) / frameDurationMs));
-    var updateFrames = Math.max(1, Math.round((cfg.noiseFloorUpdateMs || 250) / frameDurationMs));
-    var percentile = clamp(cfg.localNoisePercentile, 0.05, 0.40);
-    var sampleStride = Math.max(1, Math.floor(cfg.localNoiseSampleStride || 1));
-    var maxRiseDb = (cfg.maxAdaptiveFloorRiseDb !== undefined) ? cfg.maxAdaptiveFloorRiseDb : 8;
-
-    var globalDb = rmsCalc.linearToDb(globalFloorLinear);
-    if (!isFinite(globalDb)) globalDb = -Infinity;
-
-    var anchorFrames = [];
-    var anchorFloors = [];
-    var halfWindow = Math.floor(windowFrames / 2);
-
-    for (var center = 0; center < len; center += updateFrames) {
-        var start = Math.max(0, center - halfWindow);
-        var end = Math.min(len, center + halfWindow + 1);
-        var localFloor = computeWindowPercentile(
-            smoothedRms,
-            start,
-            end,
-            percentile,
-            globalFloorLinear,
-            sampleStride
-        );
-        var localDb = rmsCalc.linearToDb(localFloor);
-        if (!isFinite(localDb)) localDb = globalDb;
-        if (isFinite(globalDb)) {
-            localDb = Math.max(globalDb, Math.min(localDb, globalDb + maxRiseDb));
-        }
-        anchorFrames.push(center);
-        anchorFloors.push(rmsCalc.dbToLinear(localDb));
-    }
-
-    if (anchorFrames.length === 0 || anchorFrames[anchorFrames.length - 1] !== (len - 1)) {
-        var lastStart = Math.max(0, (len - 1) - halfWindow);
-        var lastEnd = len;
-        var lastFloor = computeWindowPercentile(
-            smoothedRms,
-            lastStart,
-            lastEnd,
-            percentile,
-            globalFloorLinear,
-            sampleStride
-        );
-        var lastDb = rmsCalc.linearToDb(lastFloor);
-        if (!isFinite(lastDb)) lastDb = globalDb;
-        if (isFinite(globalDb)) {
-            lastDb = Math.max(globalDb, Math.min(lastDb, globalDb + maxRiseDb));
-        }
-        anchorFrames.push(len - 1);
-        anchorFloors.push(rmsCalc.dbToLinear(lastDb));
-    }
-
-    var anchorIdx = 0;
-    for (var i = 0; i < len; i++) {
-        while (anchorIdx < anchorFrames.length - 2 && i > anchorFrames[anchorIdx + 1]) {
-            anchorIdx++;
-        }
-
-        var leftFrame = anchorFrames[anchorIdx];
-        var rightFrame = anchorFrames[Math.min(anchorIdx + 1, anchorFrames.length - 1)];
-        var leftFloor = anchorFloors[anchorIdx];
-        var rightFloor = anchorFloors[Math.min(anchorIdx + 1, anchorFloors.length - 1)];
-
-        if (rightFrame <= leftFrame) {
-            floors[i] = leftFloor;
-        } else {
-            var t = (i - leftFrame) / (rightFrame - leftFrame);
-            floors[i] = leftFloor + (rightFloor - leftFloor) * t;
-        }
-    }
-
-    return floors;
-}
-
-function computeWindowPercentile(values, start, end, percentile, fallback, stride) {
-    stride = Math.max(1, stride || 1);
-    var window = [];
-    for (var i = start; i < end; i += stride) {
-        var v = values[i];
-        if (v > 1e-12) window.push(v);
-    }
-
-    if (window.length === 0) return fallback || 0;
-
-    window.sort(function (a, b) { return a - b; });
-    var idx = Math.floor((window.length - 1) * percentile);
-    if (idx < 0) idx = 0;
-    if (idx >= window.length) idx = window.length - 1;
-    return window[idx];
-}
 
 function sampleRepresentativeDb(linearValues) {
     if (!linearValues || linearValues.length === 0) return -Infinity;
@@ -392,6 +284,55 @@ function createFilledArray(length, value) {
     var out = new Float64Array(length);
     for (var i = 0; i < length; i++) out[i] = value;
     return out;
+}
+
+function buildFloorByFrame(smoothedRms, noiseInfo, params, frameDurationMs) {
+    var frameCount = smoothedRms.length;
+    if (!params.adaptiveNoiseFloor || frameCount <= 0) {
+        return createFilledArray(frameCount, noiseInfo.noiseFloorLinear);
+    }
+
+    var floor = new Float64Array(frameCount);
+    var windowFrames = Math.max(10, Math.round((params.localNoiseWindowMs || 1200) / Math.max(1, frameDurationMs)));
+    var updateFrames = Math.max(1, Math.round((params.noiseFloorUpdateMs || 200) / Math.max(1, frameDurationMs)));
+    var percentile = clamp(params.localNoisePercentile !== undefined ? params.localNoisePercentile : 0.15, 0.01, 0.5);
+    var baseDb = noiseInfo.noiseFloorDb;
+    var maxRiseDb = Math.max(0, params.maxAdaptiveFloorRiseDb !== undefined ? params.maxAdaptiveFloorRiseDb : 8);
+    var maxDb = baseDb + maxRiseDb;
+    var currentFloorLinear = noiseInfo.noiseFloorLinear;
+
+    for (var i = 0; i < frameCount; i++) {
+        if (i === 0 || (i % updateFrames) === 0) {
+            var start = Math.max(0, i - windowFrames + 1);
+            var candidateLinear = percentileInRange(smoothedRms, start, i + 1, percentile, noiseInfo.noiseFloorLinear);
+            var medianLinear = percentileInRange(smoothedRms, start, i + 1, 0.5, noiseInfo.noiseFloorLinear);
+            var candidateDb = rmsCalc.linearToDb(Math.max(candidateLinear, 1e-12));
+            var medianDb = rmsCalc.linearToDb(Math.max(medianLinear, 1e-12));
+            if (!isFinite(candidateDb)) candidateDb = baseDb;
+            if (isFinite(medianDb)) {
+                // When the local distribution drifts up, follow the median conservatively.
+                candidateDb = Math.max(candidateDb, medianDb - 2);
+            }
+            candidateDb = clamp(candidateDb, baseDb, maxDb);
+            currentFloorLinear = rmsCalc.dbToLinear(candidateDb);
+        }
+        floor[i] = currentFloorLinear;
+    }
+
+    return floor;
+}
+
+function percentileInRange(arr, start, endExclusive, percentile, fallback) {
+    var values = [];
+    for (var i = start; i < endExclusive; i++) {
+        var v = arr[i];
+        if (!(v > 0) || !isFinite(v)) continue;
+        values.push(v);
+    }
+    if (values.length === 0) return fallback;
+    values.sort(function (a, b) { return a - b; });
+    var idx = Math.floor(clamp(percentile, 0, 1) * (values.length - 1));
+    return values[idx];
 }
 
 function clamp(v, min, max) {

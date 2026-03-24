@@ -1,6 +1,11 @@
 'use strict';
 
 var ANALYZER_CONTRACT_VERSION = 'autocast.analyzer.v1';
+var CONTENT_TYPES = {
+    speech: true,
+    review: true,
+    ignore: true
+};
 
 function ensureObject(value, fallback) {
     if (value && typeof value === 'object' && !Array.isArray(value)) return value;
@@ -70,6 +75,7 @@ function assertAnalyzeResult(result) {
     if (!result.cutPreview || typeof result.cutPreview !== 'object') {
         throw new Error('Invalid analyze result: cutPreview object missing.');
     }
+    assertSegments(result.segments, 'segments');
     assertCutPreview(result.cutPreview);
     assertPreviewModel(result.previewModel, result.cutPreview);
 }
@@ -115,6 +121,46 @@ function assertCutPreview(cutPreview) {
             throw new Error('Invalid analyze result: cutPreview.items[' + i + '].metrics missing.');
         }
         assertPreviewMetrics(item.metrics, 'cutPreview.items[' + i + '].metrics');
+    }
+}
+
+function assertSegments(segments, labelPrefix) {
+    for (var i = 0; i < segments.length; i++) {
+        var segOrTrack = segments[i];
+        var label = labelPrefix + '[' + i + ']';
+        if (Array.isArray(segOrTrack)) {
+            assertSegmentArray(segOrTrack, label);
+            continue;
+        }
+        assertSegment(segOrTrack, label);
+    }
+}
+
+function assertSegmentArray(segments, labelPrefix) {
+    for (var i = 0; i < segments.length; i++) {
+        assertSegment(segments[i], labelPrefix + '[' + i + ']');
+    }
+}
+
+function assertSegment(segment, label) {
+    if (!segment || typeof segment !== 'object') {
+        throw new Error('Invalid analyze result: ' + label + ' must be an object.');
+    }
+
+    var start = segment.start;
+    var end = segment.end;
+    if (!isFiniteNumber(start) || !isFiniteNumber(end) || !(end > start)) {
+        throw new Error('Invalid analyze result: ' + label + ' must define a valid [start,end] range.');
+    }
+
+    if (!isFiniteNumber(segment.trackIndex) || segment.trackIndex < 0) {
+        throw new Error('Invalid analyze result: ' + label + '.trackIndex must be a non-negative number.');
+    }
+
+    if (typeof segment.contentType !== 'string' || !CONTENT_TYPES[segment.contentType]) {
+        throw new Error(
+            'Invalid analyze result: ' + label + '.contentType must be one of "speech", "review", "ignore".'
+        );
     }
 }
 
@@ -199,6 +245,10 @@ function assertNumberInRange(value, min, max, label) {
     if (value < min || value > max) {
         throw new Error('Invalid analyze result: ' + label + ' must be in range [' + min + ', ' + max + '].');
     }
+}
+
+function isFiniteNumber(value) {
+    return typeof value === 'number' && isFinite(value);
 }
 
 module.exports = {

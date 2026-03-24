@@ -33,7 +33,7 @@ AutoCast ist ein CEP-Plugin fuer Adobe Premiere Pro:
 - Keine zusaetzlichen Fallbacks oder Adapter "just in case".
 - Wenn ein neuer Ansatz einen alten ersetzt, alte Logik aktiv entfernen oder entkoppeln.
 - Legacy-Verhalten nur behalten, wenn konkret erforderlich; Begruendung kurz dokumentieren.
-- **VAD Refactor abgeschlossen:** vad_stage_optimized.js entfernt, Loudness-Latch aktiv (enableLoudnessLatch: true)
+- **VAD Pipeline Streamlined:** Klassischer Modus (VAD -> Padding -> Cross-Track Overlap) aktiv. Fehlerhaftes Loudness-Latch deaktiviert. LaughterDetection, AdaptiveNoiseFloor, SameTrackGapMerge und ungenutzte Dual-Paths (optimized) wurden physisch geloescht.
 
 ## Wo anfangen bei typischen Aufgaben
 
@@ -63,11 +63,5 @@ AutoCast ist ein CEP-Plugin fuer Adobe Premiere Pro:
 - `docs/llm/WORKFLOW_PLAYBOOK.md`
 - `docs/llm/GUARDRAILS.md`
 - `docs/llm/DOMAIN_GLOSSARY.md`
-- `docs/llm/VAD_REFACTOR_PHASES.md` - Aktiver Refactor-Plan (36 Phasen)
 
-## Aktive Refactors
 
-### VAD Pipeline Refactor (36 Phasen, 10-Min-Zyklen)
-- **Status:** Siehe `docs/llm/VAD_REFACTOR_PHASES.md`
-- **Ziel:** vad_stage_optimized.js bereinigen, Loudness-Latch einführen
-- **Cron-Job:** Liest CLAUDE.md + VAD_REFACTOR_PHASES.md vor jeder Phase

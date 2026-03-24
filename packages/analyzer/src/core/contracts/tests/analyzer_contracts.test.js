@@ -86,6 +86,22 @@ describe('Analyzer Contracts', function () {
         }, 'Expected preview model version mismatch to throw');
     });
 
+    it('should reject segment without contentType', function () {
+        var result = fixtures.makeValidAnalyzeResult();
+        delete result.segments[0][0].contentType;
+        assertThrows(function () {
+            analyzerContracts.assertAnalyzeResult(result);
+        }, 'Expected missing contentType to throw');
+    });
+
+    it('should reject segment with invalid contentType', function () {
+        var result = fixtures.makeValidAnalyzeResult();
+        result.segments[0][0].contentType = 'music';
+        assertThrows(function () {
+            analyzerContracts.assertAnalyzeResult(result);
+        }, 'Expected invalid contentType to throw');
+    });
+
     it('should validate quick gain result shape', function () {
         analyzerContracts.assertQuickGainScanResult({ tracks: [] });
     });

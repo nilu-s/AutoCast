@@ -54,9 +54,13 @@
             <section id="tracksSection" class="section">
                 <div class="section-header">
                     <h2 class="section-title">Tracks</h2>
-                    <button id="btnLoadTracks" class="btn btn-icon btn-secondary" title="Load Tracks">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <!-- TEMP JSON EXPORT -->
+                        <button id="btnReviewManualCutsTemp" class="btn btn-secondary btn-sm" title="Review timeline clips for categorizing">Review Manual Cuts</button>
+                        <!-- /TEMP. remove later -->
+                        <button id="btnLoadTracks" class="btn btn-icon btn-secondary" title="Load Tracks">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                             <polyline points="7 10 12 15 17 10"></polyline>
                             <line x1="12" y1="15" x2="12" y2="3"></line>
@@ -124,6 +128,9 @@
                                 </svg>
                                 Back
                             </button>
+                            <!-- TEMP JSON EXPORT REVIEW -->
+                            <button id="btnExportJsonReviewTemp" class="btn btn-secondary btn-sm" type="button">Export JSON</button>
+                            <!-- /TEMP -->
                             <button id="cutPreviewApplyBtn" class="btn btn-accent btn-sm" type="button">Apply Edits</button>
                         </div>
                     </div>
@@ -209,6 +216,7 @@
     <script src="src/features/analysis/services/analysis_run_feature.js?v=1"></script>
     <script src="src/features/analysis/state/analysis_store.js?v=1"></script>
     <script src="src/features/tracks/state/tracks_store.js?v=1"></script>
+    <script src="src/features/cut-preview/services/cut_preview_state_helpers.js?v=1"></script>
     <script src="src/features/cut-preview/services/cut_preview_state_feature.js?v=1"></script>
     <script src="src/features/cut-preview/state/cut_preview_store.js?v=1"></script>
     <script src="src/features/cut-preview/services/cut_preview_source_mapper_feature.js?v=1"></script>

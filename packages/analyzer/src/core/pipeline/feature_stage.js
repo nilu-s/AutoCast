@@ -1,7 +1,7 @@
 'use strict';
 
 var spectralVad = require('../../modules/vad/spectral_vad');
-var laughterDetector = require('../../modules/vad/laughter_detector');
+
 var runtimeUtils = require('../utils/runtime_utils');
 
 function runFeatureStage(ctx) {
@@ -61,53 +61,7 @@ function runFeatureStage(ctx) {
                 fingerprintResults.push(null);
             }
 
-            if (params.useLaughterDetection) {
-                var laughter = laughterDetector.computeLaughterConfidence(
-                    audioData[i].samples,
-                    audioData[i].sampleRate,
-                    params.frameDurationMs,
-                    {
-                        minEnergyAboveFloorDb: params.laughterMinEnergyAboveFloorDb,
-                        absoluteFloorDb: params.laughterAbsoluteFloorDb,
-                        zcrMin: params.laughterZcrMin,
-                        zcrMax: params.laughterZcrMax,
-                        modulationWindowMs: params.laughterModulationWindowMs,
-                        continuityWindowMs: params.laughterContinuityWindowMs,
-                        crestMin: params.laughterCrestMin,
-                        crestMax: params.laughterCrestMax,
-                        spreadMin: params.laughterSpreadMin,
-                        spreadMax: params.laughterSpreadMax,
-                        sampleSpreadPeakRatio: params.laughterSampleSpreadPeakRatio,
-                        impulseCrestMin: params.laughterImpulseCrestMin,
-                        impulseCrestMax: params.laughterImpulseCrestMax,
-                        transientRiseDb: params.laughterTransientRiseDb,
-                        transientFallDb: params.laughterTransientFallDb,
-                        energyWeight: params.laughterEnergyWeight,
-                        zcrWeight: params.laughterZcrWeight,
-                        modulationWeight: params.laughterModulationWeight,
-                        crestWeight: params.laughterCrestWeight,
-                        spreadWeight: params.laughterSpreadWeight,
-                        continuityWeight: params.laughterContinuityWeight,
-                        transientPenaltyWeight: params.laughterTransientPenaltyWeight
-                    }
-                );
 
-                laughter.confidence = runtimeUtils.applyOffsetToArray(
-                    laughter.confidence,
-                    effectiveOffsetsSec[i],
-                    params.frameDurationMs
-                );
-                if (laughter.transientPenalty) {
-                    laughter.transientPenalty = runtimeUtils.applyOffsetToArray(
-                        laughter.transientPenalty,
-                        effectiveOffsetsSec[i],
-                        params.frameDurationMs
-                    );
-                }
-                laughterResults.push(laughter);
-            } else {
-                laughterResults.push(null);
-            }
         }
     }
 

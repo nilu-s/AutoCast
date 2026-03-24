@@ -152,6 +152,8 @@
         tabNav: $('tabNav'),
         tabSetup: $('tabSetup'),
         tabReview: $('tabReview'),
+        btnReviewManualCutsTemp: $('btnReviewManualCutsTemp'), // TEMP JSON EXPORT
+        btnExportJsonReviewTemp: $('btnExportJsonReviewTemp'), // TEMP JSON EXPORT REVIEW
         btnLoadTracks: $('btnLoadTracks'),
         btnAnalyze: $('btnAnalyze'),
         btnReset: $('btnReset'),
@@ -454,6 +456,202 @@
             onTabClick('setup');
         });
     }
+
+    // ==========================================
+    // TEMP JSON EXPORT / REVIEW MANUAL CUTS
+    // ==========================================
+    if (els.btnReviewManualCutsTemp) {
+        els.btnReviewManualCutsTemp.addEventListener('click', function() {
+            if (!HostAdapter || typeof HostAdapter.getTrackInfo !== 'function') {
+                alert("HostAdapter not available.");
+                return;
+            }
+            setStatus('busy', 'Fetching track info...');
+            HostAdapter.getTrackInfo(function(result) {
+                if (result && result.error) {
+                    alert("Error getting track info: " + result.error);
+                    setStatus('error', 'Fetch Failed');
+                    return;
+                }
+                if (!result || !result.tracks) {
+                    alert("No tracks found or invalid result.");
+                    setStatus('error', 'Fetch Failed');
+                    return;
+                }
+                
+                var segments = [];
+                var trackCount = result.tracks.length;
+                var tpS = result.ticksPerSecond || 254016000000;
+                var idCounter = 1;
+
+                // Cache tracks but don't overwrite if we already have .wav paths in trackInfos!
+                var previousTrackInfos = state.trackInfos || null;
+                state.tracks = result.tracks;
+                
+                for (var t = 0; t < trackCount; t++) {
+                    var track = result.tracks[t];
+                    var clips = track.clips || [];
+                    
+                    var wavPath = null;
+                    if (previousTrackInfos && previousTrackInfos.length > t && previousTrackInfos[t] && previousTrackInfos[t].path) {
+                        wavPath = previousTrackInfos[t].path;
+                    }
+
+                    for (var c = 0; c < clips.length; c++) {
+                        var clip = clips[c];
+                        var itemStart = clip.startTicks / tpS;
+                        var itemEnd = clip.endTicks / tpS;
+
+                        var finalMediaPath = wavPath ? wavPath : clip.mediaPath;
+                        var finalSrcStart = wavPath ? itemStart : (clip.inPointTicks / tpS);
+                        var finalSrcEnd = wavPath ? itemEnd : (clip.outPointTicks / tpS);
+
+                        segments.push({
+                            id: 'temp_clip_' + track.index + '_' + (idCounter++),
+                            trackIndex: track.index,
+                            trackName: track.name,
+                            clipName: clip.name,
+                            start: itemStart,
+                            end: itemEnd,
+                            decisionState: 'keep',
+                            contentState: 'unknown',
+                            score: 100,
+                            selected: true,
+                            selectable: true,
+                            sourceClipIndex: c,
+                            mediaPath: finalMediaPath,
+                            sourceStartSec: finalSrcStart,
+                            sourceEndSec: finalSrcEnd,
+                            inPoint: clip.inPointTicks / tpS,
+                            outPoint: clip.outPointTicks / tpS,
+                            durationTicks: clip.durationTicks,
+                            inPointTicks: clip.inPointTicks,
+                            outPointTicks: clip.outPointTicks,
+                            contentType: "" 
+                        });
+                    }
+                }
+                
+                state.analysisResult = { tracks: result.tracks, cutPreview: { items: segments }, totalDurationSec: 0 };
+                for (var i = 0; i < segments.length; i++) {
+                    if (segments[i].end > state.analysisResult.totalDurationSec) {
+                        state.analysisResult.totalDurationSec = segments[i].end;
+                    }
+                }
+                
+                if (!state.reviewState && typeof previewRuntime.initializeReviewState === 'function') {
+                    state.reviewState = previewRuntime.initializeReviewState() || { reviewDecisions: {}, excludedSnippetIds: [] };
+                } else if (!state.reviewState) {
+                    state.reviewState = { reviewDecisions: {}, excludedSnippetIds: [] };
+                }
+                
+                for (var i = 0; i < segments.length; i++) {
+                    state.reviewState.reviewDecisions[segments[i].id] = 'included';
+                }
+                
+                state.cutPreview = buildCutPreviewState(state.analysisResult);
+                
+                if (state.cutPreview && state.cutPreview.items) {
+                    for(var i = 0; i < state.cutPreview.items.length; i++) {
+                        var it = state.cutPreview.items[i];
+                        var orig = null;
+                        for (var s = 0; s < segments.length; s++) {
+                            if (segments[s].id === it.id) { orig = segments[s]; break; }
+                        }
+                        if (orig) {
+                            it.contentType = orig.contentType;
+                            it.inPoint = orig.inPoint;
+                            it.outPoint = orig.outPoint;
+                            it.clipName = orig.clipName;
+                        } else {
+                            it.contentType = ""; 
+                            it.inPoint = it.sourceStartSec;
+                            it.outPoint = it.sourceEndSec;
+                            it.clipName = "clip";
+                        }
+                    }
+                }
+
+                renderCutPreview();
+                setPanelPageMode('review');
+                setStatus('success', 'Manual cuts loaded for review');
+            });
+        });
+    }
+
+    if (els.btnExportJsonReviewTemp) {
+        els.btnExportJsonReviewTemp.addEventListener('click', function() {
+            var expSegments = [];
+            if (state.cutPreview && state.cutPreview.items) {
+                var items = state.cutPreview.items;
+                for (var i = 0; i < items.length; i++) {
+                    var it = items[i];
+                    expSegments.push({
+                        trackIndex: it.trackIndex,
+                        trackName: it.trackName,
+                        clipName: it.clipName || "clip",
+                        start: it.start,
+                        end: it.end,
+                        inPoint: it.inPoint || it.sourceStartSec || 0,
+                        outPoint: it.outPoint || it.sourceEndSec || 0,
+                        duration: it.end - it.start,
+                        contentType: it.contentType || ""
+                    });
+                }
+            }
+            if (expSegments.length === 0) {
+                alert("No manual cuts to export.");
+                return;
+            }
+            
+            var jsonStr = JSON.stringify(expSegments, null, 2);
+            if (window.cep && window.cep.fs) {
+                var saveResult = window.cep.fs.showSaveDialogEx("Save Segments JSON", "", ["json"], "segments.json", "");
+                if (saveResult.data) {
+                    var writeRes = window.cep.fs.writeFile(saveResult.data, jsonStr);
+                    if (writeRes.err === 0) {
+                        setStatus('success', "Saved JSON");
+                    } else {
+                        alert("Error saving file: " + writeRes.err);
+                        setStatus('error', 'Save Error');
+                    }
+                } else {
+                    setStatus('idle', 'Export Cancelled');
+                }
+            } else {
+                console.log("Segments JSON:\n", jsonStr);
+                alert("CEP FS not available, logged to console.");
+                setStatus('success', 'Logged JSON');
+            }
+        });
+    }
+
+    document.addEventListener('change', function(e) {
+        if (e.target && e.target.classList.contains('temp-category-select')) {
+            var itemId = e.target.getAttribute('data-item-id');
+            var newVal = e.target.value;
+            if (itemId && state.cutPreview && state.cutPreview.items) {
+                for (var i = 0; i < state.cutPreview.items.length; i++) {
+                    if (state.cutPreview.items[i].id === itemId) {
+                        state.cutPreview.items[i].contentType = newVal;
+                        break;
+                    }
+                }
+            }
+            if (itemId) {
+                var selects = document.querySelectorAll('.temp-category-select[data-item-id="' + itemId + '"]');
+                for (var j = 0; j < selects.length; j++) {
+                    if (selects[j] !== e.target) {
+                        selects[j].value = newVal;
+                    }
+                }
+                if (typeof previewRuntime.renderReviewSection === 'function') {
+                    previewRuntime.renderReviewSection();
+                }
+            }
+        }
+    });
+    // ==========================================
 
     requireFeature(PanelInitFeature, 'AutoCastPanelInitFeature').initializePanel({
         interactionFeature: requireFeature(CutPreviewInteractionFeature, 'AutoCastPanelInteractionFeature'),

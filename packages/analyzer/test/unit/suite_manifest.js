@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 module.exports = [
     '../src/modules/io/tests/wav_reader.test.js',
@@ -7,10 +7,7 @@ module.exports = [
     '../src/modules/overlap/tests/overlap_fill_gaps.test.js',
     '../src/modules/vad/tests/spectral_fingerprint_similarity.test.js',
     '../src/modules/vad/tests/spectral_refine_gate.test.js',
-    '../src/modules/vad/tests/laughter_detector_recovery_rescue.test.js',
-    '../src/modules/vad/tests/laughter_detector_recovery_continuity.test.js',
-    '../src/modules/vad/tests/laughter_detector_reinforcement.test.js',
-    '../src/modules/postprocess/tests/laughter_postprocess_protection.test.js',
+
     '../src/modules/preview/tests/cut_preview_builder_decision_states_metrics.test.js',
     '../src/modules/preview/tests/cut_preview_builder_decision_states_merge.test.js',
     '../src/modules/preview/tests/cut_preview_builder_decision_states_bleed.test.js',

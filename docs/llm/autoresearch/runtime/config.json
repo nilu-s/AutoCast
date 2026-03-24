@@ -1,0 +1,14 @@
+{
+  "targets": {
+    "speechRecall": 0.93,
+    "reviewRecall": 0.2,
+    "ignoreRecall": 0.94,
+    "durationGoodOrNearRatio": 0.7,
+    "objectiveScore": 0.82
+  },
+  "maxDelegatedTasks": 3,
+  "maxMethodsPerTask": 2,
+  "methodCatalogPath": "docs/llm/autoresearch/runtime/method_catalog.json",
+  "autoDispatch": false,
+  "agentCommandTemplate": ""
+}

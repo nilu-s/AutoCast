@@ -68,6 +68,7 @@
                 score: item.score,
                 scoreLabel: item.scoreLabel,
                 contentState: item.contentState,
+                contentType: item.contentType,
                 selected: item.selected,
                 decision: decision
             };

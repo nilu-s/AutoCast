@@ -81,12 +81,17 @@
         var icon = getContentStateIcon(item.contentState);
         var decisionIcon = getDecisionIcon(item.decision);
         
-        var html = '<div class="cpr-card ' + decisionClass + activeClass + '" data-review-item-id="' + escapeHtml(item.id) + '">';
+        var isCategorized = !!(item.contentType && item.contentType !== '');
+        var cardStyle = isCategorized ? 'opacity: 0.45; filter: grayscale(100%); transition: opacity 0.2s;' : 'transition: opacity 0.2s;';
+        
+        var html = '<div class="cpr-card ' + decisionClass + activeClass + '" data-review-item-id="' + escapeHtml(item.id) + '" style="' + cardStyle + '">';
         
         // Card header with time and decision
         html += '  <div class="cpr-card-header">';
         html += '    <span class="cpr-card-time">' + escapeHtml(formatClock(item.start)) + '</span>';
-        html += '    <span class="cpr-card-decision">' + decisionIcon + '</span>';
+        html += '    <div style="display: flex; align-items: center; gap: 6px;">';
+        html += '      <button type="button" data-item-play="' + escapeHtml(item.id) + '" style="background:transparent; border:none; color:inherit; cursor:pointer; font-size: 10px;" title="Play Segment">▶</button>';
+        html += '    </div>';
         html += '  </div>';
         
         // Card body with icon and duration
@@ -96,25 +101,21 @@
         html += '  </div>';
         
         // Card footer with score and content type
-        html += '  <div class="cpr-card-footer">';
+        var contentVal = item.contentType || '';
+        html += '  <div class="cpr-card-footer" style="flex-wrap: wrap; gap: 4px;">';
         html += '    <span class="cpr-card-score ' + scoreClass + '">' + escapeHtml(String(item.score)) + '</span>';
-        html += '    <span class="cpr-card-content">' + escapeHtml(item.contentState || 'unknown') + '</span>';
+        html += '    <select class="temp-category-select" data-item-id="' + escapeHtml(item.id) + '" style="background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 4px; font-size: 11px; max-width: 80px; outline: none;" title="Assign category">';
+        html += '      <option value=""' + (contentVal === '' ? ' selected' : '') + '>None</option>';
+        html += '      <option value="speech"' + (contentVal === 'speech' ? ' selected' : '') + '>Speech</option>';
+        html += '      <option value="review"' + (contentVal === 'review' ? ' selected' : '') + '>Review</option>';
+        html += '      <option value="ignore"' + (contentVal === 'ignore' ? ' selected' : '') + '>Ignore</option>';
+        html += '    </select>';
         html += '  </div>';
         
-        // Actions overlay (shown on hover/active)
-        html += '  <div class="cpr-card-actions">';
-        if (item.decision !== 'included') {
-            html += '    <button type="button" class="cpr-card-btn cpr-card-btn-include" data-review-include="' + escapeHtml(item.id) + '" title="Include">✓</button>';
-        } else {
-            html += '    <button type="button" class="cpr-card-btn cpr-card-btn-include cpr-card-btn-active" data-review-include="' + escapeHtml(item.id) + '">✓</button>';
-        }
-        
-        if (item.decision !== 'excluded') {
-            html += '    <button type="button" class="cpr-card-btn cpr-card-btn-exclude" data-review-exclude="' + escapeHtml(item.id) + '" title="Exclude">✕</button>';
-        } else {
-            html += '    <button type="button" class="cpr-card-btn cpr-card-btn-exclude cpr-card-btn-inactive" data-review-exclude="' + escapeHtml(item.id) + '">✕</button>';
-        }
-        html += '  </div>';
+        // Temporary: Actions overlay disabled since we only categorize cuts
+        // html += '  <div class="cpr-card-actions">';
+        // ...
+        // html += '  </div>';
         
         html += '</div>';
         
@@ -238,6 +239,14 @@
             
             // Show pending first, then included, then excluded
             var orderedItems = trackPending.concat(trackIncluded).concat(trackExcluded);
+            
+            // Sort to push categorized items to the end, then by start time
+            orderedItems.sort(function(a, b) {
+                var aCat = !!(a.contentType && a.contentType !== '') ? 1 : 0;
+                var bCat = !!(b.contentType && b.contentType !== '') ? 1 : 0;
+                if (aCat !== bCat) return aCat - bCat;
+                return a.start - b.start;
+            });
             
             for (var j = 0; j < orderedItems.length; j++) {
                 html += buildReviewCardHtml(orderedItems[j], orderedItems[j].id === activeSnippetId);

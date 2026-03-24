@@ -30,6 +30,17 @@ _tmp_case_*/
 temp_analyzer_debug.js
 out.txt
 test_output.txt
+evaluate_output.txt
+
+# Autoresearch runtime artifacts
+reports/autoresearch/last_eval.json
+reports/autoresearch/last_orchestration.json
+reports/autoresearch/history.jsonl
+reports/autoresearch/runs/
+reports/autoresearch/tasks/
+logs/autoresearch_*.log
+/autoresearch/
+/tools/autoresearch/
 
 # Environment
 .env
@@ -37,3 +48,10 @@ test_output.txt
 
 # Debug
 .debug
+
+# AutoResearch runtime artifacts
+autoresearch/results.tsv
+autoresearch/state.json
+autoresearch/latest_run.md
+autoresearch/cron.log
+autoresearch/runs/

@@ -49,8 +49,8 @@
 
         var trackColors = options.trackColors || [];
         var ticksPerSecondDefault = options.ticksPerSecondDefault || 254016000000;
-        var audioPreviewPrerollSec = isFinite(options.audioPreviewPrerollSec) ? options.audioPreviewPrerollSec : 0.2;
-        var audioPreviewPostrollSec = isFinite(options.audioPreviewPostrollSec) ? options.audioPreviewPostrollSec : 0.2;
+        var audioPreviewPrerollSec = parseNum(options.audioPreviewPrerollSec, 0.0);
+        var audioPreviewPostrollSec = parseNum(options.audioPreviewPostrollSec, 0.0);
 
         function getRenderFeature() {
             return requireModule(options.cutPreviewRenderFeature, 'AutoCastPanelCutPreviewRenderFeature');
@@ -340,15 +340,7 @@
                     if (item) {
                         state.reviewActiveTrackIndex = item.trackIndex;
                         renderReviewSection();
-                        // Scroll to the selected snippet in the review list
-                        setTimeout(function() {
-                            if (els.cutPreviewReviewList) {
-                                var snippetEl = els.cutPreviewReviewList.querySelector('[data-review-item-id="' + itemId + '"]');
-                                if (snippetEl) {
-                                    snippetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                }
-                            }
-                        }, 50);
+                        scrollReviewSnippetIntoView(itemId);
                     }
                 }
             });
@@ -418,15 +410,7 @@
                     renderCutPreview();
                     // Also re-render review list to show active state
                     renderReviewSection();
-                    // Scroll to the selected snippet in the review list
-                    setTimeout(function() {
-                        if (els.cutPreviewReviewList) {
-                            var snippetEl = els.cutPreviewReviewList.querySelector('[data-review-item-id="' + itemId + '"]');
-                            if (snippetEl) {
-                                snippetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            }
-                        }
-                    }, 50);
+                    scrollReviewSnippetIntoView(itemId);
                 },
                 onSelectTrack: function(trackIndex) {
                     // Track selection handled in state
@@ -458,6 +442,16 @@
                     renderCutPreview();
                 }
             });
+        }
+
+        function scrollReviewSnippetIntoView(itemId) {
+            setTimeout(function () {
+                if (!els.cutPreviewReviewList) return;
+                var selector = '[data-review-item-id="' + itemId + '"]';
+                var snippetEl = els.cutPreviewReviewList.querySelector(selector);
+                if (!snippetEl) return;
+                snippetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 50);
         }
 
         function applyReviewDecisions() {

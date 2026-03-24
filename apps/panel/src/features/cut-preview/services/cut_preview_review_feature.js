@@ -114,6 +114,12 @@
             var target = evt.target;
             if (!target) return;
             
+            // Do not intercept clicks on interactive children that need default/bubble behavior
+            if (closestPolyfill(target, '.temp-category-select') || 
+                closestPolyfill(target, '[data-item-play]')) {
+                return;
+            }
+            
             // Handle track tab selection
             var trackTab = closestPolyfill(target, '[data-review-track]');
             if (trackTab) {

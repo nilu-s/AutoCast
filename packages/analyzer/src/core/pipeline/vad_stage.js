@@ -3,7 +3,7 @@
 var rmsCalc = require('../../modules/energy/rms_calculator');
 var vadGate = require('../../modules/vad/vad_gate');
 var spectralVad = require('../../modules/vad/spectral_vad');
-var laughterDetector = require('../../modules/vad/laughter_detector');
+
 var runtimeUtils = require('../utils/runtime_utils');
 
 function runVadStage(ctx) {
@@ -44,12 +44,6 @@ function runVadStage(ctx) {
             smoothingWindow: params.rmsSmoothing,
             hysteresisDb: params.hysteresisDb,
             frameDurationMs: params.frameDurationMs,
-            adaptiveNoiseFloor: params.adaptiveNoiseFloor,
-            localNoiseWindowMs: params.localNoiseWindowMs,
-            noiseFloorUpdateMs: params.noiseFloorUpdateMs,
-            localNoisePercentile: params.localNoisePercentile,
-            maxAdaptiveFloorRiseDb: params.maxAdaptiveFloorRiseDb,
-            localNoiseSampleStride: params.localNoiseSampleStride,
             enableHardSilenceCut: params.enableHardSilenceCut,
             hardSilenceCutDb: params.hardSilenceCutDb,
             hardSilenceLookaroundMs: params.hardSilenceLookaroundMs,
@@ -137,39 +131,7 @@ function runVadStage(ctx) {
         var gateAfterSpeakerLock = cloneUint8Array(vadResult.gateOpen);
         var gateAfterLaughter = gateAfterSpeakerLock;
 
-        if (params.useLaughterDetection && laughterResults[i] && laughterResults[i].confidence) {
-            var laughterRescue = laughterDetector.rescueGateWithLaughter(
-                gateAfterVad,
-                vadResult.gateOpen,
-                laughterResults[i].confidence,
-                rmsProfiles[i],
-                {
-                    minConfidence: params.laughterMinConfidence,
-                    holdFrames: params.laughterHoldFrames,
-                    absoluteFloorDb: params.laughterBurstAbsoluteFloorDb,
-                    minRelativeToThresholdDb: params.laughterMinRelativeToThresholdDb,
-                    thresholdLinear: vadResult.thresholdLinear,
-                    minStreakFrames: params.laughterMinStreakFrames,
-                    streakWindowFrames: params.laughterStreakWindowFrames,
-                    baseSupportWindowFrames: params.laughterBaseSupportWindowFrames,
-                    minBaseSupportFrames: params.laughterMinBaseSupportFrames,
-                    returnDebug: params.debugMode
-                }
-            );
-
-            if (laughterRescue && laughterRescue.gateOpen) {
-                vadResult.gateOpen = laughterRescue.gateOpen;
-                laughterDebug = laughterRescue;
-                gateAfterLaughter = cloneUint8Array(vadResult.gateOpen);
-                trackInfos[i].laughterRescuedFrames = laughterRescue.rescuedFrames || 0;
-            } else {
-                vadResult.gateOpen = laughterRescue;
-                gateAfterLaughter = cloneUint8Array(vadResult.gateOpen);
-                trackInfos[i].laughterRescuedFrames = 0;
-            }
-        } else {
-            trackInfos[i].laughterRescuedFrames = 0;
-        }
+        trackInfos[i].laughterRescuedFrames = 0;
 
         vadResults.push(vadResult);
         gateSnapshots.push({

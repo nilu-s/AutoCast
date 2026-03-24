@@ -1,7 +1,7 @@
 'use strict';
 
 var rmsCalc = require('../../modules/energy/rms_calculator');
-var laughterDetector = require('../../modules/vad/laughter_detector');
+
 var continuityEnforcer = require('../../core/pipeline/continuity_enforcer');
 var runtimeUtils = require('../../core/utils/runtime_utils');
 
@@ -38,111 +38,7 @@ function applyFrameContinuity(ctx) {
         }
     }
 
-    if (params.useLaughterDetection && params.enableLaughterContinuityRecovery) {
-        for (i = 0; i < trackCount; i++) {
-            if (!laughterResults[i] || !laughterResults[i].confidence) {
-                if (trackInfos[i]) trackInfos[i].laughterContinuityRecoveredFrames = 0;
-                continue;
-            }
 
-            var laughterContinuity = laughterDetector.recoverGateContinuityWithLaughter(
-                gateSnapshots[i] ? gateSnapshots[i].afterVad : null,
-                vadResults[i].gateOpen,
-                laughterResults[i].confidence,
-                rmsProfiles[i],
-                {
-                    edgeMinConfidence: params.laughterRecoveryEdgeMinConfidence,
-                    gapMinConfidence: params.laughterRecoveryGapMinConfidence,
-                    maxGapFrames: Math.max(1, Math.round(params.laughterRecoveryMaxGapMs / params.frameDurationMs)),
-                    longGapMaxFrames: Math.max(1, Math.round(params.laughterRecoveryLongGapMaxMs / params.frameDurationMs)),
-                    longGapMinConfidence: params.laughterRecoveryLongGapMinConfidence,
-                    longGapMinCoverage: params.laughterRecoveryLongGapMinCoverage,
-                    longGapEdgeMinConfidence: params.laughterRecoveryLongGapEdgeMinConfidence,
-                    maxEdgeExtendFrames: Math.max(0, Math.round(params.laughterRecoveryMaxEdgeExtendMs / params.frameDurationMs)),
-                    minGapCoverage: params.laughterRecoveryMinGapCoverage,
-                    minGapHits: params.laughterRecoveryMinGapHits,
-                    absoluteFloorDb: params.laughterAbsoluteFloorDb,
-                    minRelativeToThresholdDb: params.laughterMinRelativeToThresholdDb,
-                    thresholdLinear: vadResults[i].thresholdLinear,
-                    baseSupportWindowFrames: Math.max(1, Math.round(params.laughterRecoveryBaseSupportWindowMs / params.frameDurationMs)),
-                    minBaseSupportFrames: params.laughterRecoveryMinBaseSupportFrames,
-                    transientPenalty: laughterResults[i].transientPenalty || null,
-                    maxTransientPenalty: params.laughterBurstMaxTransientPenalty,
-                    returnDebug: params.debugMode
-                }
-            );
-
-            if (laughterContinuity && laughterContinuity.gateOpen) {
-                vadResults[i].gateOpen = laughterContinuity.gateOpen;
-                if (trackInfos[i]) {
-                    trackInfos[i].laughterContinuityRecoveredFrames = laughterContinuity.recoveredFrames || 0;
-                }
-                if (params.debugMode && gateSnapshots[i]) {
-                    gateSnapshots[i].laughterContinuityDebug = laughterContinuity;
-                }
-            } else {
-                vadResults[i].gateOpen = laughterContinuity;
-                if (trackInfos[i]) trackInfos[i].laughterContinuityRecoveredFrames = 0;
-            }
-        }
-    } else {
-        for (i = 0; i < trackCount; i++) {
-            if (trackInfos[i]) trackInfos[i].laughterContinuityRecoveredFrames = 0;
-        }
-    }
-
-    if (params.useLaughterDetection && params.enableLaughterBurstReinforce) {
-        for (i = 0; i < trackCount; i++) {
-            if (!laughterResults[i] || !laughterResults[i].confidence) {
-                if (trackInfos[i]) trackInfos[i].laughterBurstRecoveredFrames = 0;
-                continue;
-            }
-
-            var laughterBurst = laughterDetector.reinforceLaughterBursts(
-                gateSnapshots[i] ? gateSnapshots[i].afterVad : null,
-                vadResults[i].gateOpen,
-                laughterResults[i].confidence,
-                rmsProfiles[i],
-                {
-                    seedMinConfidence: params.laughterBurstSeedMinConfidence,
-                    extendMinConfidence: params.laughterBurstExtendMinConfidence,
-                    relativeWindowFrames: Math.max(1, Math.round(params.laughterBurstRelativeWindowMs / params.frameDurationMs)),
-                    relativeSeedDelta: params.laughterBurstRelativeSeedDelta,
-                    relativeSeedMinConfidence: params.laughterBurstRelativeSeedMinConfidence,
-                    relativeExtendDelta: params.laughterBurstRelativeExtendDelta,
-                    relativeExtendMinConfidence: params.laughterBurstRelativeExtendMinConfidence,
-                    targetMinFrames: Math.max(1, Math.round(params.laughterBurstMinKeepMs / params.frameDurationMs)),
-                    maxSeedGapFrames: Math.max(0, Math.round(params.laughterBurstMaxGapMs / params.frameDurationMs)),
-                    maxSideExtendFrames: Math.max(0, Math.round(params.laughterBurstMaxSideExtendMs / params.frameDurationMs)),
-                    absoluteFloorDb: params.laughterBurstAbsoluteFloorDb,
-                    minRelativeToThresholdDb: params.laughterBurstMinRelativeToThresholdDb,
-                    thresholdLinear: vadResults[i].thresholdLinear,
-                    baseSupportWindowFrames: Math.max(1, Math.round(params.laughterBurstBaseSupportWindowMs / params.frameDurationMs)),
-                    minBaseSupportFrames: params.laughterBurstMinBaseSupportFrames,
-                    maxTransientPenalty: params.laughterBurstMaxTransientPenalty,
-                    transientPenalty: laughterResults[i].transientPenalty || null,
-                    returnDebug: params.debugMode
-                }
-            );
-
-            if (laughterBurst && laughterBurst.gateOpen) {
-                vadResults[i].gateOpen = laughterBurst.gateOpen;
-                if (trackInfos[i]) {
-                    trackInfos[i].laughterBurstRecoveredFrames = laughterBurst.recoveredFrames || 0;
-                }
-                if (params.debugMode && gateSnapshots[i]) {
-                    gateSnapshots[i].laughterBurstDebug = laughterBurst;
-                }
-            } else {
-                vadResults[i].gateOpen = laughterBurst;
-                if (trackInfos[i]) trackInfos[i].laughterBurstRecoveredFrames = 0;
-            }
-        }
-    } else {
-        for (i = 0; i < trackCount; i++) {
-            if (trackInfos[i]) trackInfos[i].laughterBurstRecoveredFrames = 0;
-        }
-    }
 
     if (params.enforceAlwaysOneTrackOpen) {
         var alwaysOpenStats = continuityEnforcer.enforceAtLeastOneOpenTrack(vadResults, rmsProfiles, {
