@@ -6,9 +6,8 @@
     "durationGoodOrNearRatio": 0.7,
     "objectiveScore": 0.82
   },
-  "maxDelegatedTasks": 3,
+  "maxDelegatedTasks": 5,
   "maxMethodsPerTask": 2,
   "methodCatalogPath": "docs/llm/autoresearch/runtime/method_catalog.json",
-  "autoDispatch": false,
-  "agentCommandTemplate": ""
+  "openclawDispatch": true
 }

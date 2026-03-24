@@ -49,8 +49,14 @@ function main() {
     writeJson(LAST_ORCHESTRATION_PATH, plan);
     appendHistory(plan);
 
-    var dispatchResult = dispatchMethods(tasks, artifacts, config);
+    var dispatchResult = dispatchMethods(tasks, artifacts, config, runId, runDir);
     writeJson(path.join(runDir, 'dispatch_result.json'), dispatchResult);
+    
+    // Erstelle zusammenfassenden Report
+    var report = buildOpenClawReport(plan, dispatchResult);
+    var reportPath = path.join(runDir, 'openclaw_cycle_report.md');
+    writeText(reportPath, report);
+    console.log('[autoresearch] Report:', reportPath);
 
     console.log('[autoresearch] run=' + runId);
     console.log('[autoresearch] objective=' + formatNum(metrics.objectiveScore, 4));
@@ -76,7 +82,7 @@ function loadConfig() {
         maxDelegatedTasks: Math.max(1, toInt(raw.maxDelegatedTasks, 3)),
         maxMethodsPerTask: Math.max(1, toInt(raw.maxMethodsPerTask, 2)),
         methodCatalogPath: resolveRootPath(String(raw.methodCatalogPath || 'docs/llm/autoresearch/runtime/method_catalog.json')),
-        autoDispatch: !!raw.autoDispatch,
+        openclawDispatch: !!raw.openclawDispatch,
         agentCommandTemplate: String(raw.agentCommandTemplate || '')
     };
 }
@@ -392,54 +398,107 @@ function buildOrchestratorBrief(plan) {
     return lines.join('\n');
 }
 
-function dispatchMethods(tasks, artifacts, config) {
+function dispatchMethods(tasks, artifacts, config, runId, runDir) {
     var result = {
         totalJobs: artifacts.methodQueue.length,
         dispatchedCount: 0,
+        dispatchMode: config.openclawDispatch ? 'openclaw' : 'none',
         attempted: []
     };
 
-    if (!config.autoDispatch || !config.agentCommandTemplate) {
-        return result;
-    }
-
-    var allowedAgents = {};
-    var limit = Math.min(config.maxDelegatedTasks, tasks.length);
-    for (var i = 0; i < limit; i++) {
-        allowedAgents[tasks[i].agent] = true;
-    }
-
-    for (i = 0; i < artifacts.methodQueue.length; i++) {
-        var job = artifacts.methodQueue[i];
-        if (!allowedAgents[job.taskAgent]) continue;
-
-        var command = renderCommandTemplate(config.agentCommandTemplate, {
-            prompt_file: quoteForShell(job.promptFile),
-            repo_root: quoteForShell(ROOT),
-            task_agent: job.taskAgent,
-            method_id: job.methodId,
-            method_title: quoteForShell(job.methodTitle)
-        });
-
-        var run = childProcess.spawnSync(command, {
-            cwd: ROOT,
-            shell: true,
-            encoding: 'utf8'
-        });
-
-        result.attempted.push({
-            taskAgent: job.taskAgent,
-            methodId: job.methodId,
-            command: command,
-            status: run.status,
-            stdout: trimOutput(run.stdout),
-            stderr: trimOutput(run.stderr)
-        });
-
-        if (run.status === 0) result.dispatchedCount++;
+    // Erstelle OpenClaw Dispatch Request (statt direktem Spawn)
+    if (config.openclawDispatch) {
+        var dispatchRequest = buildOpenClawDispatchRequest(tasks, artifacts, runId, runDir);
+        var dispatchPath = path.join(runDir, 'openclaw_dispatch_request.json');
+        writeJson(dispatchPath, dispatchRequest);
+        
+        // Erstelle auch lesbares Markdown für den Menschen
+        var dispatchMd = buildOpenClawDispatchMarkdown(dispatchRequest);
+        var dispatchMdPath = path.join(runDir, 'OPENCLAW_DISPATCH.md');
+        writeText(dispatchMdPath, dispatchMd);
+        
+        result.dispatchRequestPath = dispatchPath;
+        result.dispatchMarkdownPath = dispatchMdPath;
+        result.dispatchedCount = dispatchRequest.jobs.length;
+        
+        console.log('[autoresearch] OpenClaw dispatch request created:', dispatchPath);
+        console.log('[autoresearch] Human-readable version:', dispatchMdPath);
+        console.log('[autoresearch] Jobs queued for dispatch:', dispatchRequest.jobs.length);
     }
 
     return result;
+}
+
+function buildOpenClawDispatchRequest(tasks, artifacts, runId, runDir) {
+    var jobs = [];
+    
+    // Alle Jobs aus der Queue übernehmen
+    for (var i = 0; i < artifacts.methodQueue.length; i++) {
+        var job = artifacts.methodQueue[i];
+        jobs.push({
+            index: i + 1,
+            taskAgent: job.taskAgent,
+            methodId: job.methodId,
+            methodTitle: job.methodTitle,
+            promptFile: job.promptFile,
+            runId: runId,
+            runDir: runDir
+        });
+    }
+    
+    return {
+        runId: runId,
+        createdAt: new Date().toISOString(),
+        workdir: ROOT,
+        totalJobs: jobs.length,
+        jobs: jobs,
+        instructions: {
+            forOpenClawAgent: 'Dies ist ein AutoResearch Dispatch Request. Führe jeden Job als Sub-Agent aus und warte auf das Ergebnis bevor du zum nächsten gehst.',
+            workflow: [
+                '1. Lese den Prompt aus promptFile',
+                '2. Spawne einen Sub-Agent mit dem Task',
+                '3. Warte auf Ergebnis',
+                '4. Evaluiere: KEEP wenn Score verbessert, sonst REJECT',
+                '5. Fahre mit nächstem Job fort'
+            ],
+            expectedResults: path.join(runDir, 'method_results')
+        }
+    };
+}
+
+function buildOpenClawDispatchMarkdown(request) {
+    var lines = [];
+    lines.push('# OpenClaw AutoResearch Dispatch');
+    lines.push('');
+    lines.push('**Run ID:** `' + request.runId + '`');
+    lines.push('**Created:** ' + request.createdAt);
+    lines.push('**Working Directory:** `' + request.workdir + '`');
+    lines.push('');
+    lines.push('## Dispatch Instructions');
+    lines.push('');
+    lines.push(request.instructions.forOpenClawAgent);
+    lines.push('');
+    lines.push('### Workflow');
+    for (var i = 0; i < request.instructions.workflow.length; i++) {
+        lines.push(request.instructions.workflow[i]);
+    }
+    lines.push('');
+    lines.push('## Jobs (' + request.totalJobs + ' total)');
+    lines.push('');
+    
+    for (var j = 0; j < request.jobs.length; j++) {
+        var job = request.jobs[j];
+        lines.push('### Job ' + job.index + ': ' + job.methodTitle);
+        lines.push('- **Task Agent:** `' + job.taskAgent + '`');
+        lines.push('- **Method ID:** `' + job.methodId + '`');
+        lines.push('- **Prompt:** `' + job.promptFile + '`');
+        lines.push('');
+    }
+    
+    lines.push('---');
+    lines.push('*Dieses File wird vom OpenClaw Main Agent verarbeitet*');
+    
+    return lines.join('\n');
 }
 
 function renderCommandTemplate(template, values) {
@@ -570,6 +629,61 @@ function trimOutput(text) {
     var out = String(text).trim();
     if (out.length > 1500) return out.slice(0, 1500);
     return out;
+}
+
+function buildOpenClawReport(plan, dispatchResult) {
+    var lines = [];
+    lines.push('# OpenClaw AutoCast Cycle Report');
+    lines.push('');
+    lines.push('## Run Metadata');
+    lines.push('- **Run ID:** `' + plan.runId + '`');
+    lines.push('- **Timestamp:** ' + plan.generatedAt);
+    lines.push('- **Baseline Score:** ' + formatNum(plan.metricsSnapshot.objectiveScore, 3));
+    lines.push('');
+    lines.push('## Initial Metrics');
+    lines.push('| Metric | Value | Target | Gap |');
+    lines.push('|--------|-------|--------|-----|');
+    lines.push('| objectiveScore | ' + formatNum(plan.metricsSnapshot.objectiveScore, 3) + ' | 0.82 | ' + formatNum(plan.metricsSnapshot.objectiveScore - 0.82, 3) + ' |');
+    lines.push('| speechRecall | ' + formatNum(plan.metricsSnapshot.speechRecall, 3) + ' | 0.93 | ' + formatNum(plan.metricsSnapshot.speechRecall - 0.93, 3) + ' |');
+    lines.push('| reviewRecall | ' + formatNum(plan.metricsSnapshot.reviewRecall, 3) + ' | 0.20 | ' + formatNum(plan.metricsSnapshot.reviewRecall - 0.20, 3) + ' |');
+    lines.push('| ignoreRecall | ' + formatNum(plan.metricsSnapshot.ignoreRecall, 3) + ' | 0.94 | ' + formatNum(plan.metricsSnapshot.ignoreRecall - 0.94, 3) + ' |');
+    lines.push('| durationGoodOrNearRatio | ' + formatNum(plan.metricsSnapshot.durationGoodOrNearRatio, 3) + ' | 0.70 | ' + formatNum(plan.metricsSnapshot.durationGoodOrNearRatio - 0.70, 3) + ' |');
+    lines.push('');
+    lines.push('## Orchestration Plan Summary');
+    lines.push(plan.tasks.length + ' Tasks with ' + dispatchResult.totalJobs + ' Methods queued');
+    lines.push('');
+    lines.push('| Priority | Task | Methods | Ziel |');
+    lines.push('|----------|------|---------|------|');
+    for (var i = 0; i < plan.tasks.length; i++) {
+        var task = plan.tasks[i];
+        lines.push('| ' + task.priority + ' | ' + task.agent + ' | ' + task.methods.length + ' | ' + task.goal.slice(0, 50) + '... |');
+    }
+    lines.push('');
+    lines.push('## Dispatch Status');
+    lines.push('- **Mode:** ' + dispatchResult.dispatchMode);
+    lines.push('- **Total Jobs:** ' + dispatchResult.totalJobs);
+    lines.push('- **Dispatched:** ' + dispatchResult.dispatchedCount);
+    if (dispatchResult.dispatchRequestPath) {
+        lines.push('- **Request File:** `' + dispatchResult.dispatchRequestPath + '`');
+    }
+    if (dispatchResult.dispatchMarkdownPath) {
+        lines.push('- **Markdown:** `' + dispatchResult.dispatchMarkdownPath + '`');
+    }
+    lines.push('');
+    lines.push('## Accepted Methods');
+    lines.push('*(pending dispatch execution)*');
+    lines.push('');
+    lines.push('## Rejected Methods');
+    lines.push('*(pending dispatch execution)*');
+    lines.push('');
+    lines.push('## Next Steps');
+    lines.push('1. OpenClaw Main Agent sollte `openclaw_dispatch_request.json` verarbeiten');
+    lines.push('2. Sub-Agents für jeden Job spawnen');
+    lines.push('3. Ergebnisse in `method_results/` sammeln');
+    lines.push('');
+    lines.push('---');
+    lines.push('*Generated by OpenClaw AutoCast Cycle | ' + new Date().toISOString() + '*');
+    return lines.join('\n');
 }
 
 main();
