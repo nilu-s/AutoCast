@@ -89,7 +89,7 @@ function computeDecisionSignals(values, ctx) {
     var suppressPressure = clamp(
         bleedConfidence * 0.26 +
         bleedEvidence * 0.15 +
-        contextualOverlapPenalty * 0.22 +
+        contextualOverlapPenalty * 0.17 +
         overlapTrust * 0.10 +
         noiseEvidence * 0.07 +
         sourceSuppressedCoverage * 0.10 +
