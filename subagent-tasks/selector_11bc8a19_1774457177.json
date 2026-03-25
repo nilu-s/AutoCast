@@ -1,0 +1,49 @@
+{
+  "task_id": "selector_11bc8a19_1774457177",
+  "method_id": "vad_threshold_tune",
+  "execution_id": "11bc8a19",
+  "action": "decide_and_record",
+  "data": {
+    "evaluation": {
+      "status": "completed",
+      "wer": 0.9853333333333333,
+      "cer": 0.9860681114551083,
+      "metrics": {
+        "speech_detection_accuracy": 1.39,
+        "review_detection_accuracy": 0.64,
+        "boundary_accuracy_ms": 0.0,
+        "false_positive_rate": 66.67,
+        "ground_truth_segments": 646,
+        "predicted_segments": 9,
+        "matched_speech_segments": 2
+      },
+      "clip_wers": {
+        "251024-MP-Antje-003a.wav": 0.9892,
+        "251024-MP-Antje-003b.wav": 0.9858,
+        "251024-MP-Antje-003c.wav": 0.981
+      },
+      "file_count": 3,
+      "evaluation_timestamp": "2026-03-25T16:46:17.376071"
+    },
+    "comparison": {
+      "status": "completed",
+      "before": {
+        "wer": 0.23,
+        "cer": 0.15,
+        "speech_accuracy": 75.0
+      },
+      "after": {
+        "wer": 0.9853333333333333,
+        "cer": 0.9860681114551083,
+        "speech_accuracy": 1.39
+      },
+      "changes": {
+        "wer_change": -0.7553333333333333,
+        "cer_change": -0.8360681114551083,
+        "speech_accuracy_change": -73.61
+      },
+      "improved": false,
+      "timestamp": "2026-03-25T16:46:17.376124"
+    }
+  }
+}

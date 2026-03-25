@@ -1,0 +1,14 @@
+{
+  "strategy_id": "epsilon_greedy_aggressive",
+  "performance": {
+    "strategy_id": "epsilon_greedy_aggressive",
+    "name": "Aggressive Epsilon-Greedy",
+    "type": "exploration",
+    "total_runs": 0,
+    "success_rate": 0.0,
+    "avg_improvement": 0.0,
+    "composite_score": 0.0,
+    "epsilon": 0.3
+  },
+  "saved_at": "2026-03-25T15:37:35.439365"
+}

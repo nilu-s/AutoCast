@@ -1,8 +1,16 @@
 'use strict';
 
-var fs = require('fs');
-var path = require('path');
-var childProcess = require('child_process');
+import fs from 'fs';
+import path from 'path';
+import childProcess from 'child_process';
+import { fileURLToPath } from 'url';
+
+// Phase 1.4: Importiere Naming und Status Manager
+import resultNaming from './lib/result_naming.mjs';
+import statusManager from './lib/status_manager.mjs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 var ROOT = path.resolve(__dirname, '..', '..');
 var EVAL_SCRIPT_PATH = path.join(ROOT, 'scripts', 'evaluate_pipeline_wrapper.js');
@@ -254,6 +262,11 @@ function writeTaskArtifacts(tasks, runDir) {
         methodQueue: []
     };
 
+    // Phase 1.4: Erstelle method_results Verzeichnis für resultPath-Generierung
+    var methodResultsDir = path.join(runDir, 'method_results');
+    ensureDir(methodResultsDir);
+
+    var queueIndex = 0;
     for (var i = 0; i < tasks.length; i++) {
         var task = tasks[i];
         var taskFileName = (i + 1) + '_' + sanitizeName(task.agent) + '.md';
@@ -279,12 +292,20 @@ function writeTaskArtifacts(tasks, runDir) {
                 latestPath: latestMethodPath
             });
 
+            queueIndex++;
+
+            // Phase 1.4: Generiere jobKey und resultPath
+            var jobKey = resultNaming.generateJobKey(task.agent, method.id, queueIndex);
+            var resultPath = resultNaming.generateResultPath(methodResultsDir, jobKey);
+
             artifacts.methodQueue.push({
                 taskId: task.id,
                 taskAgent: task.agent,
                 methodId: method.id,
                 methodTitle: method.title,
-                promptFile: runMethodPath
+                promptFile: runMethodPath,
+                jobKey: jobKey,           // Phase 1.4: Eindeutiger Job-Key
+                resultPath: resultPath    // Phase 1.4: Wo das Ergebnis gespeichert wird
             });
         }
 
@@ -406,11 +427,33 @@ function dispatchMethods(tasks, artifacts, config, runId, runDir) {
         attempted: []
     };
 
+    // Phase 1.4: Erstelle method_results/ Verzeichnis
+    var methodResultsDir = path.join(runDir, 'method_results');
+    ensureDir(methodResultsDir);
+    console.log('[autoresearch] Method results directory:', methodResultsDir);
+
+    // Phase 1.4: Initialisiere Status-Manager
+    var statusPath = path.join(runDir, 'STATUS.json');
+    var status = statusManager.createStatus(statusPath);
+
     // Erstelle OpenClaw Dispatch Request (statt direktem Spawn)
     if (config.openclawDispatch) {
-        var dispatchRequest = buildOpenClawDispatchRequest(tasks, artifacts, runId, runDir);
+        var dispatchRequest = buildOpenClawDispatchRequest(tasks, artifacts, runId, runDir, methodResultsDir);
         var dispatchPath = path.join(runDir, 'openclaw_dispatch_request.json');
         writeJson(dispatchPath, dispatchRequest);
+        
+        // Phase 1.4: Füge alle Jobs zum Status als PENDING hinzu
+        for (var i = 0; i < dispatchRequest.jobs.length; i++) {
+            var job = dispatchRequest.jobs[i];
+            statusManager.addJob(status, {
+                jobId: job.jobId,
+                taskAgent: job.taskAgent,
+                methodId: job.methodId,
+                methodTitle: job.methodTitle
+            });
+        }
+        statusManager.saveStatus(status);
+        console.log('[autoresearch] STATUS.json created with', dispatchRequest.jobs.length, 'jobs as PENDING');
         
         // Erstelle auch lesbares Markdown für den Menschen
         var dispatchMd = buildOpenClawDispatchMarkdown(dispatchRequest);
@@ -419,6 +462,8 @@ function dispatchMethods(tasks, artifacts, config, runId, runDir) {
         
         result.dispatchRequestPath = dispatchPath;
         result.dispatchMarkdownPath = dispatchMdPath;
+        result.statusPath = statusPath;
+        result.methodResultsDir = methodResultsDir;
         result.dispatchedCount = dispatchRequest.jobs.length;
         
         console.log('[autoresearch] OpenClaw dispatch request created:', dispatchPath);
@@ -429,39 +474,72 @@ function dispatchMethods(tasks, artifacts, config, runId, runDir) {
     return result;
 }
 
-function buildOpenClawDispatchRequest(tasks, artifacts, runId, runDir) {
+function buildOpenClawDispatchRequest(tasks, artifacts, runId, runDir, methodResultsDir) {
     var jobs = [];
-    
+
     // Alle Jobs aus der Queue übernehmen
     for (var i = 0; i < artifacts.methodQueue.length; i++) {
         var job = artifacts.methodQueue[i];
+
+        // Phase 1.4: Generiere eindeutigen Job-Key und Result-Pfad
+        var jobKey = resultNaming.generateJobKey(job.taskAgent, job.methodId, i + 1);
+        var resultPath = resultNaming.generateResultPath(methodResultsDir, jobKey);
+
         jobs.push({
+            jobId: jobKey,
             index: i + 1,
             taskAgent: job.taskAgent,
             methodId: job.methodId,
             methodTitle: job.methodTitle,
             promptFile: job.promptFile,
             runId: runId,
-            runDir: runDir
+            runDir: runDir,
+            resultPath: resultPath  // Phase 1.4: Pfad für Ergebnis
         });
     }
-    
+
     return {
+        schemaVersion: '1.4.0',  // Phase 1.4: Schema-Version
         runId: runId,
         createdAt: new Date().toISOString(),
         workdir: ROOT,
         totalJobs: jobs.length,
         jobs: jobs,
+        statusFile: path.join(runDir, 'STATUS.json'),  // Phase 1.4: Status-File Referenz
+        methodResultsDir: methodResultsDir,  // Phase 1.4: Results-Verzeichnis
         instructions: {
             forOpenClawAgent: 'Dies ist ein AutoResearch Dispatch Request. Führe jeden Job als Sub-Agent aus und warte auf das Ergebnis bevor du zum nächsten gehst.',
             workflow: [
                 '1. Lese den Prompt aus promptFile',
                 '2. Spawne einen Sub-Agent mit dem Task',
                 '3. Warte auf Ergebnis',
-                '4. Evaluiere: KEEP wenn Score verbessert, sonst REJECT',
-                '5. Fahre mit nächstem Job fort'
+                '4. Speichere Ergebnis in resultPath (JSON)',
+                '5. Aktualisiere STATUS.json mit Status RUNNING → COMPLETED/FAILED',
+                '6. Evaluiere: KEEP wenn Score verbessert, sonst REJECT',
+                '7. Fahre mit nächstem Job fort'
             ],
-            expectedResults: path.join(runDir, 'method_results')
+            expectedResults: methodResultsDir,
+            resultSchema: {
+                type: 'object',
+                required: ['jobId', 'status', 'timestamp'],
+                properties: {
+                    jobId: { type: 'string' },
+                    status: { type: 'string', enum: ['SUCCESS', 'FAILED', 'REJECTED'] },
+                    timestamp: { type: 'string', format: 'date-time' },
+                    metrics: {
+                        type: 'object',
+                        properties: {
+                            objectiveScore: { type: 'number' },
+                            speechRecall: { type: 'number' },
+                            reviewRecall: { type: 'number' },
+                            ignoreRecall: { type: 'number' },
+                            durationGoodOrNearRatio: { type: 'number' }
+                        }
+                    },
+                    changedFiles: { type: 'array', items: { type: 'string' } },
+                    recommendation: { type: 'string', enum: ['KEEP', 'REJECT'] }
+                }
+            }
         }
     };
 }

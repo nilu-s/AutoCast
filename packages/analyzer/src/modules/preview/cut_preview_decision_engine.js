@@ -607,6 +607,36 @@ function evaluatePreviewDecision(ctx) {
     };
 }
 
+function silence_overlap_bleed_weight(values, baseWeight) {
+    values = values || {};
+    var overlapPenalty = clamp(parseNum(values.overlapPenalty, 0), 0, 1);
+    var overlapTrust = clamp(parseNum(values.overlapTrust, 0), 0, 1);
+    var bleedEvidence = clamp(parseNum(values.bleedEvidence, 0), 0, 1);
+    var bleedConfidence = clamp(parseNum(values.bleedConfidence, bleedEvidence), 0, 1);
+    var contextualOverlapPenalty = clamp(overlapPenalty * overlapTrust, 0, 1);
+
+    var highOverlapBleed = (
+        contextualOverlapPenalty >= 0.50 && overlapTrust >= 0.60
+    );
+    var moderateOverlapBleed = (
+        contextualOverlapPenalty >= 0.35 && overlapTrust >= 0.45
+    );
+
+    var weightMultiplier = 1.0;
+    if (highOverlapBleed) {
+        weightMultiplier = 1.18;
+    } else if (moderateOverlapBleed) {
+        weightMultiplier = 1.10;
+    }
+
+    if (bleedConfidence >= 0.70 && overlapTrust >= 0.55) {
+        weightMultiplier = Math.max(weightMultiplier, 1.12);
+    }
+
+    var adjustedWeight = clamp(parseNum(baseWeight, 0.5) * weightMultiplier, 0, 1);
+    return round(adjustedWeight, 3);
+}
+
 module.exports = {
     PREVIEW_POLICY_VERSION: PREVIEW_POLICY_VERSION,
     evaluatePreviewDecision: evaluatePreviewDecision,
@@ -616,5 +646,6 @@ module.exports = {
     canAutoKeepAlwaysOpenFill: canAutoKeepAlwaysOpenFill,
     evidenceConfidence: evidenceConfidence,
     classifyType: classifyType,
-    buildReasons: buildReasons
+    buildReasons: buildReasons,
+    silence_overlap_bleed_weight: silence_overlap_bleed_weight
 };

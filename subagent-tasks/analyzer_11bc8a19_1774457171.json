@@ -1,0 +1,200 @@
+{
+  "task_id": "analyzer_11bc8a19_1774457171",
+  "method_id": "vad_threshold_tune",
+  "execution_id": "11bc8a19",
+  "action": "evaluate_and_compare",
+  "data": {
+    "test_output": {
+      "status": "completed",
+      "simulated": true,
+      "output_path": "/tmp/autocast_test_output/aggregated_results.json",
+      "segments": [
+        {
+          "trackIndex": 0,
+          "trackName": "Audio 1",
+          "clipName": "251024-MP-Antje-003a.wav",
+          "start": 0,
+          "end": 6.36,
+          "contentType": "speech"
+        },
+        {
+          "trackIndex": 0,
+          "trackName": "Audio 1",
+          "clipName": "251024-MP-Antje-003a.wav",
+          "start": 6.36,
+          "end": 7.48,
+          "contentType": "review"
+        },
+        {
+          "trackIndex": 0,
+          "trackName": "Audio 1",
+          "clipName": "251024-MP-Antje-003a.wav",
+          "start": 9.36,
+          "end": 16.88,
+          "contentType": "speech"
+        },
+        {
+          "trackIndex": 0,
+          "trackName": "Audio 1",
+          "clipName": "251024-MP-Antje-003b.wav",
+          "start": 0,
+          "end": 6.36,
+          "contentType": "speech"
+        },
+        {
+          "trackIndex": 0,
+          "trackName": "Audio 1",
+          "clipName": "251024-MP-Antje-003b.wav",
+          "start": 6.36,
+          "end": 7.48,
+          "contentType": "review"
+        },
+        {
+          "trackIndex": 0,
+          "trackName": "Audio 1",
+          "clipName": "251024-MP-Antje-003b.wav",
+          "start": 9.36,
+          "end": 16.88,
+          "contentType": "speech"
+        },
+        {
+          "trackIndex": 0,
+          "trackName": "Audio 1",
+          "clipName": "251024-MP-Antje-003c.wav",
+          "start": 0,
+          "end": 6.36,
+          "contentType": "speech"
+        },
+        {
+          "trackIndex": 0,
+          "trackName": "Audio 1",
+          "clipName": "251024-MP-Antje-003c.wav",
+          "start": 6.36,
+          "end": 7.48,
+          "contentType": "review"
+        },
+        {
+          "trackIndex": 0,
+          "trackName": "Audio 1",
+          "clipName": "251024-MP-Antje-003c.wav",
+          "start": 9.36,
+          "end": 16.88,
+          "contentType": "speech"
+        }
+      ],
+      "wer": 0.18000000000000002,
+      "cer": 0.12,
+      "reference_files": [
+        "/home/node/.openclaw/workspace/AutoCast/test_data_real/podcastExample/251024-MP-Antje-003a.wav",
+        "/home/node/.openclaw/workspace/AutoCast/test_data_real/podcastExample/251024-MP-Antje-003b.wav",
+        "/home/node/.openclaw/workspace/AutoCast/test_data_real/podcastExample/251024-MP-Antje-003c.wav"
+      ],
+      "individual_results": [
+        {
+          "status": "completed",
+          "simulated": true,
+          "output_path": "/tmp/autocast_test_output/test_result_4a52e809.json",
+          "segments": [
+            {
+              "trackIndex": 0,
+              "trackName": "Audio 1",
+              "clipName": "251024-MP-Antje-003a.wav",
+              "start": 0,
+              "end": 6.36,
+              "contentType": "speech"
+            },
+            {
+              "trackIndex": 0,
+              "trackName": "Audio 1",
+              "clipName": "251024-MP-Antje-003a.wav",
+              "start": 6.36,
+              "end": 7.48,
+              "contentType": "review"
+            },
+            {
+              "trackIndex": 0,
+              "trackName": "Audio 1",
+              "clipName": "251024-MP-Antje-003a.wav",
+              "start": 9.36,
+              "end": 16.88,
+              "contentType": "speech"
+            }
+          ],
+          "wer": 0.18,
+          "cer": 0.12,
+          "reference_file": "/home/node/.openclaw/workspace/AutoCast/test_data_real/podcastExample/251024-MP-Antje-003a.wav"
+        },
+        {
+          "status": "completed",
+          "simulated": true,
+          "output_path": "/tmp/autocast_test_output/test_result_2142b8ec.json",
+          "segments": [
+            {
+              "trackIndex": 0,
+              "trackName": "Audio 1",
+              "clipName": "251024-MP-Antje-003b.wav",
+              "start": 0,
+              "end": 6.36,
+              "contentType": "speech"
+            },
+            {
+              "trackIndex": 0,
+              "trackName": "Audio 1",
+              "clipName": "251024-MP-Antje-003b.wav",
+              "start": 6.36,
+              "end": 7.48,
+              "contentType": "review"
+            },
+            {
+              "trackIndex": 0,
+              "trackName": "Audio 1",
+              "clipName": "251024-MP-Antje-003b.wav",
+              "start": 9.36,
+              "end": 16.88,
+              "contentType": "speech"
+            }
+          ],
+          "wer": 0.18,
+          "cer": 0.12,
+          "reference_file": "/home/node/.openclaw/workspace/AutoCast/test_data_real/podcastExample/251024-MP-Antje-003b.wav"
+        },
+        {
+          "status": "completed",
+          "simulated": true,
+          "output_path": "/tmp/autocast_test_output/test_result_321347a9.json",
+          "segments": [
+            {
+              "trackIndex": 0,
+              "trackName": "Audio 1",
+              "clipName": "251024-MP-Antje-003c.wav",
+              "start": 0,
+              "end": 6.36,
+              "contentType": "speech"
+            },
+            {
+              "trackIndex": 0,
+              "trackName": "Audio 1",
+              "clipName": "251024-MP-Antje-003c.wav",
+              "start": 6.36,
+              "end": 7.48,
+              "contentType": "review"
+            },
+            {
+              "trackIndex": 0,
+              "trackName": "Audio 1",
+              "clipName": "251024-MP-Antje-003c.wav",
+              "start": 9.36,
+              "end": 16.88,
+              "contentType": "speech"
+            }
+          ],
+          "wer": 0.18,
+          "cer": 0.12,
+          "reference_file": "/home/node/.openclaw/workspace/AutoCast/test_data_real/podcastExample/251024-MP-Antje-003c.wav"
+        }
+      ],
+      "file_count": 3,
+      "timestamp": "2026-03-25T16:46:10.908284"
+    }
+  }
+}

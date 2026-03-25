@@ -1,0 +1,178 @@
+{
+  "workflow_id": "optimize_strategy",
+  "started_at": "2026-03-25T15:35:53.329972",
+  "dry_run": false,
+  "steps": {
+    "step1_analysis": {
+      "status": "completed",
+      "output": "strategy_performance_report",
+      "data": {
+        "timestamp": "2026-03-25T15:35:53.332270",
+        "total_strategies": 7,
+        "analyzed_strategies": [
+          {
+            "strategy_id": "epsilon_greedy_aggressive",
+            "name": "Aggressive Epsilon-Greedy",
+            "type": "exploration",
+            "total_runs": 0,
+            "success_rate": 0.0,
+            "avg_improvement": 0.0,
+            "composite_score": 0.0,
+            "epsilon": 0.3
+          },
+          {
+            "strategy_id": "epsilon_greedy_balanced",
+            "name": "Balanced Epsilon-Greedy",
+            "type": "balanced",
+            "total_runs": 0,
+            "success_rate": 0.0,
+            "avg_improvement": 0.0,
+            "composite_score": 0.0,
+            "epsilon": 0.2
+          },
+          {
+            "strategy_id": "epsilon_greedy_conservative",
+            "name": "Conservative Epsilon-Greedy",
+            "type": "exploitation",
+            "total_runs": 0,
+            "success_rate": 0.0,
+            "avg_improvement": 0.0,
+            "composite_score": 0.0,
+            "epsilon": 0.1
+          },
+          {
+            "strategy_id": "ucb_bandit",
+            "name": "Upper Confidence Bound",
+            "type": "adaptive",
+            "total_runs": 0,
+            "success_rate": 0.0,
+            "avg_improvement": 0.0,
+            "composite_score": 0.0,
+            "epsilon": null
+          },
+          {
+            "strategy_id": "softmax_selection",
+            "name": "Softmax Selection",
+            "type": "adaptive",
+            "total_runs": 0,
+            "success_rate": 0.0,
+            "avg_improvement": 0.0,
+            "composite_score": 0.0,
+            "epsilon": null
+          },
+          {
+            "strategy_id": "contextual_bandit",
+            "name": "Contextual Bandit",
+            "type": "contextual",
+            "total_runs": 0,
+            "success_rate": 0.0,
+            "avg_improvement": 0.0,
+            "composite_score": 0.0,
+            "epsilon": null
+          },
+          {
+            "strategy_id": "thompson_sampling",
+            "name": "Thompson Sampling",
+            "type": "bayesian",
+            "total_runs": 0,
+            "success_rate": 0.0,
+            "avg_improvement": 0.0,
+            "composite_score": 0.0,
+            "epsilon": null
+          }
+        ],
+        "top_performer": {
+          "strategy_id": "epsilon_greedy_aggressive",
+          "name": "Aggressive Epsilon-Greedy",
+          "type": "exploration",
+          "total_runs": 0,
+          "success_rate": 0.0,
+          "avg_improvement": 0.0,
+          "composite_score": 0.0,
+          "epsilon": 0.3
+        },
+        "worst_performer": {
+          "strategy_id": "epsilon_greedy_aggressive",
+          "name": "Aggressive Epsilon-Greedy",
+          "type": "exploration",
+          "total_runs": 0,
+          "success_rate": 0.0,
+          "avg_improvement": 0.0,
+          "composite_score": 0.0,
+          "epsilon": 0.3
+        },
+        "insights": [
+          "Exploitation strategies outperform exploration by 0.000",
+          "Average epsilon across strategies: 0.200"
+        ]
+      }
+    },
+    "step2_evaluation": {
+      "status": "completed",
+      "output": "recommendation",
+      "data": {
+        "action": "maintain",
+        "reason": "Insufficient data for recommendation",
+        "target_epsilon": 0.2,
+        "confidence": 0.5
+      }
+    },
+    "step3_tuning": {
+      "status": "completed",
+      "output": "new_epsilon_value",
+      "data": {
+        "timestamp": "2026-03-25T15:35:53.335373",
+        "strategy_id": "epsilon_greedy_balanced",
+        "previous_epsilon": 0.2,
+        "new_epsilon": 0.2,
+        "previous_decay": 0.95,
+        "new_decay": 0.95,
+        "adjustment": "maintain",
+        "reason": "Maintaining balance",
+        "min_epsilon": 0.05,
+        "applied": true
+      }
+    },
+    "step4_selection": {
+      "status": "completed",
+      "output": "recommended_sequence",
+      "data": {
+        "timestamp": "2026-03-25T15:35:53.337486",
+        "recommended_sequence": [
+          "evaluate",
+          "generate",
+          "apply"
+        ],
+        "reason": "Low diversity or poor performance - generating new strategies",
+        "low_diversity": true,
+        "poor_performance": false,
+        "steps": [
+          {
+            "step": 1,
+            "name": "evaluate_performance",
+            "agent": "agent_analyzer",
+            "action": "analyze_strategy_performance",
+            "status": "completed"
+          },
+          {
+            "step": 2,
+            "name": "generate_strategies",
+            "agent": "agent_hypothesis_generator",
+            "action": "generate_new_strategies",
+            "status": "pending",
+            "note": "Only if diversity is low"
+          },
+          {
+            "step": 3,
+            "name": "apply_strategy",
+            "agent": "agent_method_selector",
+            "action": "select_with_new_strategy",
+            "status": "pending"
+          }
+        ]
+      }
+    }
+  },
+  "completed_at": "2026-03-25T15:35:53.337650",
+  "success": true
+}

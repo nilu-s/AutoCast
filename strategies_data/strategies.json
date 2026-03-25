@@ -1,0 +1,197 @@
+{
+  "collection_name": "strategies",
+  "created_at": "2026-03-25T15:37:35.439019",
+  "description": "Strategy definitions and performance data for L4 self-optimization",
+  "updated_at": "2026-03-25T15:37:35.439021",
+  "strategies": {
+    "epsilon_greedy_aggressive": {
+      "strategy_id": "epsilon_greedy_aggressive",
+      "name": "Aggressive Epsilon-Greedy",
+      "description": "High exploration rate (\u03b5=0.3) for discovering new methods",
+      "type": "exploration",
+      "parameters": {
+        "epsilon": 0.3,
+        "min_epsilon": 0.05,
+        "decay_rate": 0.98,
+        "exploration_threshold": 0.6
+      },
+      "performance": {
+        "total_runs": 0,
+        "successful_runs": 0,
+        "avg_improvement": 0.0,
+        "best_improvement": 0.0,
+        "last_used": null,
+        "success_rate": 0.0
+      },
+      "metadata": {
+        "created_at": "2026-03-25T15:33:58.754128",
+        "updated_at": "2026-03-25T15:33:58.754128",
+        "status": "active",
+        "phase": "L4",
+        "auto_optimized": false
+      }
+    },
+    "epsilon_greedy_balanced": {
+      "strategy_id": "epsilon_greedy_balanced",
+      "name": "Balanced Epsilon-Greedy",
+      "description": "Balanced exploration/exploitation (\u03b5=0.2) for steady improvement",
+      "type": "balanced",
+      "parameters": {
+        "epsilon": 0.2,
+        "min_epsilon": 0.05,
+        "decay_rate": 0.95,
+        "exploration_threshold": 0.5
+      },
+      "performance": {
+        "total_runs": 0,
+        "successful_runs": 0,
+        "avg_improvement": 0.0,
+        "best_improvement": 0.0,
+        "last_used": null,
+        "success_rate": 0.0
+      },
+      "metadata": {
+        "auto_optimized": true,
+        "last_tuned": "2026-03-25T15:37:35.437205",
+        "tuning_reason": "Maintaining balance",
+        "updated_at": "2026-03-25T15:37:35.438950"
+      }
+    },
+    "epsilon_greedy_conservative": {
+      "strategy_id": "epsilon_greedy_conservative",
+      "name": "Conservative Epsilon-Greedy",
+      "description": "Low exploration (\u03b5=0.1) for exploiting known good methods",
+      "type": "exploitation",
+      "parameters": {
+        "epsilon": 0.1,
+        "min_epsilon": 0.02,
+        "decay_rate": 0.9,
+        "exploration_threshold": 0.4
+      },
+      "performance": {
+        "total_runs": 0,
+        "successful_runs": 0,
+        "avg_improvement": 0.0,
+        "best_improvement": 0.0,
+        "last_used": null,
+        "success_rate": 0.0
+      },
+      "metadata": {
+        "created_at": "2026-03-25T15:33:58.754128",
+        "updated_at": "2026-03-25T15:33:58.754128",
+        "status": "active",
+        "phase": "L4",
+        "auto_optimized": false
+      }
+    },
+    "ucb_bandit": {
+      "strategy_id": "ucb_bandit",
+      "name": "Upper Confidence Bound",
+      "description": "UCB algorithm for balancing exploration and exploitation with confidence intervals",
+      "type": "adaptive",
+      "parameters": {
+        "c": 2.0,
+        "ucb_threshold": 0.7,
+        "min_confidence": 0.3
+      },
+      "performance": {
+        "total_runs": 0,
+        "successful_runs": 0,
+        "avg_improvement": 0.0,
+        "best_improvement": 0.0,
+        "last_used": null,
+        "success_rate": 0.0
+      },
+      "metadata": {
+        "created_at": "2026-03-25T15:33:58.754128",
+        "updated_at": "2026-03-25T15:33:58.754128",
+        "status": "experimental",
+        "phase": "L4",
+        "auto_optimized": false
+      }
+    },
+    "softmax_selection": {
+      "strategy_id": "softmax_selection",
+      "name": "Softmax Selection",
+      "description": "Probability-based selection using softmax over method scores",
+      "type": "adaptive",
+      "parameters": {
+        "temperature": 1.0,
+        "min_temperature": 0.1,
+        "temperature_decay": 0.99
+      },
+      "performance": {
+        "total_runs": 0,
+        "successful_runs": 0,
+        "avg_improvement": 0.0,
+        "best_improvement": 0.0,
+        "last_used": null,
+        "success_rate": 0.0
+      },
+      "metadata": {
+        "created_at": "2026-03-25T15:33:58.754128",
+        "updated_at": "2026-03-25T15:33:58.754128",
+        "status": "experimental",
+        "phase": "L4",
+        "auto_optimized": false
+      }
+    },
+    "contextual_bandit": {
+      "strategy_id": "contextual_bandit",
+      "name": "Contextual Bandit",
+      "description": "Context-aware strategy selection based on audio characteristics",
+      "type": "contextual",
+      "parameters": {
+        "context_features": [
+          "noise_level",
+          "duration",
+          "num_tracks",
+          "complexity"
+        ],
+        "exploration_bonus": 0.15,
+        "context_weight": 0.5
+      },
+      "performance": {
+        "total_runs": 0,
+        "successful_runs": 0,
+        "avg_improvement": 0.0,
+        "best_improvement": 0.0,
+        "last_used": null,
+        "success_rate": 0.0
+      },
+      "metadata": {
+        "created_at": "2026-03-25T15:33:58.754128",
+        "updated_at": "2026-03-25T15:33:58.754128",
+        "status": "experimental",
+        "phase": "L4",
+        "auto_optimized": false
+      }
+    },
+    "thompson_sampling": {
+      "strategy_id": "thompson_sampling",
+      "name": "Thompson Sampling",
+      "description": "Bayesian approach with Beta distribution for strategy selection",
+      "type": "bayesian",
+      "parameters": {
+        "alpha_prior": 1.0,
+        "beta_prior": 1.0,
+        "sample_count": 100
+      },
+      "performance": {
+        "total_runs": 0,
+        "successful_runs": 0,
+        "avg_improvement": 0.0,
+        "best_improvement": 0.0,
+        "last_used": null,
+        "success_rate": 0.0
+      },
+      "metadata": {
+        "created_at": "2026-03-25T15:33:58.754128",
+        "updated_at": "2026-03-25T15:33:58.754128",
+        "status": "experimental",
+        "phase": "L4",
+        "auto_optimized": false
+      }
+    }
+  }
+}

@@ -88,6 +88,36 @@ Manuell:
 - Erweiterung nach `%APPDATA%/Adobe/CEP/extensions/AutoCast` (Windows) oder `~/Library/Application Support/Adobe/CEP/extensions/AutoCast` (macOS) kopieren.
 - Premiere neu starten.
 
+## AutoResearch
+
+AutoCast enthält ein vollständig automatisiertes Research-System für kontinuierliche Pipeline-Optimierung.
+
+### Quick Start
+
+```bash
+# Cron-Jobs aktivieren
+node scripts/autoresearch/setup_orchestrator_cron.js --enable
+node scripts/autoresearch/setup_dispatch_cron.js --enable
+
+# Status prüfen
+node scripts/autoresearch/setup_dispatch_cron.js --status
+```
+
+### Dokumentation
+
+- **[QUICKSTART.md](./QUICKSTART.md)** - In 5 Minuten loslegen
+- **[PROJECT_COMPLETION_REPORT.md](./PROJECT_COMPLETION_REPORT.md)** - Vollständiger Abschluss-Bericht
+- **[DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)** - Produktions-Deployment
+- **[MAINTENANCE.md](./MAINTENANCE.md)** - Wartung und Monitoring
+
+### Architektur
+
+```
+Orchestrator (stündlich) → Dispatch (alle 15min) → Method Execution → Aggregation
+```
+
+Ergebnisse in `reports/autoresearch/runs/latest/CYCLE_REPORT.md`
+
 ## Lizenz
 
 MIT

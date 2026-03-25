@@ -1,0 +1,250 @@
+{
+  "workflow_id": "improve_with_wav_test",
+  "name": "Autonomous Improve with WAV Test Workflow",
+  "description": "Fully autonomous workflow for code changes with automatic WAV testing and WER-based evaluation. No user interaction required.",
+  "version": "2.0.0",
+  "level": "L2",
+  "status": "active",
+  "created_at": "2025-03-25T16:35:00Z",
+  "autonomous": true,
+  "safety_features": {
+    "segments_json_readonly": true,
+    "automatic_backup": true,
+    "rollback_on_failure": true,
+    "rollback_on_reject": true
+  },
+  "steps": [
+    {
+      "step": 1,
+      "name": "validate_method",
+      "agent": "agent_guardian",
+      "skill": "skill_validation_check",
+      "action": "validate_method",
+      "description": "Validate the method exists and parameters are valid",
+      "inputs": ["method_id"],
+      "outputs": ["validation_result"],
+      "status": "pending",
+      "timeout_seconds": 60,
+      "retry_count": 2
+    },
+    {
+      "step": 2,
+      "name": "create_backup",
+      "agent": "agent_guardian",
+      "skill": "skill_backup_create",
+      "action": "create_backup",
+      "description": "Create backup of files before modification (Safety)",
+      "inputs": ["validation_result"],
+      "outputs": ["backup_result"],
+      "safety_checks": ["verify_segments_readonly"],
+      "status": "pending",
+      "timeout_seconds": 30,
+      "retry_count": 1
+    },
+    {
+      "step": 3,
+      "name": "execute_code_change",
+      "agent": "agent_worker",
+      "skill": "skill_code_modification",
+      "action": "execute_code_change",
+      "description": "Execute the code modification",
+      "inputs": ["validation_result"],
+      "outputs": ["code_change_result"],
+      "status": "pending",
+      "timeout_seconds": 300,
+      "retry_count": 1
+    },
+    {
+      "step": 4,
+      "name": "auto_test_with_reference_wav",
+      "agent": "agent_worker",
+      "skill": "skill_method_execution",
+      "action": "auto_test_with_reference_wav",
+      "description": "AUTONOMOUS: Run AutoCast on reference WAV file",
+      "inputs": ["code_change_result"],
+      "process": {
+        "1": "Load test_fixtures/reference.wav",
+        "2": "Execute: node scripts/process.js --input reference.wav --output /tmp/test_result.json",
+        "3": "Capture output segments and WER"
+      },
+      "outputs": ["test_output"],
+      "status": "pending",
+      "timeout_seconds": 120,
+      "retry_count": 1
+    },
+    {
+      "step": 5,
+      "name": "auto_evaluate",
+      "agent": "agent_analyzer",
+      "skill": "skill_success_analysis",
+      "action": "evaluate_autonomously",
+      "description": "AUTONOMOUS: Evaluate AutoCast output against segments.json",
+      "inputs": ["test_output"],
+      "process": {
+        "1": "Load segments.json (ground truth)",
+        "2": "Compare AutoCast output vs segments.json",
+        "3": "Calculate WER and CER automatically",
+        "4": "Calculate segment metrics (accuracy, boundary, false positive rate)"
+      },
+      "outputs": ["evaluation_result"],
+      "ground_truth": "docs/segments.json",
+      "evaluation_metrics": [
+        "wer",
+        "cer",
+        "speech_detection_accuracy",
+        "boundary_accuracy_ms",
+        "false_positive_rate"
+      ],
+      "status": "pending",
+      "timeout_seconds": 60,
+      "retry_count": 1
+    },
+    {
+      "step": 6,
+      "name": "auto_compare",
+      "agent": "agent_analyzer",
+      "skill": "skill_success_analysis",
+      "action": "compare_before_after",
+      "description": "AUTONOMOUS: Compare WER/CER before vs after",
+      "inputs": ["evaluation_result"],
+      "outputs": ["comparison_result"],
+      "status": "pending",
+      "timeout_seconds": 30,
+      "retry_count": 1
+    },
+    {
+      "step": 7,
+      "name": "auto_decide_keep_reject",
+      "agent": "agent_selector",
+      "skill": "skill_strategy_evaluation",
+      "action": "auto_decide_keep_reject",
+      "description": "AUTONOMOUS: Decide KEEP or REJECT based on WER improvement",
+      "inputs": ["comparison_result", "evaluation_result"],
+      "decision_logic": {
+        "criteria": "new_wer < baseline_wer - threshold",
+        "baseline_wer": 0.23,
+        "threshold": 0.01,
+        "description": "KEEP if WER improves by at least 1%"
+      },
+      "outputs": ["decision_result"],
+      "status": "pending",
+      "timeout_seconds": 30,
+      "retry_count": 1
+    },
+    {
+      "step": 8,
+      "name": "apply_or_rollback",
+      "agent": "agent_worker",
+      "skill": "skill_code_modification",
+      "action": "apply_or_rollback",
+      "description": "Apply changes if KEEP, rollback if REJECT",
+      "inputs": ["decision_result", "backup_result"],
+      "outputs": ["apply_result"],
+      "status": "pending",
+      "timeout_seconds": 60,
+      "retry_count": 2
+    },
+    {
+      "step": 9,
+      "name": "record_run",
+      "agent": "agent_worker",
+      "skill": "skill_chromadb_store",
+      "action": "record_run",
+      "description": "Record the autonomous run to ChromaDB",
+      "inputs": ["decision_result", "evaluation_result", "comparison_result", "test_output"],
+      "outputs": ["run_record"],
+      "status": "pending",
+      "timeout_seconds": 30,
+      "retry_count": 2
+    }
+  ],
+  "triggers": {
+    "auto": {
+      "enabled": true,
+      "description": "Can be triggered automatically by orchestrator"
+    },
+    "manual": {
+      "enabled": true,
+      "command": "python3 improve_with_wav_test.py --method-id <method_id> [--reference-wav <path>]"
+    }
+  },
+  "human_in_the_loop": {
+    "level": "L2",
+    "mode": "none",
+    "description": "Fully autonomous - no human interaction required"
+  },
+  "output": {
+    "decision": "decision_result.decision",
+    "wer_improvement": "decision_result.wer_improvement",
+    "run_id": "run_record.run_id"
+  },
+  "dependencies": [
+    "test_fixtures/reference.wav (reference audio file)",
+    "docs/segments.json (read-only ground truth)",
+    "learning_database",
+    "chroma_db"
+  ],
+  "safety": {
+    "segments_json_protection": {
+      "description": "segments.json is strictly read-only",
+      "enforced": true,
+      "verification_step": 2
+    },
+    "backup_mechanism": {
+      "description": "Automatic backup before any changes",
+      "backup_location": ".autocast/backup_<execution_id>/",
+      "created_step": 2
+    },
+    "rollback_mechanism": {
+      "description": "Automatic rollback on REJECT or failure",
+      "triggered_on": ["REJECT decision", "workflow failure"],
+      "executed_step": 8
+    }
+  },
+  "evaluation": {
+    "ground_truth_file": "docs/segments.json",
+    "reference_audio": "test_fixtures/reference.wav",
+    "primary_metric": "wer",
+    "metrics": {
+      "wer": {
+        "description": "Word Error Rate - primary decision metric",
+        "baseline": 0.23,
+        "target": "< 0.22",
+        "weight": 0.5
+      },
+      "cer": {
+        "description": "Character Error Rate",
+        "baseline": 0.15,
+        "weight": 0.2
+      },
+      "speech_detection_accuracy": {
+        "description": "Percentage of correctly identified speech segments",
+        "weight": 0.15
+      },
+      "boundary_accuracy_ms": {
+        "description": "Average boundary time difference in milliseconds",
+        "weight": 0.1
+      },
+      "false_positive_rate": {
+        "description": "Percentage of false positives",
+        "weight": 0.05
+      }
+    },
+    "decision_criteria": {
+      "threshold": 0.01,
+      "description": "KEEP if new_wer < baseline_wer - 0.01 (1% improvement)"
+    }
+  },
+  "metadata": {
+    "supported_methods": [
+      "method_001",
+      "method_002",
+      "vad_threshold_tune",
+      "noise_reduction",
+      "segmentation_improve"
+    ],
+    "test_file_types": [".wav"],
+    "target_application": "AutoCast Audio Processing",
+    "autonomous_level": "L2-Full"
+  }
+}

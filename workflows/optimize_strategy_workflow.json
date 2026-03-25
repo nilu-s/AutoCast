@@ -1,0 +1,98 @@
+{
+  "workflow_id": "optimize_strategy",
+  "name": "Strategy Optimization Workflow",
+  "description": "L4 self-optimizing strategy for exploration vs exploitation",
+  "version": "1.0.0",
+  "level": "L4",
+  "status": "active",
+  "created_at": "2025-03-25T15:30:00Z",
+  "steps": [
+    {
+      "step": 1,
+      "name": "analyze_strategy_performance",
+      "agent": "agent_analyzer",
+      "skill": "skill_success_analysis",
+      "action": "analyze_strategy_performance",
+      "description": "Analyze historical strategy performance from runs",
+      "inputs": ["historical_runs", "strategy_performance_data"],
+      "outputs": ["strategy_performance_report"],
+      "status": "pending",
+      "timeout_seconds": 60,
+      "retry_count": 3
+    },
+    {
+      "step": 2,
+      "name": "evaluate_exploration_exploitation",
+      "agent": "agent_selector",
+      "skill": "skill_strategy_evaluation",
+      "action": "evaluate_exploration_exploitation",
+      "description": "Compare exploration vs exploitation strategies",
+      "inputs": ["strategy_performance_report", "current_epsilon"],
+      "outputs": ["recommendation"],
+      "status": "pending",
+      "timeout_seconds": 30,
+      "retry_count": 2
+    },
+    {
+      "step": 3,
+      "name": "tune_epsilon_greedy",
+      "agent": "agent_hyperparameter_tuner",
+      "skill": "skill_hyperparameter_tuning",
+      "action": "tune_epsilon_greedy",
+      "description": "Tune epsilon-greedy parameters based on performance",
+      "inputs": ["recommendation", "strategy_id"],
+      "outputs": ["new_epsilon_value"],
+      "status": "pending",
+      "timeout_seconds": 45,
+      "retry_count": 2
+    },
+    {
+      "step": 4,
+      "name": "select_optimal_workflow",
+      "agent": "agent_selector",
+      "skill": "skill_strategy_evaluation",
+      "action": "select_optimal_workflow",
+      "description": "Select optimal workflow sequence",
+      "inputs": ["strategy_performance_report", "recommendation"],
+      "outputs": ["recommended_sequence"],
+      "status": "pending",
+      "timeout_seconds": 30,
+      "retry_count": 2
+    }
+  ],
+  "triggers": {
+    "auto": {
+      "enabled": true,
+      "runs_threshold": 5,
+      "description": "Trigger after every 5 runs"
+    },
+    "manual": {
+      "enabled": true,
+      "command": "python optimize_strategy.py"
+    }
+  },
+  "human_in_the_loop": {
+    "level": "L4",
+    "mode": "notify_and_proceed",
+    "description": "System announces action and auto-proceeds after short delay",
+    "notification_delay_seconds": 10,
+    "stop_mechanism": ["SIGUSR1", ".stop file"]
+  },
+  "output": {
+    "best_strategy": "strategies.best_strategy",
+    "performance_report": "strategies.performance_report",
+    "tuning_result": "strategies.tuning_result",
+    "workflow_selection": "strategies.workflow_selection"
+  },
+  "dependencies": [
+    "strategies_collection",
+    "learning_database",
+    "chroma_db"
+  ],
+  "metadata": {
+    "auto_optimization": true,
+    "exploration_strategies": ["epsilon_greedy_aggressive", "ucb_bandit", "thompson_sampling"],
+    "exploitation_strategies": ["epsilon_greedy_conservative"],
+    "balanced_strategies": ["epsilon_greedy_balanced", "softmax_selection", "contextual_bandit"]
+  }
+}
