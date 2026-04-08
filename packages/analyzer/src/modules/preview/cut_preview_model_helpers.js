@@ -7,12 +7,10 @@ function buildSegmentModel(ctx) {
     var isUninteresting = !!ctx.isUninteresting;
     var decisionState = normalizeDecisionState(
         ctx.decisionState || 'review',
-        !!ctx.alwaysOpenFill,
         isUninteresting
     );
     var contentState = normalizeContentState(
         ctx.contentState || (ctx.typeInfo && ctx.typeInfo.label) || 'unknown',
-        !!ctx.alwaysOpenFill,
         isUninteresting
     );
     var suppressionReason = mapSuppressionReason({
@@ -104,7 +102,7 @@ function buildEvidenceMetrics(values) {
     };
 }
 
-function normalizeDecisionState(decisionState, alwaysOpenFill, isUninteresting) {
+function normalizeDecisionState(decisionState, isUninteresting) {
     var state = decisionState ? String(decisionState) : 'review';
     if (isUninteresting) return 'uninteresting';
     if (state === 'keep' || state === 'review' || state === 'suppress' || state === 'filled_gap' || state === 'uninteresting') {
@@ -113,7 +111,7 @@ function normalizeDecisionState(decisionState, alwaysOpenFill, isUninteresting) 
     return 'review';
 }
 
-function normalizeContentState(contentState, alwaysOpenFill, isUninteresting) {
+function normalizeContentState(contentState, isUninteresting) {
     var state = contentState ? String(contentState) : 'unknown';
     if (isUninteresting) return 'noise';
     if (state === 'speech' ||
@@ -222,7 +220,7 @@ function buildSummary(items, trackCount, totalDurationSec) {
 
     for (var i = 0; i < items.length; i++) {
         var item = items[i];
-        var decisionState = normalizeDecisionState(item && item.decisionState, !!(item && item.alwaysOpenFill), !!(item && item.isUninteresting));
+        var decisionState = normalizeDecisionState(item && item.decisionState, !!(item && item.isUninteresting));
         if (isUninterestingItem(item)) {
             uninteresting++;
         } else if (decisionState === 'filled_gap') {

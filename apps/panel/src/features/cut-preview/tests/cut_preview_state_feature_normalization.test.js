@@ -19,6 +19,7 @@ describe('Cut Preview State Feature - Normalization', function () {
                 error: function () { }
             }
         };
+        loadScript('apps/panel/src/features/cut-preview/services/cut_preview_state_helpers.js', sandbox);
         loadScript('apps/panel/src/features/cut-preview/services/cut_preview_state_feature.js', sandbox);
 
         var feature = sandbox.AutoCastPanelCutPreviewFeature;
@@ -52,6 +53,7 @@ describe('Cut Preview State Feature - Normalization', function () {
                 error: function () { }
             }
         };
+        loadScript('apps/panel/src/features/cut-preview/services/cut_preview_state_helpers.js', sandbox);
         loadScript('apps/panel/src/features/cut-preview/services/cut_preview_state_feature.js', sandbox);
 
         var feature = sandbox.AutoCastPanelCutPreviewFeature;

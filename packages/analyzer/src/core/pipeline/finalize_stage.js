@@ -45,6 +45,8 @@ function runFinalizeStage(ctx) {
         params: params
     });
 
+    var segmentsWithContentTypes = assignContentTypesToResolvedSegments(resolvedSegments, cutPreview);
+
     var result = {
         contract: {
             name: 'analyze_result',
@@ -54,7 +56,7 @@ function runFinalizeStage(ctx) {
         timestamp: new Date().toISOString(),
         totalDurationSec: Math.round(totalDurationSec * 100) / 100,
         tracks: trackInfos,
-        segments: resolvedSegments,
+        segments: segmentsWithContentTypes,
         cutPreview: cutPreview,
         previewModel: {
             policyVersion: (cutPreview && cutPreview.policyVersion) || null,
@@ -88,6 +90,116 @@ function runFinalizeStage(ctx) {
     };
 }
 
+function assignContentTypesToResolvedSegments(resolvedSegments, cutPreview) {
+    var tracks = Array.isArray(resolvedSegments) ? resolvedSegments : [];
+    var itemsByTrack = buildPreviewItemsByTrack(cutPreview && cutPreview.items);
+    var out = [];
+
+    for (var t = 0; t < tracks.length; t++) {
+        var segs = Array.isArray(tracks[t]) ? tracks[t] : [];
+        var trackOut = [];
+        for (var i = 0; i < segs.length; i++) {
+            var seg = segs[i];
+            if (!seg || typeof seg !== 'object') continue;
+            var contentType = resolveSegmentContentType(seg, itemsByTrack[t] || []);
+            var next = {};
+            for (var key in seg) {
+                if (Object.prototype.hasOwnProperty.call(seg, key)) {
+                    next[key] = seg[key];
+                }
+            }
+            next.contentType = contentType;
+            trackOut.push(next);
+        }
+        out.push(trackOut);
+    }
+
+    return out;
+}
+
+function buildPreviewItemsByTrack(items) {
+    var byTrack = [];
+    var list = Array.isArray(items) ? items : [];
+
+    for (var i = 0; i < list.length; i++) {
+        var item = list[i];
+        if (!item || typeof item !== 'object') continue;
+
+        var trackIndex = parseInt(item.trackIndex, 10);
+        if (!isFinite(trackIndex) || trackIndex < 0) continue;
+        var start = parseFloat(item.start);
+        var end = parseFloat(item.end);
+        if (!isFinite(start) || !isFinite(end) || !(end > start)) continue;
+
+        if (!byTrack[trackIndex]) byTrack[trackIndex] = [];
+        byTrack[trackIndex].push({
+            start: start,
+            end: end,
+            contentType: mapPreviewItemToContentType(item)
+        });
+    }
+
+    return byTrack;
+}
+
+function resolveSegmentContentType(segment, previewItems) {
+    var state = segment && segment.state ? String(segment.state) : 'active';
+    if (state === 'suppressed') return 'ignore';
+
+    var start = parseFloat(segment && segment.start);
+    var end = parseFloat(segment && segment.end);
+    if (!isFinite(start) || !isFinite(end) || !(end > start)) return 'ignore';
+
+    var speechWeight = 0;
+    var reviewWeight = 0;
+    var ignoreWeight = 0;
+
+    for (var i = 0; i < previewItems.length; i++) {
+        var item = previewItems[i];
+        var overlapSec = computeOverlapSec(start, end, item.start, item.end);
+        if (overlapSec <= 0) continue;
+
+        if (item.contentType === 'review') {
+            reviewWeight += overlapSec;
+            continue;
+        }
+        if (item.contentType === 'speech') {
+            speechWeight += overlapSec;
+            continue;
+        }
+        ignoreWeight += overlapSec;
+    }
+
+    if (reviewWeight > 0 && reviewWeight >= speechWeight && reviewWeight >= ignoreWeight) {
+        return 'review';
+    }
+    if (speechWeight > 0 && speechWeight >= ignoreWeight) {
+        return 'speech';
+    }
+    if (ignoreWeight > 0) {
+        return 'ignore';
+    }
+
+    return 'speech';
+}
+
+function mapPreviewItemToContentType(item) {
+    if (!item || typeof item !== 'object') return 'ignore';
+    if (item.isUninteresting || item.decisionState === 'uninteresting') return 'ignore';
+
+    var decisionState = item.decisionState ? String(item.decisionState) : '';
+    if (decisionState === 'review') return 'review';
+    if (decisionState === 'keep' || decisionState === 'filled_gap') return 'speech';
+    return 'ignore';
+}
+
+function computeOverlapSec(aStart, aEnd, bStart, bEnd) {
+    var start = Math.max(aStart, bStart);
+    var end = Math.min(aEnd, bEnd);
+    if (!(end > start)) return 0;
+    return end - start;
+}
+
 function assertRawRmsProfiles(rawRmsProfiles, rmsProfiles) {
     var normalized = Array.isArray(rmsProfiles) ? rmsProfiles : [];
     if (!Array.isArray(rawRmsProfiles) || rawRmsProfiles.length < normalized.length) {
@@ -108,6 +220,10 @@ function generateWaveformPreview(rmsProfiles, totalDurationSec, params) {
 
     for (var t = 0; t < trackCount; t++) {
         var rms = rmsProfiles[t];
+        if (!rms) {
+            waveform.push([]);
+            continue;
+        }
         var frameCount = rms.length;
         var step = Math.max(1, Math.floor(frameCount / resolution));
         var points = [];

@@ -1,0 +1,57 @@
+[
+  {
+    "trackIndex": 0,
+    "trackName": "Track A Host",
+    "clipName": "packages/analyzer/test/test_data/track_a_host.wav",
+    "start": 0,
+    "end": 15.0,
+    "inPoint": 0,
+    "outPoint": 15.0,
+    "duration": 15.0,
+    "contentType": "speech"
+  },
+  {
+    "trackIndex": 1,
+    "trackName": "Track B Guest",
+    "clipName": "packages/analyzer/test/test_data/track_b_guest1.wav",
+    "start": 0,
+    "end": 15.0,
+    "inPoint": 0,
+    "outPoint": 15.0,
+    "duration": 15.0,
+    "contentType": "speech"
+  },
+  {
+    "trackIndex": 0,
+    "trackName": "Track A Host",
+    "clipName": "packages/analyzer/test/test_data/track_a_host.wav",
+    "start": 3.5,
+    "end": 4.5,
+    "inPoint": 3.5,
+    "outPoint": 4.5,
+    "duration": 1.0,
+    "contentType": "review"
+  },
+  {
+    "trackIndex": 0,
+    "trackName": "Track A Host",
+    "clipName": "packages/analyzer/test/test_data/track_a_host.wav",
+    "start": 6.0,
+    "end": 7.0,
+    "inPoint": 6.0,
+    "outPoint": 7.0,
+    "duration": 1.0,
+    "contentType": "ignore"
+  },
+  {
+    "trackIndex": 1,
+    "trackName": "Track B Guest",
+    "clipName": "packages/analyzer/test/test_data/track_b_guest1.wav",
+    "start": 5.0,
+    "end": 6.5,
+    "inPoint": 5.0,
+    "outPoint": 6.5,
+    "duration": 1.5,
+    "contentType": "review"
+  }
+]

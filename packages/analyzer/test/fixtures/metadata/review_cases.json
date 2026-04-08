@@ -1,0 +1,20 @@
+{
+  "laughter_pass_1": {
+    "file": "audio/laughter/sample_01.wav",
+    "expected": {
+      "hasLaughter": true,
+      "confidenceThreshold": 0.75,
+      "timestamps": [[2.5, 4.2]]
+    },
+    "description": "Short burst of isolated laughter to verify sensitivity."
+  },
+  "bleed_suppression_test": {
+    "file": "audio/bleed/sample_02.wav",
+    "expected": {
+      "hasLaughter": false,
+      "maxConfidence": 0.35,
+      "isBleed": true
+    },
+    "description": "Laughter bleed from another mic that should be suppressed."
+  }
+}

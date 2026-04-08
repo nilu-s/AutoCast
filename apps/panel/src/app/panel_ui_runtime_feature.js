@@ -37,7 +37,6 @@
     }
 
     function setButtonsDisabled(els, disabled) {
-        if (els.btnApply) els.btnApply.disabled = disabled;
         if (els.btnAnalyze) els.btnAnalyze.disabled = disabled;
         if (els.btnReset) els.btnReset.disabled = disabled;
         if (els.cutPreviewApplyBtn) els.cutPreviewApplyBtn.disabled = disabled;
@@ -52,6 +51,37 @@
         if (els.cutPreviewSection) {
             els.cutPreviewSection.style.display = reviewMode ? 'block' : 'none';
         }
+        updateTabNav(state, els, mode);
+    }
+
+    function updateTabNav(state, els, mode) {
+        if (!els.tabNav) return;
+        els.tabNav.style.display = 'flex';
+        var setupTab = els.tabSetup;
+        var reviewTab = els.tabReview;
+        var hasResults = !!(state && state.analysisResult);
+
+        if (setupTab) {
+            setupTab.classList.toggle('is-active', mode === 'setup');
+            setupTab.classList.toggle('is-completed', hasResults);
+            setupTab.disabled = false;
+        }
+        if (reviewTab) {
+            reviewTab.classList.toggle('is-active', mode === 'review');
+            reviewTab.disabled = !hasResults;
+        }
+    }
+
+    function bindTabNavigation(els, onTabClick) {
+        if (!els.tabNav) return;
+        els.tabNav.addEventListener('click', function(evt) {
+            var btn = evt.target.closest('.tab-btn');
+            if (!btn || btn.disabled) return;
+            var tab = btn.getAttribute('data-tab');
+            if (tab && typeof onTabClick === 'function') {
+                onTabClick(tab);
+            }
+        });
     }
 
     function hideCutPreview(options) {
@@ -92,6 +122,7 @@
         setPanelPageMode: setPanelPageMode,
         hideCutPreview: hideCutPreview,
         updateModeIndicator: updateModeIndicator,
-        bindSlider: bindSlider
+        bindSlider: bindSlider,
+        bindTabNavigation: bindTabNavigation
     };
 })(this);

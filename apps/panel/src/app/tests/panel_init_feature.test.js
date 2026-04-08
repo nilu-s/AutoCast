@@ -47,7 +47,6 @@ describe('Panel Init Feature', function () {
         };
 
         var els = {
-            btnApply: { disabled: false },
             cutPreviewApplyBtn: { disabled: false },
             btnReset: { disabled: false }
         };
@@ -87,7 +86,6 @@ describe('Panel Init Feature', function () {
         assert(calls.hidePreview === 1, 'Expected hideCutPreview call');
         assert(calls.renderTracks === 1, 'Expected renderTracks call');
         assert(calls.status === 'Ready', 'Expected ready status');
-        assert(els.btnApply.disabled === true, 'Expected apply button disabled');
         assert(els.cutPreviewApplyBtn.disabled === true, 'Expected cut preview apply button disabled');
         assert(els.btnReset.disabled === true, 'Expected reset button disabled');
 

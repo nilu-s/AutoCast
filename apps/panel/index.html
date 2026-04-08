@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AutoCast</title>
-    <link rel="stylesheet" href="css/styles.css?v=2">
+    <link rel="stylesheet" href="css/styles.css?v=3">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 
@@ -28,6 +28,19 @@
             </div>
         </header>
 
+        <!-- Tab Navigation -->
+        <nav id="tabNav" class="tab-nav" style="display: none;">
+            <button type="button" class="tab-btn" data-tab="setup" id="tabSetup">
+                <span class="tab-step">1</span>
+                <span class="tab-label">Setup</span>
+            </button>
+            <span class="tab-connector"></span>
+            <button type="button" class="tab-btn" data-tab="review" id="tabReview">
+                <span class="tab-step">2</span>
+                <span class="tab-label">Review</span>
+            </button>
+        </nav>
+
         <!-- Status Bar -->
         <div id="statusBar" class="status-bar status-idle">
             <span id="statusIcon" class="status-icon">&#9679;</span>
@@ -35,15 +48,19 @@
         </div>
 
         <!-- Main Content -->
-        <div class="content-wrapper">
+        <div class="content-wrapper" id="mainContent">
 
             <!-- Tracks -->
             <section id="tracksSection" class="section">
                 <div class="section-header">
                     <h2 class="section-title">Tracks</h2>
-                    <button id="btnLoadTracks" class="btn btn-icon btn-secondary" title="Load Tracks">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <!-- TEMP JSON EXPORT -->
+                        <button id="btnReviewManualCutsTemp" class="btn btn-secondary btn-sm" title="Review timeline clips for categorizing">Review Manual Cuts</button>
+                        <!-- /TEMP. remove later -->
+                        <button id="btnLoadTracks" class="btn btn-icon btn-secondary" title="Load Tracks">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                             <polyline points="7 10 12 15 17 10"></polyline>
                             <line x1="12" y1="15" x2="12" y2="3"></line>
@@ -105,7 +122,15 @@
                     <div class="cut-preview-head-right">
                         <div id="cutPreviewMeta" class="cut-preview-meta"></div>
                         <div class="cut-preview-page-actions">
-                            <button id="cutPreviewBackBtn" class="btn btn-secondary btn-sm" type="button">Zurueck zu Setup</button>
+                            <button id="btnBackToSetup" class="btn btn-secondary btn-sm" type="button">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M19 12H5M12 19l-7-7 7-7"/>
+                                </svg>
+                                Back
+                            </button>
+                            <!-- TEMP JSON EXPORT REVIEW -->
+                            <button id="btnExportJsonReviewTemp" class="btn btn-secondary btn-sm" type="button">Export JSON</button>
+                            <!-- /TEMP -->
                             <button id="cutPreviewApplyBtn" class="btn btn-accent btn-sm" type="button">Apply Edits</button>
                         </div>
                     </div>
@@ -128,6 +153,7 @@
                     <div class="cut-preview-main">
                         <div id="cutPreviewTimeline" class="cut-preview-timeline"></div>
                         <div id="cutPreviewNavigator" class="cut-preview-navigator"></div>
+                        <div id="cutPreviewReviewList" class="cut-preview-review-list"></div>
                     </div>
                     <aside class="cut-preview-side">
                         <div id="cutPreviewInspector" class="cut-preview-inspector"></div>
@@ -151,15 +177,6 @@
                         <polygon points="10 8 16 12 10 16 10 8"></polygon>
                     </svg>
                     Analyze
-                </button>
-                <button id="btnApply" class="btn btn-accent" disabled title="Generate cuts on timeline">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                        stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="17 8 12 3 7 8"></polyline>
-                        <line x1="12" y1="3" x2="12" y2="15"></line>
-                    </svg>
-                    Apply Edits
                 </button>
             </div>
             <div class="action-row secondary-actions">
@@ -185,7 +202,7 @@
     <script src="src/app/panel_controller.js?v=1"></script>
     <script src="src/app/panel_bootstrap.js?v=1"></script>
     <script src="src/app/panel_init_feature.js?v=1"></script>
-    <script src="src/app/panel_ui_runtime_feature.js?v=1"></script>
+    <script src="src/app/panel_ui_runtime_feature.js?v=2"></script>
     <script src="src/app/panel_flow_runtime_feature.js?v=1"></script>
     <script src="src/app/panel_state_runtime_feature.js?v=1"></script>
     <script src="src/app/panel_preview_runtime_feature.js?v=1"></script>
@@ -199,6 +216,7 @@
     <script src="src/features/analysis/services/analysis_run_feature.js?v=1"></script>
     <script src="src/features/analysis/state/analysis_store.js?v=1"></script>
     <script src="src/features/tracks/state/tracks_store.js?v=1"></script>
+    <script src="src/features/cut-preview/services/cut_preview_state_helpers.js?v=1"></script>
     <script src="src/features/cut-preview/services/cut_preview_state_feature.js?v=1"></script>
     <script src="src/features/cut-preview/state/cut_preview_store.js?v=1"></script>
     <script src="src/features/cut-preview/services/cut_preview_source_mapper_feature.js?v=1"></script>
@@ -209,6 +227,9 @@
     <script src="src/features/cut-preview/components/cut_preview_navigator_component.js?v=1"></script>
     <script src="src/features/cut-preview/components/cut_preview_inspector_component.js?v=1"></script>
     <script src="src/features/cut-preview/services/cut_preview_render_feature.js?v=2"></script>
+    <script src="src/features/cut-preview/state/cut_preview_review_store.js?v=1"></script>
+    <script src="src/features/cut-preview/components/cut_preview_review_list_component.js?v=1"></script>
+    <script src="src/features/cut-preview/services/cut_preview_review_feature.js?v=1"></script>
     <script src="src/features/audio-preview/services/audio_preview_feature.js?v=1"></script>
     <script src="src/features/audio-preview/state/audio_preview_store.js?v=1"></script>
     <script src="src/features/audio-preview/services/audio_preview_player_feature.js?v=1"></script>
@@ -216,7 +237,7 @@
     <script src="src/features/apply-edits/services/apply_edits_runner_feature.js?v=1"></script>
     <script src="src/features/settings/state/settings_store.js?v=1"></script>
     <script src="src/features/settings/services/settings_feature.js?v=1"></script>
-    <script src="js/main.js?v=11"></script>
+    <script src="js/main.js?v=12"></script>
 </body>
 
 </html>

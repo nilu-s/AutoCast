@@ -3,8 +3,7 @@
 var rmsCalc = require('../../modules/energy/rms_calculator');
 var vadGate = require('../../modules/vad/vad_gate');
 var spectralVad = require('../../modules/vad/spectral_vad');
-var laughterDetector = require('../../modules/vad/laughter_detector');
-var continuityEnforcer = require('./continuity_enforcer');
+
 var runtimeUtils = require('../utils/runtime_utils');
 
 function runVadStage(ctx) {
@@ -29,16 +28,7 @@ function runVadStage(ctx) {
     for (i = 0; i < trackCount; i++) {
         progress(50 + Math.round((i / trackCount) * 15), 'VAD for track ' + (i + 1) + '/' + trackCount);
 
-        var trackThreshold = params.thresholdAboveFloorDb;
-        if (params.perTrackThresholdDb && params.perTrackThresholdDb[i] !== undefined) {
-            trackThreshold = params.perTrackThresholdDb[i];
-        }
-        if (params.enableTrackLoudnessBias && trackInfos[i] && trackInfos[i].gainAdjustDb !== undefined) {
-            var loudnessBias = trackInfos[i].gainAdjustDb * (params.trackLoudnessBiasStrength || 0);
-            trackThreshold = trackThreshold - loudnessBias;
-            if (trackThreshold < -6) trackThreshold = -6;
-            if (trackThreshold > 18) trackThreshold = 18;
-        }
+        var trackThreshold = ctx.trackThresholds ? ctx.trackThresholds[i] : params.thresholdAboveFloorDb;
 
         var vadResult = vadGate.detectActivity(rmsProfiles[i], {
             thresholdAboveFloorDb: trackThreshold,
@@ -54,12 +44,6 @@ function runVadStage(ctx) {
             smoothingWindow: params.rmsSmoothing,
             hysteresisDb: params.hysteresisDb,
             frameDurationMs: params.frameDurationMs,
-            adaptiveNoiseFloor: params.adaptiveNoiseFloor,
-            localNoiseWindowMs: params.localNoiseWindowMs,
-            noiseFloorUpdateMs: params.noiseFloorUpdateMs,
-            localNoisePercentile: params.localNoisePercentile,
-            maxAdaptiveFloorRiseDb: params.maxAdaptiveFloorRiseDb,
-            localNoiseSampleStride: params.localNoiseSampleStride,
             enableHardSilenceCut: params.enableHardSilenceCut,
             hardSilenceCutDb: params.hardSilenceCutDb,
             hardSilenceLookaroundMs: params.hardSilenceLookaroundMs,
@@ -73,10 +57,12 @@ function runVadStage(ctx) {
         var speakerSimilarity = null;
         var laughterDebug = null;
 
+        // Spectral confidence now comes from chunk-streamed feature extraction.
         if (params.useSpectralVAD && spectralResults[i]) {
+            var spectralConfidence = spectralResults[i].confidence;
             var spectralRefine = spectralVad.refineGateWithSpectral(
                 vadResult.gateOpen,
-                spectralResults[i].confidence,
+                spectralConfidence,
                 params.spectralMinConfidence,
                 {
                     softMargin: params.spectralSoftMargin,
@@ -147,39 +133,7 @@ function runVadStage(ctx) {
         var gateAfterSpeakerLock = cloneUint8Array(vadResult.gateOpen);
         var gateAfterLaughter = gateAfterSpeakerLock;
 
-        if (params.useLaughterDetection && laughterResults[i] && laughterResults[i].confidence) {
-            var laughterRescue = laughterDetector.rescueGateWithLaughter(
-                gateAfterVad,
-                vadResult.gateOpen,
-                laughterResults[i].confidence,
-                rmsProfiles[i],
-                {
-                    minConfidence: params.laughterMinConfidence,
-                    holdFrames: params.laughterHoldFrames,
-                    absoluteFloorDb: params.laughterBurstAbsoluteFloorDb,
-                    minRelativeToThresholdDb: params.laughterMinRelativeToThresholdDb,
-                    thresholdLinear: vadResult.thresholdLinear,
-                    minStreakFrames: params.laughterMinStreakFrames,
-                    streakWindowFrames: params.laughterStreakWindowFrames,
-                    baseSupportWindowFrames: params.laughterBaseSupportWindowFrames,
-                    minBaseSupportFrames: params.laughterMinBaseSupportFrames,
-                    returnDebug: params.debugMode
-                }
-            );
-
-            if (laughterRescue && laughterRescue.gateOpen) {
-                vadResult.gateOpen = laughterRescue.gateOpen;
-                laughterDebug = laughterRescue;
-                gateAfterLaughter = cloneUint8Array(vadResult.gateOpen);
-                trackInfos[i].laughterRescuedFrames = laughterRescue.rescuedFrames || 0;
-            } else {
-                vadResult.gateOpen = laughterRescue;
-                gateAfterLaughter = cloneUint8Array(vadResult.gateOpen);
-                trackInfos[i].laughterRescuedFrames = 0;
-            }
-        } else {
-            trackInfos[i].laughterRescuedFrames = 0;
-        }
+        trackInfos[i].laughterRescuedFrames = 0;
 
         vadResults.push(vadResult);
         gateSnapshots.push({
@@ -199,234 +153,11 @@ function runVadStage(ctx) {
         });
     }
 
-    var bleedEnabled = (params.enableBleedHandling !== undefined) ? !!params.enableBleedHandling : true;
-    var bleedDb = (params.bleedSuppressionDb !== undefined) ? params.bleedSuppressionDb : 0;
-    if (bleedEnabled && bleedDb > 0 && trackCount > 1) {
-        progress(53, 'Suppressing mic bleed...');
-        var bleedLinearRatio = Math.pow(10, bleedDb / 20);
-
-        var minFrames = Infinity;
-        for (var ti = 0; ti < trackCount; ti++) {
-            if (rmsProfiles[ti].length < minFrames) minFrames = rmsProfiles[ti].length;
-        }
-
-        var suppressSimilarityThreshold = (params.bleedSuppressionSimilarityThreshold !== undefined)
-            ? params.bleedSuppressionSimilarityThreshold
-            : 0.90;
-        var protectConfidence = (params.bleedSuppressionProtectConfidence !== undefined)
-            ? params.bleedSuppressionProtectConfidence
-            : 0.34;
-
-        for (ti = 0; ti < trackCount; ti++) {
-            var gate = vadResults[ti].gateOpen;
-            var rmsA = rmsProfiles[ti];
-
-            if (params.debugMode) {
-                gateSnapshots[ti].bleedSuppressor = new Int16Array(Math.min(gate.length, minFrames));
-            }
-
-            for (var f = 0; f < Math.min(gate.length, minFrames); f++) {
-                if (!gate[f]) continue;
-
-                var baseRms = getFrameValue(rmsA, f, 0);
-                if (baseRms <= 0) baseRms = 1e-12;
-
-                var suppressBy = -1;
-
-                for (var tj = 0; tj < trackCount; tj++) {
-                    if (tj === ti) continue;
-                    if (f >= vadResults[tj].gateOpen.length || !vadResults[tj].gateOpen[f]) continue;
-
-                    var otherRms = getFrameValue(rmsProfiles[tj], f, 0);
-                    if (!(otherRms > baseRms * bleedLinearRatio)) continue;
-
-                    var keepAsOverlap = false;
-                    if (params.useSpectralVAD &&
-                        spectralResults[ti] &&
-                        fingerprintResults[ti] &&
-                        fingerprintResults[tj]) {
-                        var similarity = spectralVad.computeFrameFingerprintSimilarity(
-                            fingerprintResults[tj],
-                            fingerprintResults[ti],
-                            f
-                        );
-                        var victimConf = getFrameValue(spectralResults[ti].confidence, f, 0);
-
-                        if (similarity < suppressSimilarityThreshold && victimConf >= protectConfidence) {
-                            keepAsOverlap = true;
-                        }
-                    }
-
-                    if (!keepAsOverlap) {
-                        suppressBy = tj;
-                        break;
-                    }
-                }
-
-                if (suppressBy !== -1) {
-                    gate[f] = 0;
-                    if (params.debugMode && gateSnapshots[ti].bleedSuppressor && f < gateSnapshots[ti].bleedSuppressor.length) {
-                        gateSnapshots[ti].bleedSuppressor[f] = suppressBy + 1;
-                    }
-                }
-            }
-        }
-    }
-
-    for (i = 0; i < trackCount; i++) {
-        var healed = null;
-        if (params.enableInSpeechDropoutHeal) {
-            healed = healInSpeechDropouts(vadResults[i].gateOpen, rmsProfiles[i], vadResults[i].debug, {
-                frameDurationMs: params.frameDurationMs,
-                maxDropoutMs: params.maxInSpeechDropoutMs,
-                minRelativeDb: params.dropoutHealMinRelativeDb,
-                absoluteFloorDb: params.dropoutHealAbsoluteFloorDb,
-                minEnergyCoverage: params.dropoutHealMinEnergyCoverage,
-                fallbackThresholdLinear: vadResults[i].thresholdLinear
-            });
-
-            vadResults[i].gateOpen = healed.gateOpen;
-            if (trackInfos[i]) {
-                trackInfos[i].dropoutHealedFrames = healed.healedFrames;
-                trackInfos[i].dropoutHealedGaps = healed.healedGaps;
-            }
-        } else if (trackInfos[i]) {
-            trackInfos[i].dropoutHealedFrames = 0;
-            trackInfos[i].dropoutHealedGaps = 0;
-        }
-    }
-
-    if (params.useLaughterDetection && params.enableLaughterContinuityRecovery) {
-        for (i = 0; i < trackCount; i++) {
-            if (!laughterResults[i] || !laughterResults[i].confidence) {
-                if (trackInfos[i]) trackInfos[i].laughterContinuityRecoveredFrames = 0;
-                continue;
-            }
-
-            var laughterContinuity = laughterDetector.recoverGateContinuityWithLaughter(
-                gateSnapshots[i] ? gateSnapshots[i].afterVad : null,
-                vadResults[i].gateOpen,
-                laughterResults[i].confidence,
-                rmsProfiles[i],
-                {
-                    edgeMinConfidence: params.laughterRecoveryEdgeMinConfidence,
-                    gapMinConfidence: params.laughterRecoveryGapMinConfidence,
-                    maxGapFrames: Math.max(1, Math.round(params.laughterRecoveryMaxGapMs / params.frameDurationMs)),
-                    longGapMaxFrames: Math.max(1, Math.round(params.laughterRecoveryLongGapMaxMs / params.frameDurationMs)),
-                    longGapMinConfidence: params.laughterRecoveryLongGapMinConfidence,
-                    longGapMinCoverage: params.laughterRecoveryLongGapMinCoverage,
-                    longGapEdgeMinConfidence: params.laughterRecoveryLongGapEdgeMinConfidence,
-                    maxEdgeExtendFrames: Math.max(0, Math.round(params.laughterRecoveryMaxEdgeExtendMs / params.frameDurationMs)),
-                    minGapCoverage: params.laughterRecoveryMinGapCoverage,
-                    minGapHits: params.laughterRecoveryMinGapHits,
-                    absoluteFloorDb: params.laughterAbsoluteFloorDb,
-                    minRelativeToThresholdDb: params.laughterMinRelativeToThresholdDb,
-                    thresholdLinear: vadResults[i].thresholdLinear,
-                    baseSupportWindowFrames: Math.max(1, Math.round(params.laughterRecoveryBaseSupportWindowMs / params.frameDurationMs)),
-                    minBaseSupportFrames: params.laughterRecoveryMinBaseSupportFrames,
-                    transientPenalty: laughterResults[i].transientPenalty || null,
-                    maxTransientPenalty: params.laughterBurstMaxTransientPenalty,
-                    returnDebug: params.debugMode
-                }
-            );
-
-            if (laughterContinuity && laughterContinuity.gateOpen) {
-                vadResults[i].gateOpen = laughterContinuity.gateOpen;
-                if (trackInfos[i]) {
-                    trackInfos[i].laughterContinuityRecoveredFrames = laughterContinuity.recoveredFrames || 0;
-                }
-                if (params.debugMode && gateSnapshots[i]) {
-                    gateSnapshots[i].laughterContinuityDebug = laughterContinuity;
-                }
-            } else {
-                vadResults[i].gateOpen = laughterContinuity;
-                if (trackInfos[i]) trackInfos[i].laughterContinuityRecoveredFrames = 0;
-            }
-        }
-    } else {
-        for (i = 0; i < trackCount; i++) {
-            if (trackInfos[i]) trackInfos[i].laughterContinuityRecoveredFrames = 0;
-        }
-    }
-
-    if (params.useLaughterDetection && params.enableLaughterBurstReinforce) {
-        for (i = 0; i < trackCount; i++) {
-            if (!laughterResults[i] || !laughterResults[i].confidence) {
-                if (trackInfos[i]) trackInfos[i].laughterBurstRecoveredFrames = 0;
-                continue;
-            }
-
-            var laughterBurst = laughterDetector.reinforceLaughterBursts(
-                gateSnapshots[i] ? gateSnapshots[i].afterVad : null,
-                vadResults[i].gateOpen,
-                laughterResults[i].confidence,
-                rmsProfiles[i],
-                {
-                    seedMinConfidence: params.laughterBurstSeedMinConfidence,
-                    extendMinConfidence: params.laughterBurstExtendMinConfidence,
-                    relativeWindowFrames: Math.max(1, Math.round(params.laughterBurstRelativeWindowMs / params.frameDurationMs)),
-                    relativeSeedDelta: params.laughterBurstRelativeSeedDelta,
-                    relativeSeedMinConfidence: params.laughterBurstRelativeSeedMinConfidence,
-                    relativeExtendDelta: params.laughterBurstRelativeExtendDelta,
-                    relativeExtendMinConfidence: params.laughterBurstRelativeExtendMinConfidence,
-                    targetMinFrames: Math.max(1, Math.round(params.laughterBurstMinKeepMs / params.frameDurationMs)),
-                    maxSeedGapFrames: Math.max(0, Math.round(params.laughterBurstMaxGapMs / params.frameDurationMs)),
-                    maxSideExtendFrames: Math.max(0, Math.round(params.laughterBurstMaxSideExtendMs / params.frameDurationMs)),
-                    absoluteFloorDb: params.laughterBurstAbsoluteFloorDb,
-                    minRelativeToThresholdDb: params.laughterBurstMinRelativeToThresholdDb,
-                    thresholdLinear: vadResults[i].thresholdLinear,
-                    baseSupportWindowFrames: Math.max(1, Math.round(params.laughterBurstBaseSupportWindowMs / params.frameDurationMs)),
-                    minBaseSupportFrames: params.laughterBurstMinBaseSupportFrames,
-                    maxTransientPenalty: params.laughterBurstMaxTransientPenalty,
-                    transientPenalty: laughterResults[i].transientPenalty || null,
-                    returnDebug: params.debugMode
-                }
-            );
-
-            if (laughterBurst && laughterBurst.gateOpen) {
-                vadResults[i].gateOpen = laughterBurst.gateOpen;
-                if (trackInfos[i]) {
-                    trackInfos[i].laughterBurstRecoveredFrames = laughterBurst.recoveredFrames || 0;
-                }
-                if (params.debugMode && gateSnapshots[i]) {
-                    gateSnapshots[i].laughterBurstDebug = laughterBurst;
-                }
-            } else {
-                vadResults[i].gateOpen = laughterBurst;
-                if (trackInfos[i]) trackInfos[i].laughterBurstRecoveredFrames = 0;
-            }
-        }
-    } else {
-        for (i = 0; i < trackCount; i++) {
-            if (trackInfos[i]) trackInfos[i].laughterBurstRecoveredFrames = 0;
-        }
-    }
-
-    if (params.enforceAlwaysOneTrackOpen) {
-        var alwaysOpenStats = continuityEnforcer.enforceAtLeastOneOpenTrack(vadResults, rmsProfiles, {
-            frameDurationMs: params.frameDurationMs,
-            dominanceWindowMs: params.alwaysOpenDominanceWindowMs,
-            stickinessDb: params.alwaysOpenStickinessDb
-        });
-        for (i = 0; i < trackCount; i++) {
-            if (trackInfos[i]) {
-                trackInfos[i].alwaysOpenFilledFrames = alwaysOpenStats.perTrackFilledFrames[i] || 0;
-            }
-        }
-    } else {
-        for (i = 0; i < trackCount; i++) {
-            if (trackInfos[i]) trackInfos[i].alwaysOpenFilledFrames = 0;
-        }
-    }
-
-    for (i = 0; i < trackCount; i++) {
-        gateSnapshots[i].afterBleed = cloneUint8Array(vadResults[i].gateOpen);
-    }
-
     return {
         vadResults: vadResults,
         gateSnapshots: gateSnapshots,
-        bleedEnabled: bleedEnabled,
+        // bleedEnabled will be provided by bleed suppressor now; default true for continuity here
+        bleedEnabled: true,
         speakerProfiles: speakerProfiles
     };
 }

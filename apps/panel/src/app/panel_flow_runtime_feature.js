@@ -114,6 +114,7 @@
         state.cutPreviewPixelsPerSec = 0;
         state.cutPreviewViewStartSec = 0;
         state.navigatorDrag = null;
+        state.reviewState = null;
 
         if (typeof options.stopCurrentPreviewAudio === 'function') {
             options.stopCurrentPreviewAudio();
@@ -124,8 +125,10 @@
         if (typeof options.hideCutPreview === 'function') {
             options.hideCutPreview();
         }
+        if (typeof options.resetReviewState === 'function') {
+            options.resetReviewState();
+        }
 
-        if (els.btnApply) els.btnApply.disabled = true;
         if (els.btnReset) els.btnReset.disabled = true;
         if (els.btnAnalyze) els.btnAnalyze.disabled = false;
 

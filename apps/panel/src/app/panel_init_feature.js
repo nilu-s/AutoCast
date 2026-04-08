@@ -41,9 +41,14 @@
         var bindPrimaryActionsOptions = options.bindPrimaryActionsOptions || {};
         var els = options.els || {};
         var windowObj = options.windowObj || root;
+        var uiRuntimeFeature = options.uiRuntimeFeature || null;
 
         if (interactionFeature && typeof interactionFeature.bindPrimaryActions === 'function') {
             interactionFeature.bindPrimaryActions(bindPrimaryActionsOptions);
+        }
+
+        if (uiRuntimeFeature && typeof uiRuntimeFeature.bindTabNavigation === 'function' && typeof options.onTabClick === 'function') {
+            uiRuntimeFeature.bindTabNavigation(els, options.onTabClick);
         }
 
         if (typeof options.bindCutPreviewControls === 'function') {
@@ -62,7 +67,6 @@
             options.renderTracks();
         }
 
-        if (els.btnApply) els.btnApply.disabled = true;
         if (els.cutPreviewApplyBtn) els.cutPreviewApplyBtn.disabled = true;
         if (els.btnReset) els.btnReset.disabled = true;
 

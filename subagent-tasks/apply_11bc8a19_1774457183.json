@@ -1,0 +1,18 @@
+{
+  "task_id": "apply_11bc8a19_1774457183",
+  "method_id": "vad_threshold_tune",
+  "execution_id": "11bc8a19",
+  "action": "apply_or_rollback",
+  "data": {
+    "decision": "REJECT",
+    "backup": {
+      "status": "completed",
+      "method_id": "vad_threshold_tune",
+      "execution_id": "11bc8a19",
+      "backup_dir": "/home/node/.openclaw/workspace/AutoCast/.autocast/backup_11bc8a19",
+      "files_backed_up": 0,
+      "backups": [],
+      "timestamp": "2026-03-25T16:46:04.182280"
+    }
+  }
+}

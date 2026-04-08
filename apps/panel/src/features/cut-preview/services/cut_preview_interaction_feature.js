@@ -133,6 +133,10 @@
                     var itemId = snippetBtn.getAttribute('data-item-id');
                     setActiveSnippet(itemId, true);
                     renderCutPreview();
+                    // Also update review list to show the selected snippet
+                    if (typeof options.onSnippetSelected === 'function') {
+                        options.onSnippetSelected(itemId);
+                    }
                     return;
                 }
             });
@@ -246,19 +250,10 @@
         if (els.btnAnalyze) {
             els.btnAnalyze.addEventListener('click', options.analyzeTracks);
         }
-        if (els.btnApply) {
-            els.btnApply.addEventListener('click', options.applyEdits);
-        }
         if (els.cutPreviewApplyBtn) {
             els.cutPreviewApplyBtn.addEventListener('click', options.applyEdits);
         }
-        if (els.cutPreviewBackBtn) {
-            els.cutPreviewBackBtn.addEventListener('click', function () {
-                options.cancelPendingCutPreviewRender();
-                options.setPanelPageMode('setup');
-                options.setStatus('idle', 'Review closed');
-            });
-        }
+
         if (els.btnReset) {
             els.btnReset.addEventListener('click', options.resetUI);
         }

@@ -5,9 +5,9 @@ var ANALYSIS_DEFAULTS = {
     frameDurationMs: 10,
     rmsSmoothing: 5,
 
-    // VAD / Gate
-    thresholdAboveFloorDb: 0,
-    absoluteThresholdDb: -64,
+    // VAD / Gate (tuned for real podcast audio)
+    thresholdAboveFloorDb: 9,
+    absoluteThresholdDb: -50,
     attackFrames: 1,
     releaseFrames: 6,
     holdFrames: 24,
@@ -18,14 +18,9 @@ var ANALYSIS_DEFAULTS = {
     closeConfirmDynamicSlopeDb: 10,
     hysteresisDb: 2,
 
-    // Adaptive floor
-    adaptiveNoiseFloor: true,
-    localNoiseWindowMs: 1800,
-    noiseFloorUpdateMs: 500,
-    localNoisePercentile: 0.15,
-    localNoiseSampleStride: 2,
-    maxAdaptiveFloorRiseDb: 8,
-    enableHardSilenceCut: true,
+    // Adaptive floor removed
+
+    enableHardSilenceCut: false,
     hardSilenceCutDb: -51,
     hardSilenceLookaroundMs: 220,
     hardSilencePeakDeltaDb: 8,
@@ -52,8 +47,8 @@ var ANALYSIS_DEFAULTS = {
     postOverlapMinSegmentMs: 160,
     minGapMs: 180,
     independentTrackAnalysis: true,
-    snippetPadBeforeMs: 1200,
-    snippetPadAfterMs: 1200,
+    snippetPadBeforeMs: 800,
+    snippetPadAfterMs: 600,
     crossTrackTailTrimInIndependentMode: true,
     overlapTailAllowanceMs: 180,
     crossTrackHeadTrimInIndependentMode: true,
@@ -67,13 +62,8 @@ var ANALYSIS_DEFAULTS = {
     preTriggerJoinGapMs: 1200,
     preTriggerMinPeakDeltaDb: 4.0,
     preTriggerAbsorbGapMs: 380,
-    enableSameTrackGapMerge: true,
-    sameTrackGapMergeMaxMs: 1400,
-    sameTrackGapMergeMaxOtherOverlapRatio: 0.20,
-    sameTrackGapMergeMinPeakAboveThresholdDb: 3.0,
-    // Cut preview consolidation: merge overlapping / short-gap snippets and classify merged span.
-    previewSegmentMergeEnabled: true,
-    previewSegmentMergeGapMs: 1000,
+    // Feature removed
+
     enableDominantTrackStickiness: true,
     dominantTrackHoldMs: 2000,
     dominantTrackReturnWindowMs: 5000,
@@ -96,11 +86,11 @@ var ANALYSIS_DEFAULTS = {
     peakAnchorMinClusterMs: 60,
     peakAnchorJoinGapMs: 120,
     enableResidualSnippetPrune: true,
-    residualSnippetMaxDurationMs: 220,
-    residualSnippetMinPeakAboveThresholdDb: 2.5,
-    residualSnippetMinMeanAboveThresholdDb: -0.5,
-    residualSnippetMaxPeakDbFs: -53.0,
-    residualSnippetMaxMeanDbFs: -57.0,
+    residualSnippetMaxDurationMs: 180,
+    residualSnippetMinPeakAboveThresholdDb: 3.0,
+    residualSnippetMinMeanAboveThresholdDb: 0.0,
+    residualSnippetMaxPeakDbFs: -55.0,
+    residualSnippetMaxMeanDbFs: -59.0,
     residualSnippetProtectGapMs: 240,
     residualSnippetProtectOtherOverlapRatio: 0.12,
     enableFinalPeakGate: true,
@@ -133,75 +123,14 @@ var ANALYSIS_DEFAULTS = {
     speakerMatchSoftMargin: 0.12,
     speakerMatchHoldFrames: 4,
 
-    // Laughter detection (heuristic rescue after spectral/speaker filtering)
-    useLaughterDetection: true,
-    laughterMinConfidence: 0.50,
-    laughterHoldFrames: 10,
-    laughterAbsoluteFloorDb: -58,
-    laughterMinRelativeToThresholdDb: -10,
-    laughterMinEnergyAboveFloorDb: 5.5,
-    laughterZcrMin: 0.03,
-    laughterZcrMax: 0.24,
-    laughterModulationWindowMs: 420,
-    laughterContinuityWindowMs: 220,
-    laughterCrestMin: 1.8,
-    laughterCrestMax: 6.8,
-    laughterSpreadMin: 0.08,
-    laughterSpreadMax: 0.72,
-    laughterSampleSpreadPeakRatio: 0.22,
-    laughterImpulseCrestMin: 7.2,
-    laughterImpulseCrestMax: 14.0,
-    laughterTransientRiseDb: 7.0,
-    laughterTransientFallDb: 6.0,
-    laughterEnergyWeight: 0.40,
-    laughterZcrWeight: 0.18,
-    laughterModulationWeight: 0.16,
-    laughterCrestWeight: 0.13,
-    laughterSpreadWeight: 0.18,
-    laughterContinuityWeight: 0.05,
-    laughterTransientPenaltyWeight: 0.34,
-    laughterMinStreakFrames: 2,
-    laughterStreakWindowFrames: 5,
-    laughterBaseSupportWindowFrames: 8,
-    laughterMinBaseSupportFrames: 2,
-    enableLaughterContinuityRecovery: true,
-    laughterRecoveryEdgeMinConfidence: 0.40,
-    laughterRecoveryGapMinConfidence: 0.36,
-    laughterRecoveryMaxGapMs: 180,
-    laughterRecoveryLongGapMaxMs: 750,
-    laughterRecoveryLongGapMinConfidence: 0.24,
-    laughterRecoveryLongGapMinCoverage: 0.60,
-    laughterRecoveryLongGapEdgeMinConfidence: 0.44,
-    laughterRecoveryMaxEdgeExtendMs: 240,
-    laughterRecoveryMinGapCoverage: 0.45,
-    laughterRecoveryMinGapHits: 2,
-    laughterRecoveryBaseSupportWindowMs: 900,
-    laughterRecoveryMinBaseSupportFrames: 1,
-    enableLaughterBurstReinforce: true,
-    laughterBurstSeedMinConfidence: 0.52,
-    laughterBurstExtendMinConfidence: 0.34,
-    laughterBurstRelativeWindowMs: 450,
-    laughterBurstRelativeSeedDelta: 0.08,
-    laughterBurstRelativeSeedMinConfidence: 0.24,
-    laughterBurstRelativeExtendDelta: 0.04,
-    laughterBurstRelativeExtendMinConfidence: 0.18,
-    laughterBurstMinKeepMs: 260,
-    laughterBurstMaxGapMs: 100,
-    laughterBurstMaxSideExtendMs: 220,
-    laughterBurstAbsoluteFloorDb: -64,
-    laughterBurstMinRelativeToThresholdDb: -12,
-    laughterBurstMaxTransientPenalty: 0.62,
-    laughterBurstBaseSupportWindowMs: 900,
-    laughterBurstMinBaseSupportFrames: 1,
-    protectLaughterInPostprocess: true,
-    laughterPostprocessProtectMinConfidence: 0.46,
-    laughterPostprocessProtectMinCoverage: 0.24,
+    // Laughter detection removed
+
 
     // Cross-track bleed suppression
-    enableBleedHandling: false,
-    bleedSuppressionDb: 18,
-    bleedSuppressionSimilarityThreshold: 0.90,
-    bleedSuppressionProtectConfidence: 0.34,
+    enableBleedHandling: true,
+    bleedSuppressionDb: 12,
+    bleedSuppressionSimilarityThreshold: 0.85,
+    bleedSuppressionProtectConfidence: 0.28,
 
     // Alignment check
     alignmentToleranceSec: 0.5,
@@ -212,6 +141,26 @@ var ANALYSIS_DEFAULTS = {
     // Diagnostics
     debugMode: false,
     debugMaxFrames: 5000,
+
+    // Optimized pipeline parameters
+    enablePreprocess: true,
+    speechLowHz: 200,
+    speechHighHz: 4000,
+
+    // Loudness Latch (preparation for Phase 19-24)
+    enableLoudnessLatch: false,
+    loudnessLatchOpenThresholdDb: -48,
+    loudnessLatchKeepThresholdDb: -52,
+    loudnessLatchOpenMinDurationMs: 100,
+    loudnessLatchWindowMs: 4000,
+    loudnessLatchMinCumulativeActiveMs: 1200,
+    loudnessLatchMinCoveragePercent: 35,
+    loudnessLatchCloseConfirmMs: 1000,
+
+    // Parameter aliases for vad_stage_optimized compatibility
+    // enableSpeakerProfile -> primarySpeakerLock (use primarySpeakerLock)
+    // detectLaughter -> useLaughterDetection (use useLaughterDetection)
+    // continuityEnforcement -> enableInSpeechDropoutHeal (use enableInSpeechDropoutHeal)
 
     // Optional extension modules (path strings or inline extension objects)
     extensions: null

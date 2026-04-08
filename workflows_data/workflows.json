@@ -1,0 +1,2343 @@
+{
+  "workflows": {
+    "apply_method": {
+      "workflow_id": "apply_method",
+      "name": "Apply Method",
+      "description": "Executes a method and validates improvement before keeping or rejecting",
+      "version": "1.0",
+      "steps": [
+        {
+          "step": 1,
+          "agent": "agent_guardian",
+          "skill": "skill_validation_check",
+          "action": "validate_method",
+          "description": "Validate method exists and parameters are valid",
+          "input": "method_id",
+          "output": "validation_result"
+        },
+        {
+          "step": 2,
+          "agent": "agent_worker",
+          "skill": "skill_method_execution",
+          "action": "execute_method",
+          "description": "Execute the method (e.g., Fine-tune Whisper)",
+          "input": "validation_result",
+          "output": "execution_result"
+        },
+        {
+          "step": 3,
+          "agent": "agent_analyzer",
+          "skill": "skill_result_aggregation",
+          "action": "aggregate_results",
+          "description": "Calculate new metrics from execution",
+          "input": "execution_result",
+          "output": "new_metrics"
+        },
+        {
+          "step": 4,
+          "agent": "agent_analyzer",
+          "skill": "skill_success_analysis",
+          "action": "compare_before_after",
+          "description": "Compare old vs new metrics",
+          "input": "new_metrics",
+          "output": "improvement_analysis"
+        },
+        {
+          "step": 5,
+          "agent": "agent_guardian",
+          "skill": "skill_validation_check",
+          "action": "validate_improvement",
+          "description": "Check if improvement exceeds threshold",
+          "input": "improvement_analysis",
+          "output": "final_decision"
+        },
+        {
+          "step": 6,
+          "agent": "agent_worker",
+          "skill": "skill_chromadb_store",
+          "action": "record_run",
+          "description": "Save run to runs collection",
+          "input": "final_decision",
+          "output": "run_recorded"
+        }
+      ],
+      "output": {
+        "decision": "final_decision",
+        "improvement": "improvement_analysis",
+        "run_id": "run_recorded"
+      },
+      "human_approval_required": true,
+      "auto_rollback": true,
+      "applicable_constraints": [
+        "max_task_duration",
+        "max_tokens_per_task",
+        "forbidden_golden"
+      ],
+      "saved_at": "2026-03-25T15:10:00.000000"
+    },
+    "evaluate_current_state": {
+      "workflow_id": "evaluate_current_state",
+      "name": "Evaluate Current State",
+      "description": "Analyzes current AutoCast performance and identifies weaknesses",
+      "version": "1.0",
+      "steps": [
+        {
+          "step": 1,
+          "agent": "agent_analyzer",
+          "skill": "skill_chromadb_query",
+          "action": "load_current_metrics",
+          "description": "Load current WER/CER from evaluations collection",
+          "output": "current_metrics_report"
+        },
+        {
+          "step": 2,
+          "agent": "agent_analyzer",
+          "skill": "skill_success_analysis",
+          "action": "compare_to_baseline",
+          "description": "Compare current vs target metrics",
+          "input": "current_metrics_report",
+          "output": "gap_analysis"
+        },
+        {
+          "step": 3,
+          "agent": "agent_selector",
+          "skill": "skill_similarity_search",
+          "action": "find_relevant_methods",
+          "description": "Find methods that could improve the gap",
+          "input": "gap_analysis",
+          "output": "recommended_methods"
+        },
+        {
+          "step": 4,
+          "agent": "agent_selector",
+          "skill": "skill_ranking",
+          "action": "rank_recommendations",
+          "description": "Rank methods by potential improvement",
+          "input": "recommended_methods",
+          "output": "final_recommendations"
+        }
+      ],
+      "output": {
+        "metrics": "current_metrics_report",
+        "gap_analysis": "gap_analysis",
+        "recommendations": "final_recommendations"
+      },
+      "human_approval_required": true,
+      "auto_rollback": false,
+      "applicable_constraints": [
+        "max_task_duration",
+        "max_tokens_per_task",
+        "forbidden_golden"
+      ],
+      "saved_at": "2026-03-25T14:45:34.966302"
+    },
+    "generate_improvements": {
+      "workflow_id": "generate_improvements",
+      "name": "Generate Improvements",
+      "description": "Generates new method proposals by analyzing patterns in runs and evaluations, then creates hypotheses and mutates embeddings to suggest improvements",
+      "version": "1.0",
+      "level": "L3",
+      "steps": [
+        {
+          "step": 1,
+          "agent": "agent_analyzer",
+          "skill": "skill_pattern_recognition",
+          "action": "find_patterns_in_data",
+          "description": "Analyze runs and evaluations to identify patterns",
+          "input": "runs_collection, evaluations_collection",
+          "output": "identified_patterns"
+        },
+        {
+          "step": 2,
+          "agent": "agent_generator",
+          "skill": "skill_hypothesis_synthesis",
+          "action": "generate_hypotheses",
+          "description": "Generate 3 hypothesis candidates based on identified patterns",
+          "input": "identified_patterns",
+          "output": "hypothesis_candidates"
+        },
+        {
+          "step": 3,
+          "agent": "agent_generator",
+          "skill": "skill_embedding_mutation",
+          "action": "create_method_variants",
+          "description": "Create 3 new method variants via embedding mutation",
+          "input": "hypothesis_candidates",
+          "output": "new_method_variants"
+        },
+        {
+          "step": 4,
+          "agent": "agent_selector",
+          "skill": "skill_ranking",
+          "action": "rank_new_variants",
+          "description": "Rank new variants by expected success and feasibility",
+          "input": "new_method_variants",
+          "output": "ranked_proposals"
+        },
+        {
+          "step": 5,
+          "agent": "agent_guardian",
+          "skill": "skill_validation_check",
+          "action": "validate_proposals",
+          "description": "Validate proposals against constraints and approve top 3",
+          "input": "ranked_proposals",
+          "output": "final_3_suggestions"
+        }
+      ],
+      "output": {
+        "proposals": "final_3_suggestions",
+        "patterns": "identified_patterns",
+        "rankings": "ranked_proposals"
+      },
+      "human_approval_required": true,
+      "auto_rollback": false,
+      "applicable_constraints": [
+        "max_task_duration",
+        "max_tokens_per_task",
+        "forbidden_golden"
+      ],
+      "next_workflows": [
+        {
+          "workflow_id": "apply_method",
+          "trigger": "user_selects_proposal",
+          "description": "After user selects a proposal, apply_method can be triggered"
+        }
+      ],
+      "saved_at": "2026-03-25T15:21:05.987362"
+    }
+  },
+  "executions": {
+    "evaluate_current_state": {
+      "a6ac66f6": {
+        "workflow_id": "evaluate_current_state",
+        "execution_id": "a6ac66f6",
+        "status": "completed",
+        "started_at": "2026-03-25T14:45:15.726871",
+        "completed_at": "2026-03-25T14:45:15.726985",
+        "duration_seconds": 0.000114,
+        "steps_executed": 4,
+        "step_results": [
+          {
+            "step": 1,
+            "agent": "agent_analyzer",
+            "skill": "skill_chromadb_query",
+            "action": "load_current_metrics",
+            "status": "completed",
+            "output": {
+              "wer": 0.23,
+              "cer": 0.15,
+              "timestamp": "2026-03-25T14:45:15.726905",
+              "source": "evaluations collection"
+            },
+            "completed_at": "2026-03-25T14:45:15.726925"
+          },
+          {
+            "step": 2,
+            "agent": "agent_analyzer",
+            "skill": "skill_success_analysis",
+            "action": "compare_to_baseline",
+            "status": "completed",
+            "output": {
+              "gap_wer": 0.03,
+              "gap_cer": 0.05,
+              "target_wer": 0.2,
+              "target_cer": 0.1,
+              "status": "under_target",
+              "improvement_needed": true
+            },
+            "completed_at": "2026-03-25T14:45:15.726949"
+          },
+          {
+            "step": 3,
+            "agent": "agent_selector",
+            "skill": "skill_similarity_search",
+            "action": "find_relevant_methods",
+            "status": "completed",
+            "output": [
+              {
+                "method_id": "method_001",
+                "name": "Fine-tune Whisper",
+                "relevance": 0.92
+              },
+              {
+                "method_id": "method_002",
+                "name": "Add noise augmentation",
+                "relevance": 0.85
+              },
+              {
+                "method_id": "method_003",
+                "name": "Use larger model",
+                "relevance": 0.78
+              }
+            ],
+            "completed_at": "2026-03-25T14:45:15.726968"
+          },
+          {
+            "step": 4,
+            "agent": "agent_selector",
+            "skill": "skill_ranking",
+            "action": "rank_recommendations",
+            "status": "completed",
+            "output": [
+              {
+                "method_id": "method_001",
+                "name": "Fine-tune Whisper",
+                "expected_improvement": "5-8% WER reduction",
+                "rank": 1
+              },
+              {
+                "method_id": "method_002",
+                "name": "Add noise augmentation",
+                "expected_improvement": "3-5% WER reduction",
+                "rank": 2
+              },
+              {
+                "method_id": "method_003",
+                "name": "Use larger model",
+                "expected_improvement": "2-4% WER reduction",
+                "rank": 3
+              }
+            ],
+            "completed_at": "2026-03-25T14:45:15.726984"
+          }
+        ],
+        "final_output": {},
+        "saved_at": "2026-03-25T14:45:15.727056"
+      },
+      "d3b2df1b": {
+        "workflow_id": "evaluate_current_state",
+        "execution_id": "d3b2df1b",
+        "status": "completed",
+        "started_at": "2026-03-25T14:45:37.045399",
+        "completed_at": "2026-03-25T14:45:37.045505",
+        "duration_seconds": 0.000106,
+        "steps_executed": 4,
+        "step_results": [
+          {
+            "step": 1,
+            "agent": "agent_analyzer",
+            "skill": "skill_chromadb_query",
+            "action": "load_current_metrics",
+            "status": "completed",
+            "output": {
+              "wer": 0.23,
+              "cer": 0.15,
+              "timestamp": "2026-03-25T14:45:37.045428",
+              "source": "evaluations collection"
+            },
+            "completed_at": "2026-03-25T14:45:37.045448"
+          },
+          {
+            "step": 2,
+            "agent": "agent_analyzer",
+            "skill": "skill_success_analysis",
+            "action": "compare_to_baseline",
+            "status": "completed",
+            "output": {
+              "gap_wer": 0.03,
+              "gap_cer": 0.05,
+              "target_wer": 0.2,
+              "target_cer": 0.1,
+              "status": "under_target",
+              "improvement_needed": true
+            },
+            "completed_at": "2026-03-25T14:45:37.045467"
+          },
+          {
+            "step": 3,
+            "agent": "agent_selector",
+            "skill": "skill_similarity_search",
+            "action": "find_relevant_methods",
+            "status": "completed",
+            "output": [
+              {
+                "method_id": "method_001",
+                "name": "Fine-tune Whisper",
+                "relevance": 0.92
+              },
+              {
+                "method_id": "method_002",
+                "name": "Add noise augmentation",
+                "relevance": 0.85
+              },
+              {
+                "method_id": "method_003",
+                "name": "Use larger model",
+                "relevance": 0.78
+              }
+            ],
+            "completed_at": "2026-03-25T14:45:37.045486"
+          },
+          {
+            "step": 4,
+            "agent": "agent_selector",
+            "skill": "skill_ranking",
+            "action": "rank_recommendations",
+            "status": "completed",
+            "output": [
+              {
+                "method_id": "method_001",
+                "name": "Fine-tune Whisper",
+                "expected_improvement": "5-8% WER reduction",
+                "rank": 1
+              },
+              {
+                "method_id": "method_002",
+                "name": "Add noise augmentation",
+                "expected_improvement": "3-5% WER reduction",
+                "rank": 2
+              },
+              {
+                "method_id": "method_003",
+                "name": "Use larger model",
+                "expected_improvement": "2-4% WER reduction",
+                "rank": 3
+              }
+            ],
+            "completed_at": "2026-03-25T14:45:37.045504"
+          }
+        ],
+        "final_output": {
+          "metrics": {
+            "wer": 0.23,
+            "cer": 0.15,
+            "timestamp": "2026-03-25T14:45:37.045428",
+            "source": "evaluations collection"
+          },
+          "gap_analysis": {
+            "gap_wer": 0.03,
+            "gap_cer": 0.05,
+            "target_wer": 0.2,
+            "target_cer": 0.1,
+            "status": "under_target",
+            "improvement_needed": true
+          },
+          "recommendations": [
+            {
+              "method_id": "method_001",
+              "name": "Fine-tune Whisper",
+              "expected_improvement": "5-8% WER reduction",
+              "rank": 1
+            },
+            {
+              "method_id": "method_002",
+              "name": "Add noise augmentation",
+              "expected_improvement": "3-5% WER reduction",
+              "rank": 2
+            },
+            {
+              "method_id": "method_003",
+              "name": "Use larger model",
+              "expected_improvement": "2-4% WER reduction",
+              "rank": 3
+            }
+          ]
+        },
+        "saved_at": "2026-03-25T14:45:37.045609"
+      },
+      "f2b126fd": {
+        "workflow_id": "evaluate_current_state",
+        "execution_id": "f2b126fd",
+        "status": "completed",
+        "started_at": "2026-03-25T14:52:12.178823",
+        "completed_at": "2026-03-25T14:52:12.178928",
+        "duration_seconds": 0.000105,
+        "steps_executed": 4,
+        "step_results": [
+          {
+            "step": 1,
+            "agent": "agent_analyzer",
+            "skill": "skill_chromadb_query",
+            "action": "load_current_metrics",
+            "status": "completed",
+            "output": {
+              "wer": 0.23,
+              "cer": 0.15,
+              "timestamp": "2026-03-25T14:52:12.178852",
+              "source": "evaluations collection"
+            },
+            "completed_at": "2026-03-25T14:52:12.178873"
+          },
+          {
+            "step": 2,
+            "agent": "agent_analyzer",
+            "skill": "skill_success_analysis",
+            "action": "compare_to_baseline",
+            "status": "completed",
+            "output": {
+              "gap_wer": 0.03,
+              "gap_cer": 0.05,
+              "target_wer": 0.2,
+              "target_cer": 0.1,
+              "status": "under_target",
+              "improvement_needed": true
+            },
+            "completed_at": "2026-03-25T14:52:12.178893"
+          },
+          {
+            "step": 3,
+            "agent": "agent_selector",
+            "skill": "skill_similarity_search",
+            "action": "find_relevant_methods",
+            "status": "completed",
+            "output": [
+              {
+                "method_id": "method_001",
+                "name": "Fine-tune Whisper",
+                "relevance": 0.92
+              },
+              {
+                "method_id": "method_002",
+                "name": "Add noise augmentation",
+                "relevance": 0.85
+              },
+              {
+                "method_id": "method_003",
+                "name": "Use larger model",
+                "relevance": 0.78
+              }
+            ],
+            "completed_at": "2026-03-25T14:52:12.178912"
+          },
+          {
+            "step": 4,
+            "agent": "agent_selector",
+            "skill": "skill_ranking",
+            "action": "rank_recommendations",
+            "status": "completed",
+            "output": [
+              {
+                "method_id": "method_001",
+                "name": "Fine-tune Whisper",
+                "expected_improvement": "5-8% WER reduction",
+                "rank": 1
+              },
+              {
+                "method_id": "method_002",
+                "name": "Add noise augmentation",
+                "expected_improvement": "3-5% WER reduction",
+                "rank": 2
+              },
+              {
+                "method_id": "method_003",
+                "name": "Use larger model",
+                "expected_improvement": "2-4% WER reduction",
+                "rank": 3
+              }
+            ],
+            "completed_at": "2026-03-25T14:52:12.178927"
+          }
+        ],
+        "final_output": {
+          "metrics": {
+            "wer": 0.23,
+            "cer": 0.15,
+            "timestamp": "2026-03-25T14:52:12.178852",
+            "source": "evaluations collection"
+          },
+          "gap_analysis": {
+            "gap_wer": 0.03,
+            "gap_cer": 0.05,
+            "target_wer": 0.2,
+            "target_cer": 0.1,
+            "status": "under_target",
+            "improvement_needed": true
+          },
+          "recommendations": [
+            {
+              "method_id": "method_001",
+              "name": "Fine-tune Whisper",
+              "expected_improvement": "5-8% WER reduction",
+              "rank": 1
+            },
+            {
+              "method_id": "method_002",
+              "name": "Add noise augmentation",
+              "expected_improvement": "3-5% WER reduction",
+              "rank": 2
+            },
+            {
+              "method_id": "method_003",
+              "name": "Use larger model",
+              "expected_improvement": "2-4% WER reduction",
+              "rank": 3
+            }
+          ]
+        },
+        "saved_at": "2026-03-25T14:52:12.179048"
+      }
+    },
+    "generate_improvements": {
+      "53d10cf2": {
+        "workflow_id": "generate_improvements",
+        "execution_id": "53d10cf2",
+        "status": "completed",
+        "started_at": "2026-03-25T15:21:14.785488",
+        "completed_at": "2026-03-25T15:21:14.785496",
+        "step_results": {
+          "identified_patterns": [
+            {
+              "name": "high_success_methods",
+              "description": "Methods with >80% success rate show consistent improvements",
+              "confidence": 0.85,
+              "affected_categories": [
+                "silence-pruner",
+                "duration-specialist"
+              ]
+            },
+            {
+              "name": "parameter_correlation",
+              "description": "Certain parameter combinations correlate with better WER reduction",
+              "confidence": 0.72,
+              "affected_categories": [
+                "speech-retainer",
+                "review-calibrator"
+              ]
+            },
+            {
+              "name": "category_synergy",
+              "description": "Combining duration and silence methods shows multiplicative effects",
+              "confidence": 0.68,
+              "affected_categories": [
+                "duration-specialist",
+                "silence-pruner"
+              ]
+            }
+          ],
+          "hypothesis_candidates": [
+            {
+              "title": "Adaptive Silence Threshold with Context Awareness",
+              "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+              "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+              "category": "silence-pruner",
+              "expected_improvement": 0.05,
+              "source_patterns": [
+                "high_success_methods",
+                "parameter_correlation"
+              ],
+              "confidence": 0.78
+            },
+            {
+              "title": "Cross-Method Duration Balancing",
+              "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+              "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+              "category": "duration-specialist",
+              "expected_improvement": 0.03,
+              "source_patterns": [
+                "category_synergy"
+              ],
+              "confidence": 0.72
+            },
+            {
+              "title": "Review Corridor with Uncertainty Quantification",
+              "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+              "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+              "category": "review-calibrator",
+              "expected_improvement": 0.02,
+              "source_patterns": [
+                "parameter_correlation"
+              ],
+              "confidence": 0.68
+            }
+          ],
+          "new_method_variants": [
+            {
+              "id": "proposal_53d10cf2_001",
+              "title": "Adaptive Silence Threshold with Context Awareness",
+              "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+              "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+              "category": "silence-pruner",
+              "expected_improvement": 0.05,
+              "confidence": 0.78,
+              "mutation_type": "parameter_blend",
+              "source_patterns": [
+                "high_success_methods",
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:21:12.696849",
+              "parameters": {
+                "threshold_adjustment": 0.086,
+                "adaptive_rate": 0.186,
+                "context_window": 7
+              }
+            },
+            {
+              "id": "proposal_53d10cf2_002",
+              "title": "Cross-Method Duration Balancing",
+              "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+              "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+              "category": "duration-specialist",
+              "expected_improvement": 0.03,
+              "confidence": 0.72,
+              "mutation_type": "feature_crossover",
+              "source_patterns": [
+                "category_synergy"
+              ],
+              "generated_at": "2026-03-25T15:21:12.696885",
+              "parameters": {
+                "balance_factor": 0.75,
+                "sync_mode": true,
+                "min_quality": 0.82
+              }
+            },
+            {
+              "id": "proposal_53d10cf2_003",
+              "title": "Review Corridor with Uncertainty Quantification",
+              "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+              "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+              "category": "review-calibrator",
+              "expected_improvement": 0.02,
+              "confidence": 0.68,
+              "mutation_type": "adaptive_mutation",
+              "source_patterns": [
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:21:12.696895",
+              "parameters": {
+                "uncertainty_weight": 0.49,
+                "confidence_threshold": 0.52,
+                "flexibility": 0.12
+              }
+            }
+          ],
+          "ranked_proposals": [
+            {
+              "id": "proposal_53d10cf2_001",
+              "title": "Adaptive Silence Threshold with Context Awareness",
+              "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+              "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+              "category": "silence-pruner",
+              "expected_improvement": 0.05,
+              "confidence": 0.78,
+              "mutation_type": "parameter_blend",
+              "source_patterns": [
+                "high_success_methods",
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:21:12.696849",
+              "parameters": {
+                "threshold_adjustment": 0.086,
+                "adaptive_rate": 0.186,
+                "context_window": 7
+              },
+              "feasibility": 0.76,
+              "risk": 0.26,
+              "rank_score": 0.083
+            },
+            {
+              "id": "proposal_53d10cf2_002",
+              "title": "Cross-Method Duration Balancing",
+              "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+              "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+              "category": "duration-specialist",
+              "expected_improvement": 0.03,
+              "confidence": 0.72,
+              "mutation_type": "feature_crossover",
+              "source_patterns": [
+                "category_synergy"
+              ],
+              "generated_at": "2026-03-25T15:21:12.696885",
+              "parameters": {
+                "balance_factor": 0.75,
+                "sync_mode": true,
+                "min_quality": 0.82
+              },
+              "feasibility": 0.64,
+              "risk": 0.24,
+              "rank_score": 0.04
+            },
+            {
+              "id": "proposal_53d10cf2_003",
+              "title": "Review Corridor with Uncertainty Quantification",
+              "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+              "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+              "category": "review-calibrator",
+              "expected_improvement": 0.02,
+              "confidence": 0.68,
+              "mutation_type": "adaptive_mutation",
+              "source_patterns": [
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:21:12.696895",
+              "parameters": {
+                "uncertainty_weight": 0.49,
+                "confidence_threshold": 0.52,
+                "flexibility": 0.12
+              },
+              "feasibility": 0.63,
+              "risk": 0.35,
+              "rank_score": 0.019
+            }
+          ],
+          "final_suggestions": [
+            {
+              "id": "proposal_53d10cf2_001",
+              "title": "Adaptive Silence Threshold with Context Awareness",
+              "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+              "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+              "category": "silence-pruner",
+              "expected_improvement": 0.05,
+              "confidence": 0.78,
+              "mutation_type": "parameter_blend",
+              "source_patterns": [
+                "high_success_methods",
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:21:12.696849",
+              "parameters": {
+                "threshold_adjustment": 0.086,
+                "adaptive_rate": 0.186,
+                "context_window": 7
+              },
+              "feasibility": 0.76,
+              "risk": 0.26,
+              "rank_score": 0.083,
+              "validation_status": "approved",
+              "validation_notes": "Passed all constraint checks"
+            },
+            {
+              "id": "proposal_53d10cf2_002",
+              "title": "Cross-Method Duration Balancing",
+              "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+              "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+              "category": "duration-specialist",
+              "expected_improvement": 0.03,
+              "confidence": 0.72,
+              "mutation_type": "feature_crossover",
+              "source_patterns": [
+                "category_synergy"
+              ],
+              "generated_at": "2026-03-25T15:21:12.696885",
+              "parameters": {
+                "balance_factor": 0.75,
+                "sync_mode": true,
+                "min_quality": 0.82
+              },
+              "feasibility": 0.64,
+              "risk": 0.24,
+              "rank_score": 0.04,
+              "validation_status": "approved",
+              "validation_notes": "Passed all constraint checks"
+            },
+            {
+              "id": "proposal_53d10cf2_003",
+              "title": "Review Corridor with Uncertainty Quantification",
+              "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+              "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+              "category": "review-calibrator",
+              "expected_improvement": 0.02,
+              "confidence": 0.68,
+              "mutation_type": "adaptive_mutation",
+              "source_patterns": [
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:21:12.696895",
+              "parameters": {
+                "uncertainty_weight": 0.49,
+                "confidence_threshold": 0.52,
+                "flexibility": 0.12
+              },
+              "feasibility": 0.63,
+              "risk": 0.35,
+              "rank_score": 0.019,
+              "validation_status": "approved",
+              "validation_notes": "Passed all constraint checks"
+            }
+          ]
+        },
+        "final_output": [
+          {
+            "id": "proposal_53d10cf2_001",
+            "title": "Adaptive Silence Threshold with Context Awareness",
+            "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+            "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+            "category": "silence-pruner",
+            "expected_improvement": 0.05,
+            "confidence": 0.78,
+            "mutation_type": "parameter_blend",
+            "source_patterns": [
+              "high_success_methods",
+              "parameter_correlation"
+            ],
+            "generated_at": "2026-03-25T15:21:12.696849",
+            "parameters": {
+              "threshold_adjustment": 0.086,
+              "adaptive_rate": 0.186,
+              "context_window": 7
+            },
+            "feasibility": 0.76,
+            "risk": 0.26,
+            "rank_score": 0.083,
+            "validation_status": "approved",
+            "validation_notes": "Passed all constraint checks"
+          },
+          {
+            "id": "proposal_53d10cf2_002",
+            "title": "Cross-Method Duration Balancing",
+            "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+            "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+            "category": "duration-specialist",
+            "expected_improvement": 0.03,
+            "confidence": 0.72,
+            "mutation_type": "feature_crossover",
+            "source_patterns": [
+              "category_synergy"
+            ],
+            "generated_at": "2026-03-25T15:21:12.696885",
+            "parameters": {
+              "balance_factor": 0.75,
+              "sync_mode": true,
+              "min_quality": 0.82
+            },
+            "feasibility": 0.64,
+            "risk": 0.24,
+            "rank_score": 0.04,
+            "validation_status": "approved",
+            "validation_notes": "Passed all constraint checks"
+          },
+          {
+            "id": "proposal_53d10cf2_003",
+            "title": "Review Corridor with Uncertainty Quantification",
+            "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+            "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+            "category": "review-calibrator",
+            "expected_improvement": 0.02,
+            "confidence": 0.68,
+            "mutation_type": "adaptive_mutation",
+            "source_patterns": [
+              "parameter_correlation"
+            ],
+            "generated_at": "2026-03-25T15:21:12.696895",
+            "parameters": {
+              "uncertainty_weight": 0.49,
+              "confidence_threshold": 0.52,
+              "flexibility": 0.12
+            },
+            "feasibility": 0.63,
+            "risk": 0.35,
+            "rank_score": 0.019,
+            "validation_status": "approved",
+            "validation_notes": "Passed all constraint checks"
+          }
+        ],
+        "saved_at": "2026-03-25T15:21:14.786070"
+      },
+      "9154035e": {
+        "workflow_id": "generate_improvements",
+        "execution_id": "9154035e",
+        "status": "completed",
+        "started_at": "2026-03-25T15:24:37.134764",
+        "completed_at": "2026-03-25T15:24:37.134773",
+        "step_results": {
+          "identified_patterns": [
+            {
+              "name": "high_success_methods",
+              "description": "Methods with >80% success rate show consistent improvements",
+              "confidence": 0.85,
+              "affected_categories": [
+                "silence-pruner",
+                "duration-specialist"
+              ]
+            },
+            {
+              "name": "parameter_correlation",
+              "description": "Certain parameter combinations correlate with better WER reduction",
+              "confidence": 0.72,
+              "affected_categories": [
+                "speech-retainer",
+                "review-calibrator"
+              ]
+            },
+            {
+              "name": "category_synergy",
+              "description": "Combining duration and silence methods shows multiplicative effects",
+              "confidence": 0.68,
+              "affected_categories": [
+                "duration-specialist",
+                "silence-pruner"
+              ]
+            }
+          ],
+          "hypothesis_candidates": [
+            {
+              "title": "Adaptive Silence Threshold with Context Awareness",
+              "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+              "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+              "category": "silence-pruner",
+              "expected_improvement": 0.05,
+              "source_patterns": [
+                "high_success_methods",
+                "parameter_correlation"
+              ],
+              "confidence": 0.78
+            },
+            {
+              "title": "Cross-Method Duration Balancing",
+              "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+              "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+              "category": "duration-specialist",
+              "expected_improvement": 0.03,
+              "source_patterns": [
+                "category_synergy"
+              ],
+              "confidence": 0.72
+            },
+            {
+              "title": "Review Corridor with Uncertainty Quantification",
+              "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+              "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+              "category": "review-calibrator",
+              "expected_improvement": 0.02,
+              "source_patterns": [
+                "parameter_correlation"
+              ],
+              "confidence": 0.68
+            }
+          ],
+          "new_method_variants": [
+            {
+              "id": "proposal_9154035e_001",
+              "title": "Adaptive Silence Threshold with Context Awareness",
+              "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+              "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+              "category": "silence-pruner",
+              "expected_improvement": 0.05,
+              "confidence": 0.78,
+              "mutation_type": "parameter_blend",
+              "source_patterns": [
+                "high_success_methods",
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:24:35.051545",
+              "parameters": {
+                "threshold_adjustment": -0.08,
+                "adaptive_rate": 0.164,
+                "context_window": 9
+              }
+            },
+            {
+              "id": "proposal_9154035e_002",
+              "title": "Cross-Method Duration Balancing",
+              "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+              "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+              "category": "duration-specialist",
+              "expected_improvement": 0.03,
+              "confidence": 0.72,
+              "mutation_type": "feature_crossover",
+              "source_patterns": [
+                "category_synergy"
+              ],
+              "generated_at": "2026-03-25T15:24:35.051584",
+              "parameters": {
+                "balance_factor": 0.61,
+                "sync_mode": true,
+                "min_quality": 0.85
+              }
+            },
+            {
+              "id": "proposal_9154035e_003",
+              "title": "Review Corridor with Uncertainty Quantification",
+              "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+              "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+              "category": "review-calibrator",
+              "expected_improvement": 0.02,
+              "confidence": 0.68,
+              "mutation_type": "adaptive_mutation",
+              "source_patterns": [
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:24:35.051612",
+              "parameters": {
+                "uncertainty_weight": 0.41,
+                "confidence_threshold": 0.5,
+                "flexibility": 0.27
+              }
+            }
+          ],
+          "ranked_proposals": [
+            {
+              "id": "proposal_9154035e_001",
+              "title": "Adaptive Silence Threshold with Context Awareness",
+              "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+              "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+              "category": "silence-pruner",
+              "expected_improvement": 0.05,
+              "confidence": 0.78,
+              "mutation_type": "parameter_blend",
+              "source_patterns": [
+                "high_success_methods",
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:24:35.051545",
+              "parameters": {
+                "threshold_adjustment": -0.08,
+                "adaptive_rate": 0.164,
+                "context_window": 9
+              },
+              "feasibility": 0.76,
+              "risk": 0.19,
+              "rank_score": 0.104
+            },
+            {
+              "id": "proposal_9154035e_002",
+              "title": "Cross-Method Duration Balancing",
+              "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+              "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+              "category": "duration-specialist",
+              "expected_improvement": 0.03,
+              "confidence": 0.72,
+              "mutation_type": "feature_crossover",
+              "source_patterns": [
+                "category_synergy"
+              ],
+              "generated_at": "2026-03-25T15:24:35.051584",
+              "parameters": {
+                "balance_factor": 0.61,
+                "sync_mode": true,
+                "min_quality": 0.85
+              },
+              "feasibility": 0.66,
+              "risk": 0.28,
+              "rank_score": 0.038
+            },
+            {
+              "id": "proposal_9154035e_003",
+              "title": "Review Corridor with Uncertainty Quantification",
+              "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+              "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+              "category": "review-calibrator",
+              "expected_improvement": 0.02,
+              "confidence": 0.68,
+              "mutation_type": "adaptive_mutation",
+              "source_patterns": [
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:24:35.051612",
+              "parameters": {
+                "uncertainty_weight": 0.41,
+                "confidence_threshold": 0.5,
+                "flexibility": 0.27
+              },
+              "feasibility": 0.65,
+              "risk": 0.31,
+              "rank_score": 0.022
+            }
+          ],
+          "final_suggestions": [
+            {
+              "id": "proposal_9154035e_001",
+              "title": "Adaptive Silence Threshold with Context Awareness",
+              "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+              "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+              "category": "silence-pruner",
+              "expected_improvement": 0.05,
+              "confidence": 0.78,
+              "mutation_type": "parameter_blend",
+              "source_patterns": [
+                "high_success_methods",
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:24:35.051545",
+              "parameters": {
+                "threshold_adjustment": -0.08,
+                "adaptive_rate": 0.164,
+                "context_window": 9
+              },
+              "feasibility": 0.76,
+              "risk": 0.19,
+              "rank_score": 0.104,
+              "validation_status": "approved",
+              "validation_notes": "Passed all constraint checks"
+            },
+            {
+              "id": "proposal_9154035e_002",
+              "title": "Cross-Method Duration Balancing",
+              "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+              "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+              "category": "duration-specialist",
+              "expected_improvement": 0.03,
+              "confidence": 0.72,
+              "mutation_type": "feature_crossover",
+              "source_patterns": [
+                "category_synergy"
+              ],
+              "generated_at": "2026-03-25T15:24:35.051584",
+              "parameters": {
+                "balance_factor": 0.61,
+                "sync_mode": true,
+                "min_quality": 0.85
+              },
+              "feasibility": 0.66,
+              "risk": 0.28,
+              "rank_score": 0.038,
+              "validation_status": "approved",
+              "validation_notes": "Passed all constraint checks"
+            },
+            {
+              "id": "proposal_9154035e_003",
+              "title": "Review Corridor with Uncertainty Quantification",
+              "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+              "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+              "category": "review-calibrator",
+              "expected_improvement": 0.02,
+              "confidence": 0.68,
+              "mutation_type": "adaptive_mutation",
+              "source_patterns": [
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:24:35.051612",
+              "parameters": {
+                "uncertainty_weight": 0.41,
+                "confidence_threshold": 0.5,
+                "flexibility": 0.27
+              },
+              "feasibility": 0.65,
+              "risk": 0.31,
+              "rank_score": 0.022,
+              "validation_status": "approved",
+              "validation_notes": "Passed all constraint checks"
+            }
+          ]
+        },
+        "final_output": [
+          {
+            "id": "proposal_9154035e_001",
+            "title": "Adaptive Silence Threshold with Context Awareness",
+            "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+            "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+            "category": "silence-pruner",
+            "expected_improvement": 0.05,
+            "confidence": 0.78,
+            "mutation_type": "parameter_blend",
+            "source_patterns": [
+              "high_success_methods",
+              "parameter_correlation"
+            ],
+            "generated_at": "2026-03-25T15:24:35.051545",
+            "parameters": {
+              "threshold_adjustment": -0.08,
+              "adaptive_rate": 0.164,
+              "context_window": 9
+            },
+            "feasibility": 0.76,
+            "risk": 0.19,
+            "rank_score": 0.104,
+            "validation_status": "approved",
+            "validation_notes": "Passed all constraint checks"
+          },
+          {
+            "id": "proposal_9154035e_002",
+            "title": "Cross-Method Duration Balancing",
+            "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+            "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+            "category": "duration-specialist",
+            "expected_improvement": 0.03,
+            "confidence": 0.72,
+            "mutation_type": "feature_crossover",
+            "source_patterns": [
+              "category_synergy"
+            ],
+            "generated_at": "2026-03-25T15:24:35.051584",
+            "parameters": {
+              "balance_factor": 0.61,
+              "sync_mode": true,
+              "min_quality": 0.85
+            },
+            "feasibility": 0.66,
+            "risk": 0.28,
+            "rank_score": 0.038,
+            "validation_status": "approved",
+            "validation_notes": "Passed all constraint checks"
+          },
+          {
+            "id": "proposal_9154035e_003",
+            "title": "Review Corridor with Uncertainty Quantification",
+            "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+            "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+            "category": "review-calibrator",
+            "expected_improvement": 0.02,
+            "confidence": 0.68,
+            "mutation_type": "adaptive_mutation",
+            "source_patterns": [
+              "parameter_correlation"
+            ],
+            "generated_at": "2026-03-25T15:24:35.051612",
+            "parameters": {
+              "uncertainty_weight": 0.41,
+              "confidence_threshold": 0.5,
+              "flexibility": 0.27
+            },
+            "feasibility": 0.65,
+            "risk": 0.31,
+            "rank_score": 0.022,
+            "validation_status": "approved",
+            "validation_notes": "Passed all constraint checks"
+          }
+        ],
+        "saved_at": "2026-03-25T15:24:37.135702"
+      },
+      "48ff6601": {
+        "workflow_id": "generate_improvements",
+        "execution_id": "48ff6601",
+        "status": "completed",
+        "started_at": "2026-03-25T15:25:20.965874",
+        "completed_at": "2026-03-25T15:25:20.965882",
+        "step_results": {
+          "identified_patterns": [
+            {
+              "name": "high_success_methods",
+              "description": "Methods with >80% success rate show consistent improvements",
+              "confidence": 0.85,
+              "affected_categories": [
+                "silence-pruner",
+                "duration-specialist"
+              ]
+            },
+            {
+              "name": "parameter_correlation",
+              "description": "Certain parameter combinations correlate with better WER reduction",
+              "confidence": 0.72,
+              "affected_categories": [
+                "speech-retainer",
+                "review-calibrator"
+              ]
+            },
+            {
+              "name": "category_synergy",
+              "description": "Combining duration and silence methods shows multiplicative effects",
+              "confidence": 0.68,
+              "affected_categories": [
+                "duration-specialist",
+                "silence-pruner"
+              ]
+            }
+          ],
+          "hypothesis_candidates": [
+            {
+              "title": "Adaptive Silence Threshold with Context Awareness",
+              "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+              "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+              "category": "silence-pruner",
+              "expected_improvement": 0.05,
+              "source_patterns": [
+                "high_success_methods",
+                "parameter_correlation"
+              ],
+              "confidence": 0.78
+            },
+            {
+              "title": "Cross-Method Duration Balancing",
+              "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+              "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+              "category": "duration-specialist",
+              "expected_improvement": 0.03,
+              "source_patterns": [
+                "category_synergy"
+              ],
+              "confidence": 0.72
+            },
+            {
+              "title": "Review Corridor with Uncertainty Quantification",
+              "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+              "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+              "category": "review-calibrator",
+              "expected_improvement": 0.02,
+              "source_patterns": [
+                "parameter_correlation"
+              ],
+              "confidence": 0.68
+            }
+          ],
+          "new_method_variants": [
+            {
+              "id": "proposal_48ff6601_001",
+              "title": "Adaptive Silence Threshold with Context Awareness",
+              "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+              "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+              "category": "silence-pruner",
+              "expected_improvement": 0.05,
+              "confidence": 0.78,
+              "mutation_type": "parameter_blend",
+              "source_patterns": [
+                "high_success_methods",
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:25:18.972138",
+              "parameters": {
+                "threshold_adjustment": 0.08,
+                "adaptive_rate": 0.151,
+                "context_window": 3
+              }
+            },
+            {
+              "id": "proposal_48ff6601_002",
+              "title": "Cross-Method Duration Balancing",
+              "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+              "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+              "category": "duration-specialist",
+              "expected_improvement": 0.03,
+              "confidence": 0.72,
+              "mutation_type": "feature_crossover",
+              "source_patterns": [
+                "category_synergy"
+              ],
+              "generated_at": "2026-03-25T15:25:18.972179",
+              "parameters": {
+                "balance_factor": 0.55,
+                "sync_mode": true,
+                "min_quality": 0.85
+              }
+            },
+            {
+              "id": "proposal_48ff6601_003",
+              "title": "Review Corridor with Uncertainty Quantification",
+              "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+              "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+              "category": "review-calibrator",
+              "expected_improvement": 0.02,
+              "confidence": 0.68,
+              "mutation_type": "adaptive_mutation",
+              "source_patterns": [
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:25:18.972191",
+              "parameters": {
+                "uncertainty_weight": 0.42,
+                "confidence_threshold": 0.78,
+                "flexibility": 0.27
+              }
+            }
+          ],
+          "ranked_proposals": [
+            {
+              "id": "proposal_48ff6601_001",
+              "title": "Adaptive Silence Threshold with Context Awareness",
+              "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+              "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+              "category": "silence-pruner",
+              "expected_improvement": 0.05,
+              "confidence": 0.78,
+              "mutation_type": "parameter_blend",
+              "source_patterns": [
+                "high_success_methods",
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:25:18.972138",
+              "parameters": {
+                "threshold_adjustment": 0.08,
+                "adaptive_rate": 0.151,
+                "context_window": 3
+              },
+              "feasibility": 0.81,
+              "risk": 0.22,
+              "rank_score": 0.099
+            },
+            {
+              "id": "proposal_48ff6601_002",
+              "title": "Cross-Method Duration Balancing",
+              "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+              "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+              "category": "duration-specialist",
+              "expected_improvement": 0.03,
+              "confidence": 0.72,
+              "mutation_type": "feature_crossover",
+              "source_patterns": [
+                "category_synergy"
+              ],
+              "generated_at": "2026-03-25T15:25:18.972179",
+              "parameters": {
+                "balance_factor": 0.55,
+                "sync_mode": true,
+                "min_quality": 0.85
+              },
+              "feasibility": 0.75,
+              "risk": 0.27,
+              "rank_score": 0.044
+            },
+            {
+              "id": "proposal_48ff6601_003",
+              "title": "Review Corridor with Uncertainty Quantification",
+              "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+              "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+              "category": "review-calibrator",
+              "expected_improvement": 0.02,
+              "confidence": 0.68,
+              "mutation_type": "adaptive_mutation",
+              "source_patterns": [
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:25:18.972191",
+              "parameters": {
+                "uncertainty_weight": 0.42,
+                "confidence_threshold": 0.78,
+                "flexibility": 0.27
+              },
+              "feasibility": 0.78,
+              "risk": 0.3,
+              "rank_score": 0.026
+            }
+          ],
+          "final_suggestions": [
+            {
+              "id": "proposal_48ff6601_001",
+              "title": "Adaptive Silence Threshold with Context Awareness",
+              "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+              "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+              "category": "silence-pruner",
+              "expected_improvement": 0.05,
+              "confidence": 0.78,
+              "mutation_type": "parameter_blend",
+              "source_patterns": [
+                "high_success_methods",
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:25:18.972138",
+              "parameters": {
+                "threshold_adjustment": 0.08,
+                "adaptive_rate": 0.151,
+                "context_window": 3
+              },
+              "feasibility": 0.81,
+              "risk": 0.22,
+              "rank_score": 0.099,
+              "validation_status": "approved",
+              "validation_notes": "Passed all constraint checks"
+            },
+            {
+              "id": "proposal_48ff6601_002",
+              "title": "Cross-Method Duration Balancing",
+              "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+              "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+              "category": "duration-specialist",
+              "expected_improvement": 0.03,
+              "confidence": 0.72,
+              "mutation_type": "feature_crossover",
+              "source_patterns": [
+                "category_synergy"
+              ],
+              "generated_at": "2026-03-25T15:25:18.972179",
+              "parameters": {
+                "balance_factor": 0.55,
+                "sync_mode": true,
+                "min_quality": 0.85
+              },
+              "feasibility": 0.75,
+              "risk": 0.27,
+              "rank_score": 0.044,
+              "validation_status": "approved",
+              "validation_notes": "Passed all constraint checks"
+            },
+            {
+              "id": "proposal_48ff6601_003",
+              "title": "Review Corridor with Uncertainty Quantification",
+              "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+              "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+              "category": "review-calibrator",
+              "expected_improvement": 0.02,
+              "confidence": 0.68,
+              "mutation_type": "adaptive_mutation",
+              "source_patterns": [
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:25:18.972191",
+              "parameters": {
+                "uncertainty_weight": 0.42,
+                "confidence_threshold": 0.78,
+                "flexibility": 0.27
+              },
+              "feasibility": 0.78,
+              "risk": 0.3,
+              "rank_score": 0.026,
+              "validation_status": "approved",
+              "validation_notes": "Passed all constraint checks"
+            }
+          ]
+        },
+        "final_output": [
+          {
+            "id": "proposal_48ff6601_001",
+            "title": "Adaptive Silence Threshold with Context Awareness",
+            "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+            "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+            "category": "silence-pruner",
+            "expected_improvement": 0.05,
+            "confidence": 0.78,
+            "mutation_type": "parameter_blend",
+            "source_patterns": [
+              "high_success_methods",
+              "parameter_correlation"
+            ],
+            "generated_at": "2026-03-25T15:25:18.972138",
+            "parameters": {
+              "threshold_adjustment": 0.08,
+              "adaptive_rate": 0.151,
+              "context_window": 3
+            },
+            "feasibility": 0.81,
+            "risk": 0.22,
+            "rank_score": 0.099,
+            "validation_status": "approved",
+            "validation_notes": "Passed all constraint checks"
+          },
+          {
+            "id": "proposal_48ff6601_002",
+            "title": "Cross-Method Duration Balancing",
+            "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+            "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+            "category": "duration-specialist",
+            "expected_improvement": 0.03,
+            "confidence": 0.72,
+            "mutation_type": "feature_crossover",
+            "source_patterns": [
+              "category_synergy"
+            ],
+            "generated_at": "2026-03-25T15:25:18.972179",
+            "parameters": {
+              "balance_factor": 0.55,
+              "sync_mode": true,
+              "min_quality": 0.85
+            },
+            "feasibility": 0.75,
+            "risk": 0.27,
+            "rank_score": 0.044,
+            "validation_status": "approved",
+            "validation_notes": "Passed all constraint checks"
+          },
+          {
+            "id": "proposal_48ff6601_003",
+            "title": "Review Corridor with Uncertainty Quantification",
+            "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+            "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+            "category": "review-calibrator",
+            "expected_improvement": 0.02,
+            "confidence": 0.68,
+            "mutation_type": "adaptive_mutation",
+            "source_patterns": [
+              "parameter_correlation"
+            ],
+            "generated_at": "2026-03-25T15:25:18.972191",
+            "parameters": {
+              "uncertainty_weight": 0.42,
+              "confidence_threshold": 0.78,
+              "flexibility": 0.27
+            },
+            "feasibility": 0.78,
+            "risk": 0.3,
+            "rank_score": 0.026,
+            "validation_status": "approved",
+            "validation_notes": "Passed all constraint checks"
+          }
+        ],
+        "saved_at": "2026-03-25T15:25:20.966216"
+      },
+      "ba62c2e2": {
+        "workflow_id": "generate_improvements",
+        "execution_id": "ba62c2e2",
+        "status": "completed",
+        "started_at": "2026-03-25T15:26:24.406296",
+        "completed_at": "2026-03-25T15:26:24.406308",
+        "step_results": {
+          "identified_patterns": [
+            {
+              "name": "high_success_methods",
+              "description": "Methods with >80% success rate show consistent improvements",
+              "confidence": 0.85,
+              "affected_categories": [
+                "silence-pruner",
+                "duration-specialist"
+              ]
+            },
+            {
+              "name": "parameter_correlation",
+              "description": "Certain parameter combinations correlate with better WER reduction",
+              "confidence": 0.72,
+              "affected_categories": [
+                "speech-retainer",
+                "review-calibrator"
+              ]
+            },
+            {
+              "name": "category_synergy",
+              "description": "Combining duration and silence methods shows multiplicative effects",
+              "confidence": 0.68,
+              "affected_categories": [
+                "duration-specialist",
+                "silence-pruner"
+              ]
+            }
+          ],
+          "hypothesis_candidates": [
+            {
+              "title": "Adaptive Silence Threshold with Context Awareness",
+              "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+              "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+              "category": "silence-pruner",
+              "expected_improvement": 0.05,
+              "source_patterns": [
+                "high_success_methods",
+                "parameter_correlation"
+              ],
+              "confidence": 0.78
+            },
+            {
+              "title": "Cross-Method Duration Balancing",
+              "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+              "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+              "category": "duration-specialist",
+              "expected_improvement": 0.03,
+              "source_patterns": [
+                "category_synergy"
+              ],
+              "confidence": 0.72
+            },
+            {
+              "title": "Review Corridor with Uncertainty Quantification",
+              "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+              "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+              "category": "review-calibrator",
+              "expected_improvement": 0.02,
+              "source_patterns": [
+                "parameter_correlation"
+              ],
+              "confidence": 0.68
+            }
+          ],
+          "new_method_variants": [
+            {
+              "id": "proposal_ba62c2e2_001",
+              "title": "Adaptive Silence Threshold with Context Awareness",
+              "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+              "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+              "category": "silence-pruner",
+              "expected_improvement": 0.05,
+              "confidence": 0.78,
+              "mutation_type": "parameter_blend",
+              "source_patterns": [
+                "high_success_methods",
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:26:23.293283",
+              "parameters": {
+                "threshold_adjustment": 0.012,
+                "adaptive_rate": 0.065,
+                "context_window": 9
+              }
+            },
+            {
+              "id": "proposal_ba62c2e2_002",
+              "title": "Cross-Method Duration Balancing",
+              "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+              "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+              "category": "duration-specialist",
+              "expected_improvement": 0.03,
+              "confidence": 0.72,
+              "mutation_type": "feature_crossover",
+              "source_patterns": [
+                "category_synergy"
+              ],
+              "generated_at": "2026-03-25T15:26:23.293322",
+              "parameters": {
+                "balance_factor": 0.69,
+                "sync_mode": true,
+                "min_quality": 0.83
+              }
+            },
+            {
+              "id": "proposal_ba62c2e2_003",
+              "title": "Review Corridor with Uncertainty Quantification",
+              "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+              "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+              "category": "review-calibrator",
+              "expected_improvement": 0.02,
+              "confidence": 0.68,
+              "mutation_type": "adaptive_mutation",
+              "source_patterns": [
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:26:23.293332",
+              "parameters": {
+                "uncertainty_weight": 0.39,
+                "confidence_threshold": 0.54,
+                "flexibility": 0.21
+              }
+            }
+          ],
+          "ranked_proposals": [
+            {
+              "id": "proposal_ba62c2e2_001",
+              "title": "Adaptive Silence Threshold with Context Awareness",
+              "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+              "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+              "category": "silence-pruner",
+              "expected_improvement": 0.05,
+              "confidence": 0.78,
+              "mutation_type": "parameter_blend",
+              "source_patterns": [
+                "high_success_methods",
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:26:23.293283",
+              "parameters": {
+                "threshold_adjustment": 0.012,
+                "adaptive_rate": 0.065,
+                "context_window": 9
+              },
+              "feasibility": 0.78,
+              "risk": 0.26,
+              "rank_score": 0.084
+            },
+            {
+              "id": "proposal_ba62c2e2_002",
+              "title": "Cross-Method Duration Balancing",
+              "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+              "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+              "category": "duration-specialist",
+              "expected_improvement": 0.03,
+              "confidence": 0.72,
+              "mutation_type": "feature_crossover",
+              "source_patterns": [
+                "category_synergy"
+              ],
+              "generated_at": "2026-03-25T15:26:23.293322",
+              "parameters": {
+                "balance_factor": 0.69,
+                "sync_mode": true,
+                "min_quality": 0.83
+              },
+              "feasibility": 0.79,
+              "risk": 0.3,
+              "rank_score": 0.043
+            },
+            {
+              "id": "proposal_ba62c2e2_003",
+              "title": "Review Corridor with Uncertainty Quantification",
+              "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+              "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+              "category": "review-calibrator",
+              "expected_improvement": 0.02,
+              "confidence": 0.68,
+              "mutation_type": "adaptive_mutation",
+              "source_patterns": [
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:26:23.293332",
+              "parameters": {
+                "uncertainty_weight": 0.39,
+                "confidence_threshold": 0.54,
+                "flexibility": 0.21
+              },
+              "feasibility": 0.71,
+              "risk": 0.29,
+              "rank_score": 0.025
+            }
+          ],
+          "final_suggestions": [
+            {
+              "id": "proposal_ba62c2e2_001",
+              "title": "Adaptive Silence Threshold with Context Awareness",
+              "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+              "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+              "category": "silence-pruner",
+              "expected_improvement": 0.05,
+              "confidence": 0.78,
+              "mutation_type": "parameter_blend",
+              "source_patterns": [
+                "high_success_methods",
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:26:23.293283",
+              "parameters": {
+                "threshold_adjustment": 0.012,
+                "adaptive_rate": 0.065,
+                "context_window": 9
+              },
+              "feasibility": 0.78,
+              "risk": 0.26,
+              "rank_score": 0.084,
+              "validation_status": "approved",
+              "validation_notes": "Passed all constraint checks"
+            },
+            {
+              "id": "proposal_ba62c2e2_002",
+              "title": "Cross-Method Duration Balancing",
+              "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+              "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+              "category": "duration-specialist",
+              "expected_improvement": 0.03,
+              "confidence": 0.72,
+              "mutation_type": "feature_crossover",
+              "source_patterns": [
+                "category_synergy"
+              ],
+              "generated_at": "2026-03-25T15:26:23.293322",
+              "parameters": {
+                "balance_factor": 0.69,
+                "sync_mode": true,
+                "min_quality": 0.83
+              },
+              "feasibility": 0.79,
+              "risk": 0.3,
+              "rank_score": 0.043,
+              "validation_status": "approved",
+              "validation_notes": "Passed all constraint checks"
+            },
+            {
+              "id": "proposal_ba62c2e2_003",
+              "title": "Review Corridor with Uncertainty Quantification",
+              "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+              "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+              "category": "review-calibrator",
+              "expected_improvement": 0.02,
+              "confidence": 0.68,
+              "mutation_type": "adaptive_mutation",
+              "source_patterns": [
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:26:23.293332",
+              "parameters": {
+                "uncertainty_weight": 0.39,
+                "confidence_threshold": 0.54,
+                "flexibility": 0.21
+              },
+              "feasibility": 0.71,
+              "risk": 0.29,
+              "rank_score": 0.025,
+              "validation_status": "approved",
+              "validation_notes": "Passed all constraint checks"
+            }
+          ]
+        },
+        "final_output": [
+          {
+            "id": "proposal_ba62c2e2_001",
+            "title": "Adaptive Silence Threshold with Context Awareness",
+            "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+            "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+            "category": "silence-pruner",
+            "expected_improvement": 0.05,
+            "confidence": 0.78,
+            "mutation_type": "parameter_blend",
+            "source_patterns": [
+              "high_success_methods",
+              "parameter_correlation"
+            ],
+            "generated_at": "2026-03-25T15:26:23.293283",
+            "parameters": {
+              "threshold_adjustment": 0.012,
+              "adaptive_rate": 0.065,
+              "context_window": 9
+            },
+            "feasibility": 0.78,
+            "risk": 0.26,
+            "rank_score": 0.084,
+            "validation_status": "approved",
+            "validation_notes": "Passed all constraint checks"
+          },
+          {
+            "id": "proposal_ba62c2e2_002",
+            "title": "Cross-Method Duration Balancing",
+            "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+            "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+            "category": "duration-specialist",
+            "expected_improvement": 0.03,
+            "confidence": 0.72,
+            "mutation_type": "feature_crossover",
+            "source_patterns": [
+              "category_synergy"
+            ],
+            "generated_at": "2026-03-25T15:26:23.293322",
+            "parameters": {
+              "balance_factor": 0.69,
+              "sync_mode": true,
+              "min_quality": 0.83
+            },
+            "feasibility": 0.79,
+            "risk": 0.3,
+            "rank_score": 0.043,
+            "validation_status": "approved",
+            "validation_notes": "Passed all constraint checks"
+          },
+          {
+            "id": "proposal_ba62c2e2_003",
+            "title": "Review Corridor with Uncertainty Quantification",
+            "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+            "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+            "category": "review-calibrator",
+            "expected_improvement": 0.02,
+            "confidence": 0.68,
+            "mutation_type": "adaptive_mutation",
+            "source_patterns": [
+              "parameter_correlation"
+            ],
+            "generated_at": "2026-03-25T15:26:23.293332",
+            "parameters": {
+              "uncertainty_weight": 0.39,
+              "confidence_threshold": 0.54,
+              "flexibility": 0.21
+            },
+            "feasibility": 0.71,
+            "risk": 0.29,
+            "rank_score": 0.025,
+            "validation_status": "approved",
+            "validation_notes": "Passed all constraint checks"
+          }
+        ],
+        "saved_at": "2026-03-25T15:26:24.407258"
+      },
+      "bb383c2c": {
+        "workflow_id": "generate_improvements",
+        "execution_id": "bb383c2c",
+        "status": "completed",
+        "started_at": "2026-03-25T15:26:53.195669",
+        "completed_at": "2026-03-25T15:26:53.195678",
+        "step_results": {
+          "identified_patterns": [
+            {
+              "name": "high_success_methods",
+              "description": "Methods with >80% success rate show consistent improvements",
+              "confidence": 0.85,
+              "affected_categories": [
+                "silence-pruner",
+                "duration-specialist"
+              ]
+            },
+            {
+              "name": "parameter_correlation",
+              "description": "Certain parameter combinations correlate with better WER reduction",
+              "confidence": 0.72,
+              "affected_categories": [
+                "speech-retainer",
+                "review-calibrator"
+              ]
+            },
+            {
+              "name": "category_synergy",
+              "description": "Combining duration and silence methods shows multiplicative effects",
+              "confidence": 0.68,
+              "affected_categories": [
+                "duration-specialist",
+                "silence-pruner"
+              ]
+            }
+          ],
+          "hypothesis_candidates": [
+            {
+              "title": "Adaptive Silence Threshold with Context Awareness",
+              "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+              "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+              "category": "silence-pruner",
+              "expected_improvement": 0.05,
+              "source_patterns": [
+                "high_success_methods",
+                "parameter_correlation"
+              ],
+              "confidence": 0.78
+            },
+            {
+              "title": "Cross-Method Duration Balancing",
+              "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+              "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+              "category": "duration-specialist",
+              "expected_improvement": 0.03,
+              "source_patterns": [
+                "category_synergy"
+              ],
+              "confidence": 0.72
+            },
+            {
+              "title": "Review Corridor with Uncertainty Quantification",
+              "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+              "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+              "category": "review-calibrator",
+              "expected_improvement": 0.02,
+              "source_patterns": [
+                "parameter_correlation"
+              ],
+              "confidence": 0.68
+            }
+          ],
+          "new_method_variants": [
+            {
+              "id": "proposal_bb383c2c_001",
+              "title": "Adaptive Silence Threshold with Context Awareness",
+              "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+              "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+              "category": "silence-pruner",
+              "expected_improvement": 0.05,
+              "confidence": 0.78,
+              "mutation_type": "parameter_blend",
+              "source_patterns": [
+                "high_success_methods",
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:26:51.205113",
+              "parameters": {
+                "threshold_adjustment": 0.045,
+                "adaptive_rate": 0.172,
+                "context_window": 5
+              }
+            },
+            {
+              "id": "proposal_bb383c2c_002",
+              "title": "Cross-Method Duration Balancing",
+              "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+              "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+              "category": "duration-specialist",
+              "expected_improvement": 0.03,
+              "confidence": 0.72,
+              "mutation_type": "feature_crossover",
+              "source_patterns": [
+                "category_synergy"
+              ],
+              "generated_at": "2026-03-25T15:26:51.205176",
+              "parameters": {
+                "balance_factor": 0.69,
+                "sync_mode": true,
+                "min_quality": 0.92
+              }
+            },
+            {
+              "id": "proposal_bb383c2c_003",
+              "title": "Review Corridor with Uncertainty Quantification",
+              "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+              "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+              "category": "review-calibrator",
+              "expected_improvement": 0.02,
+              "confidence": 0.68,
+              "mutation_type": "adaptive_mutation",
+              "source_patterns": [
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:26:51.205282",
+              "parameters": {
+                "uncertainty_weight": 0.55,
+                "confidence_threshold": 0.53,
+                "flexibility": 0.28
+              }
+            }
+          ],
+          "ranked_proposals": [
+            {
+              "id": "proposal_bb383c2c_001",
+              "title": "Adaptive Silence Threshold with Context Awareness",
+              "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+              "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+              "category": "silence-pruner",
+              "expected_improvement": 0.05,
+              "confidence": 0.78,
+              "mutation_type": "parameter_blend",
+              "source_patterns": [
+                "high_success_methods",
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:26:51.205113",
+              "parameters": {
+                "threshold_adjustment": 0.045,
+                "adaptive_rate": 0.172,
+                "context_window": 5
+              },
+              "feasibility": 0.79,
+              "risk": 0.2,
+              "rank_score": 0.101
+            },
+            {
+              "id": "proposal_bb383c2c_002",
+              "title": "Cross-Method Duration Balancing",
+              "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+              "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+              "category": "duration-specialist",
+              "expected_improvement": 0.03,
+              "confidence": 0.72,
+              "mutation_type": "feature_crossover",
+              "source_patterns": [
+                "category_synergy"
+              ],
+              "generated_at": "2026-03-25T15:26:51.205176",
+              "parameters": {
+                "balance_factor": 0.69,
+                "sync_mode": true,
+                "min_quality": 0.92
+              },
+              "feasibility": 0.71,
+              "risk": 0.26,
+              "rank_score": 0.043
+            },
+            {
+              "id": "proposal_bb383c2c_003",
+              "title": "Review Corridor with Uncertainty Quantification",
+              "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+              "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+              "category": "review-calibrator",
+              "expected_improvement": 0.02,
+              "confidence": 0.68,
+              "mutation_type": "adaptive_mutation",
+              "source_patterns": [
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:26:51.205282",
+              "parameters": {
+                "uncertainty_weight": 0.55,
+                "confidence_threshold": 0.53,
+                "flexibility": 0.28
+              },
+              "feasibility": 0.77,
+              "risk": 0.36,
+              "rank_score": 0.023
+            }
+          ],
+          "final_suggestions": [
+            {
+              "id": "proposal_bb383c2c_001",
+              "title": "Adaptive Silence Threshold with Context Awareness",
+              "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+              "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+              "category": "silence-pruner",
+              "expected_improvement": 0.05,
+              "confidence": 0.78,
+              "mutation_type": "parameter_blend",
+              "source_patterns": [
+                "high_success_methods",
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:26:51.205113",
+              "parameters": {
+                "threshold_adjustment": 0.045,
+                "adaptive_rate": 0.172,
+                "context_window": 5
+              },
+              "feasibility": 0.79,
+              "risk": 0.2,
+              "rank_score": 0.101,
+              "validation_status": "approved",
+              "validation_notes": "Passed all constraint checks"
+            },
+            {
+              "id": "proposal_bb383c2c_002",
+              "title": "Cross-Method Duration Balancing",
+              "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+              "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+              "category": "duration-specialist",
+              "expected_improvement": 0.03,
+              "confidence": 0.72,
+              "mutation_type": "feature_crossover",
+              "source_patterns": [
+                "category_synergy"
+              ],
+              "generated_at": "2026-03-25T15:26:51.205176",
+              "parameters": {
+                "balance_factor": 0.69,
+                "sync_mode": true,
+                "min_quality": 0.92
+              },
+              "feasibility": 0.71,
+              "risk": 0.26,
+              "rank_score": 0.043,
+              "validation_status": "approved",
+              "validation_notes": "Passed all constraint checks"
+            },
+            {
+              "id": "proposal_bb383c2c_003",
+              "title": "Review Corridor with Uncertainty Quantification",
+              "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+              "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+              "category": "review-calibrator",
+              "expected_improvement": 0.02,
+              "confidence": 0.68,
+              "mutation_type": "adaptive_mutation",
+              "source_patterns": [
+                "parameter_correlation"
+              ],
+              "generated_at": "2026-03-25T15:26:51.205282",
+              "parameters": {
+                "uncertainty_weight": 0.55,
+                "confidence_threshold": 0.53,
+                "flexibility": 0.28
+              },
+              "feasibility": 0.77,
+              "risk": 0.36,
+              "rank_score": 0.023,
+              "validation_status": "approved",
+              "validation_notes": "Passed all constraint checks"
+            }
+          ]
+        },
+        "final_output": [
+          {
+            "id": "proposal_bb383c2c_001",
+            "title": "Adaptive Silence Threshold with Context Awareness",
+            "hypothesis": "Dynamisch angepasste Silence-Thresholds basierend auf Hintergrundger\u00e4usch-Level verbessern die Segmentierung",
+            "description": "Nutzt Kontext-Informationen aus vorherigen Segmenten, um Silence-Thresholds adaptiv anzupassen",
+            "category": "silence-pruner",
+            "expected_improvement": 0.05,
+            "confidence": 0.78,
+            "mutation_type": "parameter_blend",
+            "source_patterns": [
+              "high_success_methods",
+              "parameter_correlation"
+            ],
+            "generated_at": "2026-03-25T15:26:51.205113",
+            "parameters": {
+              "threshold_adjustment": 0.045,
+              "adaptive_rate": 0.172,
+              "context_window": 5
+            },
+            "feasibility": 0.79,
+            "risk": 0.2,
+            "rank_score": 0.101,
+            "validation_status": "approved",
+            "validation_notes": "Passed all constraint checks"
+          },
+          {
+            "id": "proposal_bb383c2c_002",
+            "title": "Cross-Method Duration Balancing",
+            "hypothesis": "Kombinierte Optimierung von Padding und Merge-Windows f\u00fchrt zu konsistenteren Segment-Dauern",
+            "description": "Synchronisiert duration_padding und merge_window Parameter f\u00fcr bessere Gesamtergebnisse",
+            "category": "duration-specialist",
+            "expected_improvement": 0.03,
+            "confidence": 0.72,
+            "mutation_type": "feature_crossover",
+            "source_patterns": [
+              "category_synergy"
+            ],
+            "generated_at": "2026-03-25T15:26:51.205176",
+            "parameters": {
+              "balance_factor": 0.69,
+              "sync_mode": true,
+              "min_quality": 0.92
+            },
+            "feasibility": 0.71,
+            "risk": 0.26,
+            "rank_score": 0.043,
+            "validation_status": "approved",
+            "validation_notes": "Passed all constraint checks"
+          },
+          {
+            "id": "proposal_bb383c2c_003",
+            "title": "Review Corridor with Uncertainty Quantification",
+            "hypothesis": "Explizite Unsicherheitsmodellierung in Review-Entscheidungen reduziert Fehlklassifikationen",
+            "description": "Erweitert Review-Corridor um Confidence-Intervalle f\u00fcr unsichere F\u00e4lle",
+            "category": "review-calibrator",
+            "expected_improvement": 0.02,
+            "confidence": 0.68,
+            "mutation_type": "adaptive_mutation",
+            "source_patterns": [
+              "parameter_correlation"
+            ],
+            "generated_at": "2026-03-25T15:26:51.205282",
+            "parameters": {
+              "uncertainty_weight": 0.55,
+              "confidence_threshold": 0.53,
+              "flexibility": 0.28
+            },
+            "feasibility": 0.77,
+            "risk": 0.36,
+            "rank_score": 0.023,
+            "validation_status": "approved",
+            "validation_notes": "Passed all constraint checks"
+          }
+        ],
+        "saved_at": "2026-03-25T15:26:53.196140"
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+# AutoCast Core Dependencies
+# ChromaDB + Embeddings for Learning Engine
+
+# Core
+chromadb>=0.4.0
+sentence-transformers>=2.2.0
+numpy>=1.24.0
+scikit-learn>=1.3.0
+
+# Data Processing
+pandas>=2.0.0
+tqdm>=4.65.0
+
+# Utilities
+python-dateutil>=2.8.0

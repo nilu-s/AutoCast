@@ -49,8 +49,8 @@
 
         var trackColors = options.trackColors || [];
         var ticksPerSecondDefault = options.ticksPerSecondDefault || 254016000000;
-        var audioPreviewPrerollSec = isFinite(options.audioPreviewPrerollSec) ? options.audioPreviewPrerollSec : 0.2;
-        var audioPreviewPostrollSec = isFinite(options.audioPreviewPostrollSec) ? options.audioPreviewPostrollSec : 0.2;
+        var audioPreviewPrerollSec = parseNum(options.audioPreviewPrerollSec, 0.0);
+        var audioPreviewPostrollSec = parseNum(options.audioPreviewPostrollSec, 0.0);
 
         function getRenderFeature() {
             return requireModule(options.cutPreviewRenderFeature, 'AutoCastPanelCutPreviewRenderFeature');
@@ -194,7 +194,7 @@
         }
 
         function renderCutPreviewNow() {
-            return getCutPreviewRuntimeFeature().renderCutPreviewNow({
+            var result = getCutPreviewRuntimeFeature().renderCutPreviewNow({
                 state: state,
                 els: els,
                 renderFeature: getRenderFeature(),
@@ -216,6 +216,11 @@
                 formatSummaryDuration: formatSummaryDuration,
                 escapeHtml: escapeHtml
             });
+            
+            // Also render the review section
+            renderReviewSection();
+            
+            return result;
         }
 
         function getCutPreviewItemById(itemId) {
@@ -327,7 +332,144 @@
                 sliderToPixelsPerSec: sliderToPixelsPerSec,
                 pixelsPerSecToSlider: pixelsPerSecToSlider,
                 documentObj: documentObj,
-                windowObj: windowObj
+                windowObj: windowObj,
+                onSnippetSelected: function(itemId) {
+                    // When snippet is selected from timeline, update review list
+                    // Find which track this snippet belongs to
+                    var item = getCutPreviewItemById(itemId);
+                    if (item) {
+                        state.reviewActiveTrackIndex = item.trackIndex;
+                        renderReviewSection();
+                        scrollReviewSnippetIntoView(itemId);
+                    }
+                }
+            });
+
+            bindReviewControls();
+        }
+
+        function getReviewFeature() {
+            return options.cutPreviewReviewFeature || root.AutoCastPanelCutPreviewReviewFeature || null;
+        }
+
+        function getReviewListComponent() {
+            return options.cutPreviewReviewListComponent || root.AutoCastPanelCutPreviewReviewListComponent || null;
+        }
+
+        function getReviewStore() {
+            return options.cutPreviewReviewStore || root.AutoCastPanelCutPreviewReviewStore || null;
+        }
+
+        function initializeReviewState() {
+            var reviewFeature = getReviewFeature();
+            if (!reviewFeature || !reviewFeature.initializeReviewState) return null;
+            return reviewFeature.initializeReviewState({
+                reviewStore: getReviewStore()
+            });
+        }
+
+        function renderReviewSection() {
+            var reviewFeature = getReviewFeature();
+            var reviewListComponent = getReviewListComponent();
+            if (!reviewFeature || !reviewListComponent || !els.cutPreviewReviewList) return;
+
+            if (!state.reviewState) {
+                state.reviewState = initializeReviewState();
+            }
+
+            // Ensure active track index is initialized
+            if (state.reviewActiveTrackIndex === undefined) {
+                state.reviewActiveTrackIndex = 0;
+            }
+
+            reviewFeature.renderReviewSection(
+                els.cutPreviewReviewList,
+                state.cutPreview,
+                state.reviewState,
+                state.activeSnippetId,
+                {
+                    reviewListComponent: reviewListComponent,
+                    reviewStore: getReviewStore(),
+                    activeTrackIndex: state.reviewActiveTrackIndex
+                }
+            );
+        }
+
+        function bindReviewControls() {
+            var reviewFeature = getReviewFeature();
+            if (!reviewFeature || !els.cutPreviewReviewList) return;
+
+            reviewFeature.bindReviewControls({
+                containerEl: els.cutPreviewReviewList,
+                state: state,
+                reviewState: state.reviewState,
+                onSelectSnippet: function(itemId) {
+                    // Set active snippet and ensure it's visible in viewport
+                    setActiveSnippet(itemId, true);
+                    // Re-render timeline to show the blue highlight
+                    renderCutPreview();
+                    // Also re-render review list to show active state
+                    renderReviewSection();
+                    scrollReviewSnippetIntoView(itemId);
+                },
+                onSelectTrack: function(trackIndex) {
+                    // Track selection handled in state
+                    state.reviewActiveTrackIndex = trackIndex;
+                },
+                onIncludeSnippet: function(itemId) {
+                    if (!state.reviewState) state.reviewState = initializeReviewState();
+                    reviewFeature.includeSnippet(state.reviewState, itemId, {
+                        reviewStore: getReviewStore()
+                    });
+                    applyReviewDecisions();
+                },
+                onExcludeSnippet: function(itemId) {
+                    if (!state.reviewState) state.reviewState = initializeReviewState();
+                    reviewFeature.excludeSnippet(state.reviewState, itemId, {
+                        reviewStore: getReviewStore()
+                    });
+                    applyReviewDecisions();
+                },
+                onResetSnippet: function(itemId) {
+                    if (!state.reviewState) state.reviewState = initializeReviewState();
+                    reviewFeature.resetSnippetDecision(state.reviewState, itemId, {
+                        reviewStore: getReviewStore()
+                    });
+                    applyReviewDecisions();
+                },
+                renderCallback: function() {
+                    renderReviewSection();
+                    renderCutPreview();
+                }
+            });
+        }
+
+        function scrollReviewSnippetIntoView(itemId) {
+            setTimeout(function () {
+                if (!els.cutPreviewReviewList) return;
+                var selector = '[data-review-item-id="' + itemId + '"]';
+                var snippetEl = els.cutPreviewReviewList.querySelector(selector);
+                if (!snippetEl) return;
+                snippetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 50);
+        }
+
+        function applyReviewDecisions() {
+            var reviewFeature = getReviewFeature();
+            if (!reviewFeature || !state.cutPreview || !state.reviewState) return;
+
+            state.cutPreview = reviewFeature.applyReviewDecisions(
+                state.cutPreview,
+                state.reviewState,
+                { reviewStore: getReviewStore() }
+            );
+        }
+
+        function resetReviewState() {
+            var reviewFeature = getReviewFeature();
+            if (!reviewFeature || !state.reviewState) return;
+            reviewFeature.resetAllReviewDecisions(state.reviewState, {
+                reviewStore: getReviewStore()
             });
         }
 
@@ -337,7 +479,10 @@
             renderCutPreview: renderCutPreview,
             getCutPreviewItemById: getCutPreviewItemById,
             stopCurrentPreviewAudio: stopCurrentPreviewAudio,
-            bindCutPreviewControls: bindCutPreviewControls
+            bindCutPreviewControls: bindCutPreviewControls,
+            renderReviewSection: renderReviewSection,
+            initializeReviewState: initializeReviewState,
+            resetReviewState: resetReviewState
         };
     }
 

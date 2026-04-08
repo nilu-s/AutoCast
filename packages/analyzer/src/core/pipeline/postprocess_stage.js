@@ -64,14 +64,7 @@ function runPostprocessStage(ctx) {
         });
     }
 
-    if (params.enableSameTrackGapMerge) {
-        resolvedSegments = analyzerPostprocess.mergeSameTrackNearbySegments(resolvedSegments, rmsProfiles, vadResults, {
-            frameDurationMs: params.frameDurationMs,
-            maxGapMs: params.sameTrackGapMergeMaxMs,
-            maxOtherOverlapRatio: params.sameTrackGapMergeMaxOtherOverlapRatio,
-            minPeakAboveThresholdDb: params.sameTrackGapMergeMinPeakAboveThresholdDb
-        }, trackInfos);
-    }
+
 
     if (params.enableDominantTrackStickiness) {
         resolvedSegments = analyzerPostprocess.applyDominantTrackStickiness(resolvedSegments, rmsProfiles, {

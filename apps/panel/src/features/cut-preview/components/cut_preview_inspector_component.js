@@ -121,6 +121,17 @@
 
         html += '<div class="cp-inspector-grid">';
         html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Selected</span><span class="cp-inspector-value">' + escapeHtml(item.selectable ? (item.selected ? 'yes' : 'no') : 'locked') + '</span></div>';
+        
+        var contentVal = item.contentType || '';
+        html += '  <div class="cp-inspector-row" style="align-items: center;"><span class="cp-inspector-label">Content Type</span>';
+        html += '    <select class="cp-inspector-value temp-category-select" data-item-id="' + escapeHtml(item.id) + '" style="background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 4px; outline: none; margin-left: auto;">';
+        html += '      <option value=""' + (contentVal === '' ? ' selected' : '') + '></option>';
+        html += '      <option value="speech"' + (contentVal === 'speech' ? ' selected' : '') + '>Speech</option>';
+        html += '      <option value="review"' + (contentVal === 'review' ? ' selected' : '') + '>Review</option>';
+        html += '      <option value="ignore"' + (contentVal === 'ignore' ? ' selected' : '') + '>Ignore</option>';
+        html += '    </select>';
+        html += '  </div>';
+
         html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Decision</span><span class="cp-inspector-value">' + escapeHtml(isUninteresting ? 'uninteresting' : item.decisionState) + '</span></div>';
         html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Content</span><span class="cp-inspector-value">' + escapeHtml(item.contentState || 'unknown') + '</span></div>';
         html += '  <div class="cp-inspector-row"><span class="cp-inspector-label">Score</span><span class="cp-inspector-value">' + escapeHtml(String(item.score) + ' (' + item.scoreLabel + ')') + '</span></div>';

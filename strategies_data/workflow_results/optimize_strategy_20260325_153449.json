@@ -1,0 +1,88 @@
+{
+  "workflow_id": "optimize_strategy",
+  "started_at": "2026-03-25T15:34:49.081094",
+  "dry_run": false,
+  "steps": {
+    "step1_analysis": {
+      "status": "completed",
+      "output": "strategy_performance_report",
+      "data": {
+        "timestamp": "2026-03-25T15:34:49.085001",
+        "total_strategies": 0,
+        "analyzed_strategies": [],
+        "top_performer": null,
+        "worst_performer": null,
+        "insights": [
+          "No historical data available. Initialize strategies first."
+        ]
+      }
+    },
+    "step2_evaluation": {
+      "status": "completed",
+      "output": "recommendation",
+      "data": {
+        "action": "increase_exploration",
+        "reason": "Exploration strategies outperform (score: 0.500)",
+        "target_epsilon": 0.25,
+        "confidence": 0.33112582781456956
+      }
+    },
+    "step3_tuning": {
+      "status": "completed",
+      "output": "new_epsilon_value",
+      "data": {
+        "timestamp": "2026-03-25T15:34:49.087785",
+        "strategy_id": "epsilon_greedy_balanced",
+        "previous_epsilon": 0.2,
+        "new_epsilon": 0.24,
+        "previous_decay": 0.95,
+        "new_decay": 0.931,
+        "adjustment": "increase_exploration",
+        "reason": "More exploration needed",
+        "min_epsilon": 0.05,
+        "applied": false
+      }
+    },
+    "step4_selection": {
+      "status": "completed",
+      "output": "recommended_sequence",
+      "data": {
+        "timestamp": "2026-03-25T15:34:49.090496",
+        "recommended_sequence": [
+          "evaluate",
+          "generate",
+          "apply"
+        ],
+        "reason": "Low diversity or poor performance - generating new strategies",
+        "low_diversity": true,
+        "poor_performance": true,
+        "steps": [
+          {
+            "step": 1,
+            "name": "evaluate_performance",
+            "agent": "agent_analyzer",
+            "action": "analyze_strategy_performance",
+            "status": "completed"
+          },
+          {
+            "step": 2,
+            "name": "generate_strategies",
+            "agent": "agent_hypothesis_generator",
+            "action": "generate_new_strategies",
+            "status": "pending",
+            "note": "Only if diversity is low"
+          },
+          {
+            "step": 3,
+            "name": "apply_strategy",
+            "agent": "agent_method_selector",
+            "action": "select_with_new_strategy",
+            "status": "pending"
+          }
+        ]
+      }
+    }
+  },
+  "completed_at": "2026-03-25T15:34:49.090527",
+  "success": true
+}

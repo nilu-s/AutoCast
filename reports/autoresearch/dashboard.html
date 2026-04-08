@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoCast Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            line-height: 1.6;
+        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        h1 { color: #58a6ff; margin-bottom: 20px; font-size: 28px; }
+        h2 { color: #8b949e; margin: 30px 0 15px; font-size: 18px; border-bottom: 1px solid #30363d; padding-bottom: 10px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .card-title { font-size: 14px; color: #8b949e; text-transform: uppercase; }
+        .status {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status-healthy { background: #238636; color: #fff; }
+        .status-warning { background: #f0883e; color: #fff; }
+        .status-critical { background: #da3633; color: #fff; }
+        .metric { font-size: 32px; font-weight: bold; margin: 10px 0; }
+        .metric-label { font-size: 12px; color: #8b949e; }
+        .chart-container { position: relative; height: 300px; margin: 20px 0; }
+        .alert-list { max-height: 300px; overflow-y: auto; }
+        .alert-item {
+            padding: 10px;
+            border-left: 3px solid;
+            margin-bottom: 10px;
+            background: #0d1117;
+            font-size: 13px;
+        }
+        .alert-INFO { border-color: #58a6ff; }
+        .alert-WARN { border-color: #f0883e; }
+        .alert-ERROR { border-color: #da3633; }
+        .alert-time { color: #8b949e; font-size: 11px; }
+        .alert-level {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            margin-right: 8px;
+            font-weight: bold;
+        }
+        .alert-level-INFO { background: #1f6feb; }
+        .alert-level-WARN { background: #f0883e; }
+        .alert-level-ERROR { background: #da3633; }
+        .run-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .run-table th, .run-table td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #30363d;
+        }
+        .run-table th { color: #8b949e; font-weight: normal; }
+        .run-table tr:hover { background: #21262d; }
+        .score { font-family: monospace; }
+        .score-good { color: #3fb950; }
+        .score-bad { color: #f85149; }
+        .badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            margin-right: 5px;
+        }
+        .badge-completed { background: #238636; }
+        .badge-failed { background: #da3633; }
+        .badge-pending { background: #f0883e; }
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #8b949e;
+            font-size: 12px;
+            border-top: 1px solid #30363d;
+            margin-top: 40px;
+        }
+        .refresh-btn {
+            background: #238636;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .refresh-btn:hover { background: #2ea043; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h1>🎬 AutoCast Dashboard</h1>
+            <button class="refresh-btn" onclick="location.reload()">↻ Aktualisieren</button>
+        </div>
+        
+        <!-- Status Cards -->
+        <div class="grid">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">System Status</span>
+                    <span class="status status-warning">WARNING</span>
+                </div>
+                <div class="metric">20260325_032335</div>
+                <div class="metric-label">Letzter Run</div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Score Trend</span>
+                    <span class="badge badge-pending">stable</span>
+                </div>
+                <div class="metric score score-bad">0.2670</div>
+                <div class="metric-label">Aktueller Objective Score</div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">PENDING Jobs</span>
+                    <span class="badge badge-completed">72</span>
+                </div>
+                <div class="metric">0</div>
+                <div class="metric-label">Älter als 24h</div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">FAILED Jobs</span>
+                    <span class="badge badge-completed">0</span>
+                </div>
+                <div class="metric">0</div>
+                <div class="metric-label">Im letzten Run</div>
+            </div>
+        </div>
+        
+        <!-- Score History Chart -->
+        <h2>📈 Score History</h2>
+        <div class="card">
+            <div class="chart-container">
+                <canvas id="scoreChart"></canvas>
+            </div>
+        </div>
+        
+        <!-- Recent Alerts -->
+        <h2>🔔 Letzte Alerts</h2>
+        <div class="card">
+            <div class="alert-list">
+                <p style="color: #8b949e; text-align: center;">Keine Alerts vorhanden</p>
+                
+            </div>
+        </div>
+        
+        <!-- Run History -->
+        <h2>📋 Run History</h2>
+        <div class="card">
+            <table class="run-table">
+                <thead>
+                    <tr>
+                        <th>Run ID</th>
+                        <th>Zeit</th>
+                        <th>Score</th>
+                        <th>Jobs</th>
+                        <th>✓</th>
+                        <th>✗</th>
+                        <th>⏳</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+                        <tr>
+                            <td>20260325_032335</td>
+                            <td>25.3.2026, 03:23:35</td>
+                            <td class="score score-bad">0.2670</td>
+                            <td>10</td>
+                            <td><span class="badge badge-completed">0</span></td>
+                            <td><span class="badge badge-completed">0</span></td>
+                            <td><span class="badge badge-pending">9</span></td>
+                        </tr>
+                    
+                        <tr>
+                            <td>20260325_025704</td>
+                            <td>25.3.2026, 02:57:04</td>
+                            <td class="score score-bad">0.2670</td>
+                            <td>9</td>
+                            <td><span class="badge badge-completed">0</span></td>
+                            <td><span class="badge badge-completed">0</span></td>
+                            <td><span class="badge badge-pending">9</span></td>
+                        </tr>
+                    
+                        <tr>
+                            <td>20260325_025703</td>
+                            <td>25.3.2026, 02:57:03</td>
+                            <td class="score score-bad">0.2670</td>
+                            <td>9</td>
+                            <td><span class="badge badge-completed">0</span></td>
+                            <td><span class="badge badge-completed">0</span></td>
+                            <td><span class="badge badge-pending">9</span></td>
+                        </tr>
+                    
+                        <tr>
+                            <td>20260325_025616</td>
+                            <td>25.3.2026, 02:56:16</td>
+                            <td class="score score-bad">0.2670</td>
+                            <td>9</td>
+                            <td><span class="badge badge-completed">0</span></td>
+                            <td><span class="badge badge-completed">0</span></td>
+                            <td><span class="badge badge-pending">9</span></td>
+                        </tr>
+                    
+                        <tr>
+                            <td>20260325_021955</td>
+                            <td>25.3.2026, 02:19:55</td>
+                            <td class="score score-bad">0.2670</td>
+                            <td>9</td>
+                            <td><span class="badge badge-completed">0</span></td>
+                            <td><span class="badge badge-completed">0</span></td>
+                            <td><span class="badge badge-pending">9</span></td>
+                        </tr>
+                    
+                        <tr>
+                            <td>20260325_021517</td>
+                            <td>25.3.2026, 02:15:17</td>
+                            <td class="score score-bad">0.2670</td>
+                            <td>9</td>
+                            <td><span class="badge badge-completed">0</span></td>
+                            <td><span class="badge badge-completed">0</span></td>
+                            <td><span class="badge badge-pending">9</span></td>
+                        </tr>
+                    
+                        <tr>
+                            <td>20260325_021436</td>
+                            <td>25.3.2026, 02:14:36</td>
+                            <td class="score score-bad">0.2670</td>
+                            <td>9</td>
+                            <td><span class="badge badge-completed">0</span></td>
+                            <td><span class="badge badge-completed">0</span></td>
+                            <td><span class="badge badge-pending">9</span></td>
+                        </tr>
+                    
+                        <tr>
+                            <td>20260325_021358</td>
+                            <td>25.3.2026, 02:13:58</td>
+                            <td class="score score-bad">0.2670</td>
+                            <td>9</td>
+                            <td><span class="badge badge-completed">0</span></td>
+                            <td><span class="badge badge-completed">0</span></td>
+                            <td><span class="badge badge-pending">9</span></td>
+                        </tr>
+                    
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="footer">
+            AutoCast Monitoring Dashboard | Generiert: 25.3.2026, 03:25:42
+        </div>
+    </div>
+    
+    <script>
+        const ctx = document.getElementById('scoreChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ["20260325_021358","20260325_021436","20260325_021517","20260325_021955","20260325_025616","20260325_025703","20260325_025704","20260325_032335"],
+                datasets: [{
+                    label: 'Objective Score',
+                    data: [0.267,0.267,0.267,0.267,0.267,0.267,0.267,0.267],
+                    borderColor: '#58a6ff',
+                    backgroundColor: 'rgba(88, 166, 255, 0.1)',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: true,
+                    pointRadius: 4,
+                    pointBackgroundColor: '#58a6ff',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: { color: '#c9d1d9' }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: '#8b949e', maxRotation: 45 },
+                        grid: { color: '#30363d' }
+                    },
+                    y: {
+                        ticks: { color: '#8b949e' },
+                        grid: { color: '#30363d' },
+                        min: 0,
+                        max: 1
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

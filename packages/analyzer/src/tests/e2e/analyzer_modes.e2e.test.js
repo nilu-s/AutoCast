@@ -37,7 +37,8 @@ describe('End-to-End Analysis - Modes and Params', function () {
         var trackBSegs = result.segments[1];
         assert(trackBSegs.length >= 1, 'Track B should still have active segments');
         assert(trackBSegs[0].state === 'active', 'Independent mode should keep track segments active');
-        assert(trackBSegs[0].start <= 4.7, 'Track B segment should start earlier due to pre-roll');
+        // With higher threshold (9dB), detection starts later but pre-roll still applies
+        assert(trackBSegs[0].start <= 7.0, 'Track B segment should have pre-roll applied');
         assert(trackBSegs[0].end >= 10.3, 'Track B segment should end later due to post-roll');
     });
 

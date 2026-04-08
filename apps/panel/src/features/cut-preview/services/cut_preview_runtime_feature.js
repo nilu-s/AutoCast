@@ -86,17 +86,48 @@
         var clamp = typeof options.clamp === 'function'
             ? options.clamp
             : function (v, min, max) { return Math.max(min, Math.min(max, v)); };
+        var parseNum = typeof options.parseNum === 'function'
+            ? options.parseNum
+            : defaultParseNum;
 
-        var margin = Math.min(1.2, viewport.visibleDurationSec * 0.08);
-        var start = viewport.viewStartSec;
-        var end = viewport.viewEndSec;
-        if (item.start < (start + margin)) {
-            state.cutPreviewViewStartSec = Math.max(0, item.start - margin);
-        } else if (item.end > (end - margin)) {
-            state.cutPreviewViewStartSec = item.end + margin - viewport.visibleDurationSec;
-            var maxStart = Math.max(0, viewport.totalDurationSec - viewport.visibleDurationSec);
-            state.cutPreviewViewStartSec = clamp(state.cutPreviewViewStartSec, 0, maxStart);
+        // Calculate optimal zoom to see the snippet clearly
+        var itemDuration = item.end - item.start;
+        var minVisibleDuration = Math.max(3, itemDuration * 4); // Show 4x the snippet duration, at least 3 seconds
+        var maxVisibleDuration = viewport.totalDurationSec * 0.5; // At most 50% of total
+        var targetVisibleDuration = Math.min(Math.max(minVisibleDuration, viewport.visibleDurationSec), maxVisibleDuration);
+        
+        // If currently in overview mode (very zoomed out), zoom in to detail level
+        if (viewport.pixelsPerSec <= viewport.fitPixelsPerSec * 1.5) {
+            // Zoom in to show snippet with context
+            targetVisibleDuration = Math.min(Math.max(5, itemDuration * 6), viewport.totalDurationSec * 0.3);
         }
+
+        // Calculate new pixels per second based on target visible duration
+        var trackWidth = viewport.trackWidth || 800;
+        var targetPixelsPerSec = trackWidth / targetVisibleDuration;
+        
+        // Clamp to reasonable zoom levels
+        var minPixelsPerSec = viewport.fitPixelsPerSec * 0.5;
+        var maxPixelsPerSec = Math.max(viewport.maxPixelsPerSec || 500, viewport.fitPixelsPerSec * 10);
+        targetPixelsPerSec = clamp(targetPixelsPerSec, minPixelsPerSec, maxPixelsPerSec);
+        
+        // Update zoom state
+        state.cutPreviewPixelsPerSec = targetPixelsPerSec;
+        
+        // Calculate zoom slider value (inverse of sliderToPixelsPerSec)
+        // This is approximate - the exact mapping depends on the slider implementation
+        var zoomRatio = (targetPixelsPerSec - viewport.fitPixelsPerSec) / 
+                        (Math.max(viewport.maxPixelsPerSec, targetPixelsPerSec * 2) - viewport.fitPixelsPerSec);
+        state.cutPreviewZoom = clamp(Math.round(zoomRatio * 1000), 0, 1000);
+
+        // Center the snippet in the viewport
+        var itemCenter = (item.start + item.end) / 2;
+        var newVisibleDuration = trackWidth / targetPixelsPerSec;
+        var newViewStart = itemCenter - (newVisibleDuration / 2);
+        
+        // Clamp to valid range
+        var maxStart = Math.max(0, viewport.totalDurationSec - newVisibleDuration);
+        state.cutPreviewViewStartSec = clamp(newViewStart, 0, maxStart);
     }
 
     function cancelPendingCutPreviewRender(options) {
